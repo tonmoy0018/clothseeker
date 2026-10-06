@@ -1,0 +1,197 @@
+# CLAUDE.md — ClothSeeker (Custom Clothing Marketplace)
+
+This file is the persistent project contract. Read it before every task. If a request conflicts with it, stop and ask.
+
+@AGENTS.md
+
+## Project
+
+An academic but realistic online custom-clothing marketplace with three surfaces:
+
+1. **Customer / shop** — browse, buy ready-made dresses, customize templates, use AI-assisted design, optionally try on, request quotes for special tailoring, check out, and track orders.
+2. **Seller portal** (`/seller`) — manage store, products and templates; receive orders and quote requests; produce garments; upload QC evidence; ship.
+3. **Admin** (`/admin`) — seller approvals, brand-logo flags, disputes, payouts, AI monitoring, audit logs.
+
+## Product rules
+
+- Customers may buy a ready-made dress directly by choosing size and color.
+- Customers may customize a seller-provided template.
+- A design may start from a shop dress, a customer-uploaded dress photo, or a written description.
+- Manual design supports per-part color/pattern, text, permitted images/logos, decorations, and style options: neckline, sleeve length, dress length.
+- AI design accepts text plus up to 3 photos and returns 4 options per round.
+- Customers can pick an option, generate again, or give a new instruction that references an option (e.g. "like option 2 but darker").
+- Every AI round is retained. A selected AI result becomes editable DesignSpec layers.
+- Virtual try-on is optional and runs only after explicit consent.
+- Designs within a supported template can be ordered instantly.
+- Designs started from a reference dress photo that need special tailoring can become quote requests.
+- Sellers answer quote requests with a price within 24 hours.
+- The only content rule: **clothing brand logos cannot be used.**
+
+## Stack (free-tier-first — do not change without approval)
+
+| Concern | Choice |
+|---|---|
+| App | One Next.js App Router app, TypeScript, Tailwind CSS, shadcn/ui |
+| Backend logic | Next.js API routes and server actions. No separate backend service |
+| DB / auth / storage | Supabase (Postgres, Auth, Storage) |
+| ORM / schema | Prisma |
+| Job queue | Postgres `ai_jobs` table. No Redis |
+| Worker | Node/TypeScript worker in `worker/`, run locally on the developer's Mac mini |
+| Design canvas | Fabric.js |
+| AI abstraction | Provider interfaces in `lib/ai/` |
+| PlannerProvider | Gemini free tier: text/images, structured JSON, dress matching, brand-logo checking |
+| ImageProvider | Cloudflare Workers AI or Hugging Face |
+| TryOnProvider | Public Hugging Face Space/API |
+| Background removal | `@imgly/background-removal` (in the browser) |
+| Payments / shipping | Sandbox/mock payment gateway; mocked courier updates |
+| Deployment | Vercel Hobby + Supabase |
+
+Do not introduce a paid service without explicit approval.
+
+## Non-negotiable engineering rules
+
+- Strict TypeScript. Never use `any`. Never hide errors with unsafe casts, `@ts-ignore`/`@ts-expect-error`, or disabled lint rules.
+- Validate every external or user input with Zod (request bodies, params, search params, form data, provider responses, env vars).
+- Every mutation enforces **authentication, role, and resource ownership** on the server. Prefer server-side authorization to hiding things in the UI.
+- Treat uploaded files as untrusted: check type (by content, not only the extension), size and dimensions; sanitize filenames and metadata; generate object keys on the server.
+- Secrets live only in environment variables. Keep `.env.example` complete, with safe placeholders. Never put secrets in source, logs, client bundles, screenshots or commits. Only `NEXT_PUBLIC_*` variables reach the client.
+- Use private buckets and signed URLs for private assets.
+- Write business logic so it can be unit tested without a browser: pure domain modules, with I/O at the edges.
+- Database migrations must be reproducible (`prisma migrate`, committed migrations).
+- Use transactions for multi-record state changes.
+- Never trust client-calculated price, role, seller/store ID, order status, or DesignSpec. Recompute and revalidate on the server.
+- Add indexes for common marketplace, order and queue queries.
+- Keep every external integration (AI, payments, courier) behind an interface so providers can be swapped.
+- Background jobs must be idempotent, safe under concurrency, and have timeouts, bounded retries and a terminal failure state.
+
+## Core data concepts
+
+### DesignSpec (JSONB, versioned)
+- `version` (schema version, for migrations)
+- base product / template reference (+ template version)
+- size
+- colors/patterns per part
+- style options (neckline, sleeve length, dress length)
+- layers per placement area
+- `startedFrom`: `shop` | `photo` | `description`
+- `referencePhotoUrl` (store a storage key; resolve to a signed URL when needed)
+
+Defined once in `types/` as a Zod schema, with an inferred TypeScript type.
+
+### AI
+- `AIRound` = instruction + attachments + 4 option outputs + `chosenIndex`. Outputs are stored privately; keep storage keys, not public URLs.
+- Maximum **10 rounds per customer per day**.
+- Cache by a deterministic input hash.
+- Never call AI providers from the browser. All provider work runs in the worker via `ai_jobs`.
+
+## Ordering
+
+- One customer order may split into OrderItems grouped by seller store.
+- Ready-made lifecycle: `paid → ready_to_ship → shipped → delivered`.
+- Custom lifecycle states: `quote_requested, quoted, quote_declined, pending_payment, paid, awaiting_seller, accepted, in_production, qc_submitted, ready_to_ship, shipped, delivered, cancelled, refunded, disputed`.
+- Legal transitions live in **one** reusable domain module. Clients never set status directly.
+- Payment callbacks are idempotent: retries must not create duplicate orders.
+
+## Privacy
+
+- Try-on requires explicit consent before any upload.
+- Unsaved try-on photos/results are deleted after 24 hours by an idempotent, auditable cleanup.
+- Try-on photos are never used for training.
+- Store only the customer information needed for fulfillment. Expose to sellers only what shipping requires.
+- Do not log personal data or image contents.
+
+## Roles
+
+`customer`, `seller_owner`, `seller_staff`, `admin`.
+
+Every protected route and mutation checks the role, and for seller actions, store membership. Admin-only actions are explicit, and sensitive ones write an `AuditLog` record (actor, action, target, timestamp, non-secret metadata).
+
+## Folder contract
+
+```
+app/(shop)/        customer-facing routes
+app/seller/        seller portal
+app/admin/         admin tool
+app/api/           API routes
+components/        UI components (shadcn/ui under components/ui)
+lib/db/            Prisma client + data access
+lib/auth/          session, roles, permission guards
+lib/ai/            provider interfaces + implementations
+lib/renderer/      server-side design rendering
+worker/            local job worker
+types/             shared types + Zod schemas (DesignSpec, etc.)
+prisma/            schema, migrations, seed
+supabase/          storage policies, RLS, config
+docs/customers/
+docs/sellers/
+docs/admin/
+docs/developers/
+```
+
+## Phases
+
+| # | Phase |
+|---|---|
+| 0 | Skeleton |
+| 1 | Store + auth + roles + Buy Now |
+| 2 | Seller portal |
+| 3 | Manual design + renderer |
+| 4 | Checkout + order splitting |
+| 5 | Seller production flow |
+| 6 | AI design box |
+| 7 | Try-on + photo/description starts + quotes |
+| 8 | Admin |
+| 9 | Hardening + deployment |
+| 10 | Documentation guides |
+
+**Current status:** Phase 0 complete (2026-10-06). Next: Phase 1, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+
+## Implementation conventions (established in Phase 0)
+
+- Versions: Next.js 16 (`proxy.ts`, not `middleware.ts`; async `params`; global `PageProps`/`LayoutProps`), Prisma 7 (`prisma.config.ts`, `prisma-client` generator, `@prisma/adapter-pg`), Zod 4, Tailwind 4, shadcn/ui `base-nova` (Base UI primitives, `cn` from the `cn` package). Check `node_modules/next/dist/docs/` before relying on memory for Next.js APIs.
+- Prisma is pinned to stable 7.x. Its npm `latest` tag points at an 8.0 RC; do not upgrade to it without approval.
+- Env: add every new variable to `lib/env/schema.ts`, `.env.example`, `docs/developers/local-setup.md` and the CI placeholders. App code uses `getServerEnv()` / `getClientEnv()`. The worker and scripts use `parseEnv(...)` with `loadEnvConfig`.
+- DB: app code uses `getPrisma()` from `@/lib/db` (server-only). The worker and scripts use `createPrismaClient()` from `@/lib/db/client`. The generated client is at `@/lib/generated/prisma/client`.
+- Storage: never build object keys from user input. Use `buildObjectKey()`, and call `assertSafeObjectKey()` before signing or deleting. Buckets are private; keep `lib/storage/buckets.ts` in sync with `supabase/config.toml`.
+- Local Supabase: `project_id = "clothseeker-p1"` on ports 55420–55429 (API 55421, DB 55422, Studio 55423), so it runs alongside another local project that uses `clothseeker` on the default ports. **Never stop, reset or migrate the `clothseeker` stack; it belongs to a different project.**
+- Logging: structured JSON with ids, counts and error names only. No personal data, prompts, image data or connection strings.
+- Lint forbids inline `eslint-disable` (`noInlineConfig`). Fix the code instead.
+
+## Working process
+
+Before changing code:
+1. Read this file and the relevant docs.
+2. Inspect the existing implementation; do not assume a feature is missing.
+3. State which files/modules will change and what the risks are.
+4. Write a concise plan; when Plan Mode is requested, wait for approval.
+5. Implement in small, reviewable increments.
+6. Run typecheck, lint, the relevant unit/integration tests, and the build.
+7. Fix any errors you introduced before calling the work done.
+8. Preserve backward compatibility with completed phases.
+9. Update docs whenever behavior, setup, data models, permissions or user workflows change.
+10. Finish with a report: changed files, migrations, environment variables, tests run, known limitations, and the commit message.
+
+Scope rules:
+- Always ask before starting a new phase. Implement only the phase requested.
+- Do not silently expand scope, change the stack, weaken permissions, or skip tests because something is hard.
+- If a requirement is impossible on the free tier, explain the limitation and implement the closest replaceable abstraction. Do not silently change the product.
+- If a phase is too large, propose splitting it into 2–4 independently testable sub-phases before coding.
+
+## Finish Gate (after every phase)
+
+Run everything and fix all errors. Write or update tests for the changed business logic. Run lint, typecheck and build. Verify the affected user flow manually where possible. Update the relevant docs. Inspect the git diff for accidental changes and secrets. Commit with a small, descriptive message. Do not start the next phase until this gate passes.
+
+## Known constraints to keep visible
+
+- Vercel Hobby is for non-commercial use, and it limits function duration and cron frequency. Slow AI work belongs in the worker, never in a request handler.
+- Free AI tiers (Gemini, Cloudflare, Hugging Face Spaces) have rate limits, cold starts and occasional downtime. Design for queue delays and graceful failure.
+- The worker runs only while the Mac mini is on. Jobs must survive restarts (stuck-job recovery).
+- Clients poll job status. Realtime subscriptions are optional, for later.
+- Test the try-on provider (`ai-scripts/` feasibility script) before building the full Phase 7 UI.
+
+## Open decisions (resolve before the phase that needs them)
+
+- `seller_owner` vs `seller_staff` permissions (e.g. may staff edit pricing, manage members, or see payouts?). Needed by Phase 1/2.
+- Refund behavior when a seller misses the 24-hour acceptance deadline (full automatic refund assumed). Needed by Phase 5.
+- Commission model and payout schedule. Needed by Phase 8.
+- Quote validity window after a seller responds. Needed by Phase 7.

@@ -1,0 +1,12 @@
+// ClothSeeker database schema.
+// Phase 0: connection only. Domain models (User, Store, Product, Order, AIJob, ...) arrive in Phase 1.
+// The connection URL lives in prisma.config.ts (Prisma 7), not here.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
