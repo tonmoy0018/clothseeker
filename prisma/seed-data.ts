@@ -1,5 +1,4 @@
 import type { Size } from "@/lib/generated/prisma/enums";
-import { TEMPLATE_CONFIG_VERSION, type TemplateConfig } from "@/types/template";
 
 // Demo catalog for ClothSeeker. Prices are whole taka (converted to poisha by the seed).
 
@@ -236,39 +235,3 @@ export function sizeSurchargeTaka(size: Size): number {
 export function seedStock(productIndex: number, sizeIndex: number, colorIndex: number): number {
   return (productIndex * 7 + sizeIndex * 3 + colorIndex * 5) % 9;
 }
-
-export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
-  schemaVersion: TEMPLATE_CONFIG_VERSION,
-  regions: [
-    { id: "bodice", label: "Bodice", recolorable: true },
-    { id: "sleeves", label: "Sleeves", recolorable: true },
-    { id: "skirt", label: "Skirt", recolorable: true },
-    { id: "collar", label: "Collar", recolorable: true },
-  ],
-  placementAreas: [
-    { id: "front-chest", label: "Front chest", side: "front", widthCm: 20, heightCm: 15 },
-    { id: "front-skirt", label: "Front skirt", side: "front", widthCm: 35, heightCm: 30 },
-    { id: "back-upper", label: "Upper back", side: "back", widthCm: 30, heightCm: 25 },
-  ],
-  styleOptions: {
-    neckline: [
-      { id: "round", label: "Round", addOnPriceMinor: 0 },
-      { id: "v-neck", label: "V-neck", addOnPriceMinor: 0 },
-      { id: "square", label: "Square", addOnPriceMinor: 15_000 },
-    ],
-    sleeveLength: [
-      { id: "sleeveless", label: "Sleeveless", addOnPriceMinor: 0 },
-      { id: "short", label: "Short", addOnPriceMinor: 0 },
-      { id: "long", label: "Long", addOnPriceMinor: 25_000 },
-    ],
-    dressLength: [
-      { id: "mini", label: "Mini", addOnPriceMinor: 0 },
-      { id: "midi", label: "Midi", addOnPriceMinor: 20_000 },
-      { id: "maxi", label: "Maxi", addOnPriceMinor: 40_000 },
-    ],
-  },
-  allowedColors: [
-    C.black, C.white, C.ivory, C.navy, C.sage, C.terracotta, C.mustard,
-    C.rosePink, C.lilac, C.emerald, C.wine, C.skyBlue,
-  ],
-};

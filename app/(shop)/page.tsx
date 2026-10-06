@@ -2,12 +2,14 @@ import Link from "next/link";
 
 import { ProductCard } from "@/components/shop/product-card";
 import { buttonVariants } from "@/components/ui/button";
+import { signCatalogImages } from "@/lib/catalog/images";
 import { getPrisma } from "@/lib/db";
 import { getFilterOptions, listProducts } from "@/lib/shop/catalog";
 
 export default async function HomePage() {
   const db = getPrisma();
   const [featured, options] = await Promise.all([listProducts(db, {}, 8), getFilterOptions(db)]);
+  const covers = await signCatalogImages(featured.map((p) => p.coverKey));
 
   return (
     <div className="flex flex-col gap-12">
@@ -54,7 +56,7 @@ export default async function HomePage() {
         </div>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {featured.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product.id} product={product} imageUrl={product.coverKey ? covers.get(product.coverKey) : undefined} />
           ))}
         </div>
       </section>

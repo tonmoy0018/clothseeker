@@ -25,11 +25,25 @@ Hiding a button in the UI is never the access control. The role is read from the
 
 **Not-found instead of forbidden.** When a customer targets another customer's cart line or checkout key, the service responds as if the record doesn't exist. That way it doesn't reveal that the record exists.
 
+## Implemented (Phase 2)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Open any `/admin/**` page | 404 | 404 | ✅ | `requireAdmin()` in each page **and** each server action |
+| List or see drafts and archived products | ❌ | ❌ | ✅ | `lib/admin/products.ts` → `assertAdmin` |
+| Create/edit products, publish, unpublish, archive | ❌ | ❌ | ✅ | `lib/admin/products.ts` |
+| Add/edit sizes, colors, prices, stock | ❌ | ❌ | ✅ | `lib/admin/variants.ts` |
+| Upload, remove or reorder product photos | ❌ | ❌ | ✅ (only the product's own keys) | `lib/admin/media.ts` |
+| Create, edit or activate templates; upload template images | ❌ | ❌ | ✅ (keys must start with the product id) | `lib/admin/templates.ts` |
+| Load a template to design with | ✅ live templates of live products only | ✅ same | ✅ same | `lib/catalog/template-loader.ts` |
+| Read private images | signed URLs only, for live products | same | signed URLs in admin | `StorageAdapter.signReadUrls` |
+
+Storage buckets are private with no policies, so the publishable key can't list, read or upload.
+
 ## Planned
 
 | Phase | Admin | Customer |
 |---|---|---|
-| 2 | Manage products, variants, stock, templates, product photos | — |
 | 3 | — | Create, save and price their own designs |
 | 4 | View all orders | Order detail and tracking for their own orders |
 | 5 | Accept custom orders, spec sheets, QC photos, shipping | — |

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 1. This document describes the target shape and marks what exists today.
+Status: Phase 2. This document describes the target shape and marks what exists today.
 
 ## Overview
 
@@ -40,7 +40,10 @@ Supabase's REST API is never used for data: every table has RLS enabled with no 
 | `lib/env/` | Zod-validated env. `schema.ts` is pure; `server.ts` is server-only; `client.ts` covers `NEXT_PUBLIC_*` only | Phase 0 |
 | `lib/db/` | `client.ts`: Prisma factory (shared with the worker). `index.ts`: app singleton (server-only) | Phase 0 |
 | `lib/supabase/` | Browser, server (cookie) and admin (secret key) clients, plus the proxy session refresh | Phase 0 |
-| `lib/storage/` | Bucket constants, server-generated object keys, signed read URLs | Phase 0 |
+| `lib/storage/` | Bucket constants, server-generated object keys, `StorageAdapter` (Supabase + in-memory) | Phase 0/2 |
+| `lib/media/` | Untrusted image pipeline (sharp → validated WebP); see [media-uploads.md](media-uploads.md) | Phase 2 |
+| `lib/admin/` | Admin services: products, variants, photos, templates, audit; all `assertAdmin` | Phase 2 |
+| `lib/catalog/` | Size chart, pattern/font libraries, default template, customer template loader, signed catalog images | Phase 1/2 |
 | `lib/auth/` | `session.ts` (current user, role from DB), `guards.ts` (`requireUser`, `requireAdmin`), `policy.ts` (pure rules), `safe-next.ts` | Phase 1 |
 | `lib/shop/` | Domain services `(db, actor, input)`: `catalog.ts`, `cart.ts`, `checkout.ts`. No Next.js imports, so they're tested against a real DB | Phase 1 |
 | `lib/payments/` | `PaymentProvider` interface + `MockPaymentProvider` | Phase 1 (mock), Phase 4 (full) |

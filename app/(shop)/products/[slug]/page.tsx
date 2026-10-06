@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { signCatalogImages } from "@/lib/catalog/images";
 import { SIZE_CHART, SIZE_ORDER } from "@/lib/catalog/size-chart";
 import { getPrisma } from "@/lib/db";
 import { getProductBySlug } from "@/lib/shop/catalog";
@@ -26,6 +27,11 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
   const sizes = SIZE_ORDER.filter((s) => product.variants.some((v) => v.size === s));
   const colors = [...new Map(product.variants.map((v) => [v.colorName, { name: v.colorName, hex: v.colorHex }])).values()];
   const chartRows = SIZE_CHART.filter((row) => sizes.includes(row.size));
+  const signed = await signCatalogImages(product.imageKeys);
+  const photos = product.imageKeys.flatMap((key) => {
+    const url = signed.get(key);
+    return url ? [url] : [];
+  });
 
   return (
     <div className="flex flex-col gap-10">
@@ -46,6 +52,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
         variants={product.variants}
         sizes={sizes}
         colors={colors}
+        photos={photos}
       />
 
       <section className="grid gap-8 md:grid-cols-2">

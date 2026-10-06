@@ -42,6 +42,8 @@ export type ProductCard = {
   fromPriceMinor: number;
   colors: ColorSwatch[];
   customizable: boolean;
+  /** Storage key of the cover photo, if the product has photos. */
+  coverKey: string | null;
 };
 
 function variantWhere(filters: ProductFilters): Prisma.VariantWhereInput {
@@ -100,6 +102,7 @@ export async function listProducts(db: PrismaClient, filters: ProductFilters, li
       id: true,
       slug: true,
       name: true,
+      imageKeys: true,
       category: { select: { name: true } },
       template: { select: { isActive: true } },
       variants: {
@@ -120,6 +123,7 @@ export async function listProducts(db: PrismaClient, filters: ProductFilters, li
       fromPriceMinor: Math.min(...matchingPrices),
       colors: uniqueColors(p.variants),
       customizable: p.template?.isActive ?? false,
+      coverKey: p.imageKeys[0] ?? null,
     };
   });
 }
@@ -163,6 +167,7 @@ export type ProductDetail = {
   description: string;
   category: { slug: string; name: string };
   customizable: boolean;
+  imageKeys: string[];
   variants: ProductVariantOption[];
 };
 
@@ -178,6 +183,7 @@ export async function getProductBySlug(db: PrismaClient, slug: string): Promise<
       slug: true,
       name: true,
       description: true,
+      imageKeys: true,
       category: { select: { slug: true, name: true } },
       template: { select: { isActive: true } },
       variants: {
@@ -196,6 +202,7 @@ export async function getProductBySlug(db: PrismaClient, slug: string): Promise<
     description: product.description,
     category: product.category,
     customizable: product.template?.isActive ?? false,
+    imageKeys: product.imageKeys,
     variants: product.variants
       .map((v) => ({
         size: v.size,

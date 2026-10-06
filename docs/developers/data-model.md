@@ -20,7 +20,7 @@ ClothSeeker is a **single brand**. There are no sellers, stores, store members o
 | Catalog | `Category` | Casual, Party, … | `slug` unique |
 | | `Product` | A dress. `status` is `DRAFT`, `ACTIVE` or `ARCHIVED`; only `ACTIVE` products are visible in the shop | `slug` unique; index (`status`, `categoryId`) |
 | | `Variant` | One size and color of a product, with its price and stock | `sku` unique; unique (`productId`, `size`, `colorName`); index (`productId`, `isActive`) |
-| | `CustomizationTemplate` | Customization rules for one product. `config` is validated by [`types/template.ts`](../../types/template.ts) | `productId` unique (1:1) |
+| | `CustomizationTemplate` | Customization rules for one product. `config` is versioned JSON, read only through `parseTemplateConfig()` ([`types/template.ts`](../../types/template.ts)). `version` increments on every save (optimistic locking) | `productId` unique (1:1) |
 | Design | `Design` | A customer's design. `spec` is a versioned DesignSpec (Phase 3) | index (`customerId`, `updatedAt`) |
 | | `AIRound` | One AI design round: instruction, attachments, 4 options, chosen index | index (`customerId`, `createdAt`) for the daily quota |
 | | `AIJob` (`ai_jobs`) | The worker queue (Phase 6+) | index (`status`, `runAfter`) for claiming; `inputHash` for caching |
@@ -43,6 +43,25 @@ Any time:    CANCELLED, REFUNDED, DISPUTED (rules in Phase 4)
 ```
 
 Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`) live on `QuoteRequest`, because an `OrderItem` only exists after checkout. Phase 1 only uses `PENDING_PAYMENT`, `PAID` and `CANCELLED`. Phase 4 adds the single transition module that enforces legal moves.
+
+## Template config versions
+
+| `schemaVersion` | Shape |
+|---|---|
+| 1 (Phase 1 seed) | regions, placement areas in cm, style options, colors |
+| 2 (current) | adds `garmentImages` (front/back keys); a `rect` (0–1 fractions) on each placement area; `referenceImageKey` on style options; `allowedPatterns` / `allowedFonts` (ids from `lib/catalog/patterns.ts` / `fonts.ts`); `addOns` prices |
+
+`parseTemplateConfig()` upgrades v1 to v2 when a row is read, so no data migration is needed. Saving always writes v2. Image keys in a template must start with the product's own id.
+
+## Audit log
+
+Every admin mutation writes an `AuditLog` row in the same transaction as the change ([`lib/admin/audit.ts`](../../lib/admin/audit.ts)). Actions so far:
+- `product.create`, `product.update`, `product.status`
+- `variant.create`, `variant.update`
+- `product.photo.add`, `product.photo.remove`, `product.photo.cover`
+- `template.create`, `template.update`, `template.state`
+
+Metadata holds ids, field names, statuses and versions only.
 
 ## Why snapshots
 

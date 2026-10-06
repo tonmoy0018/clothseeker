@@ -6,10 +6,13 @@ import { createPrismaClient, type PrismaClient } from "@/lib/db/client";
 import type { Role } from "@/lib/generated/prisma/enums";
 import { serverEnvSchema, parseEnv } from "@/lib/env/schema";
 import { majorToMinor } from "@/lib/money";
-import { templateConfigSchema } from "@/types/template";
+import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/catalog/default-template";
+import { BUCKETS } from "@/lib/storage/buckets";
+import { buildObjectKey } from "@/lib/storage/object-key";
+import { parseTemplateConfig, templateConfigSchema, type TemplateConfig } from "@/types/template";
 
+import { renderGarment } from "./seed-garments";
 import {
-  DEFAULT_TEMPLATE_CONFIG,
   SEED_CATEGORIES,
   SEED_PRODUCTS,
   seedStock,
@@ -68,8 +71,34 @@ async function seedUsers(db: PrismaClient, supabase: SupabaseClient, password: s
   log("seed.users", { count: SEED_USERS.length });
 }
 
-async function seedCatalog(db: PrismaClient): Promise<void> {
-  const templateConfig = templateConfigSchema.parse(DEFAULT_TEMPLATE_CONFIG);
+/** Keeps an existing template's garment images; otherwise renders and uploads fresh ones. */
+async function templateConfigFor(
+  db: PrismaClient,
+  supabase: SupabaseClient,
+  productId: string,
+): Promise<TemplateConfig> {
+  const existing = await db.customizationTemplate.findUnique({ where: { productId }, select: { config: true } });
+  if (existing) {
+    const current = parseTemplateConfig(existing.config);
+    if (current.garmentImages.front && current.garmentImages.back) {
+      return templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, garmentImages: current.garmentImages });
+    }
+  }
+  const garmentImages: TemplateConfig["garmentImages"] = {};
+  for (const side of ["front", "back"] as const) {
+    const key = buildObjectKey(BUCKETS.productMedia, { ownerId: productId, category: "template", extension: "webp" });
+    const { error } = await supabase.storage
+      .from(BUCKETS.productMedia)
+      .upload(key, await renderGarment(side), { contentType: "image/webp", upsert: false });
+    if (error) {
+      throw new Error(`Could not upload seed garment image: ${error.name}`);
+    }
+    garmentImages[side] = key;
+  }
+  return templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, garmentImages });
+}
+
+async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<void> {
 
   for (const category of SEED_CATEGORIES) {
     await db.category.upsert({
@@ -113,10 +142,11 @@ async function seedCatalog(db: PrismaClient): Promise<void> {
     }
 
     if (p.customizable) {
+      const config = await templateConfigFor(db, supabase, product.id);
       await db.customizationTemplate.upsert({
         where: { productId: product.id },
-        create: { productId: product.id, version: 1, config: templateConfig, aiEnabled: true, isActive: true },
-        update: { config: templateConfig, aiEnabled: true, isActive: true },
+        create: { productId: product.id, version: 1, config, aiEnabled: true, isActive: true },
+        update: { config, aiEnabled: true, isActive: true },
       });
     }
   }
@@ -151,7 +181,7 @@ async function main(): Promise<void> {
   });
   try {
     await seedUsers(db, supabase, password);
-    await seedCatalog(db);
+    await seedCatalog(db, supabase);
     log("seed.done");
   } finally {
     await db.$disconnect();

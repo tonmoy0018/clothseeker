@@ -1,19 +1,72 @@
-import { PhasePlaceholder } from "@/components/phase-placeholder";
-import { requireAdmin } from "@/lib/auth/guards";
+import type { Metadata } from "next";
+import Link from "next/link";
 
-export default async function AdminHomePage() {
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getAdminDashboard, LOW_STOCK_THRESHOLD } from "@/lib/admin/products";
+import { requireAdmin } from "@/lib/auth/guards";
+import { getPrisma } from "@/lib/db";
+
+export const metadata: Metadata = { title: "Admin — ClothSeeker" };
+
+export default async function AdminDashboardPage() {
   // Server-side guard on every admin page and action; non-admins get a 404.
-  await requireAdmin();
+  const admin = await requireAdmin();
+  const dashboard = await getAdminDashboard(getPrisma(), admin);
+
+  const tiles = [
+    { label: "Live dresses", value: dashboard.counts.ACTIVE, href: "/admin/products?status=ACTIVE" },
+    { label: "Drafts", value: dashboard.counts.DRAFT, href: "/admin/products?status=DRAFT" },
+    { label: "Archived", value: dashboard.counts.ARCHIVED, href: "/admin/products?status=ARCHIVED" },
+    { label: "Templates not live", value: dashboard.inactiveTemplates, href: "/admin/products" },
+  ];
+
   return (
-    <PhasePlaceholder
-      title="ClothSeeker admin"
-      phase={2}
-      features={[
-        "Catalog: dresses, variants, inventory and design templates (Phase 2)",
-        "Accept custom orders, spec sheets, QC photos and shipping (Phase 5)",
-        "Quote requests for special tailoring (Phase 7)",
-        "Brand-logo flags, disputes, AI metrics and audit log (Phase 8)",
-      ]}
-    />
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <Link href="/admin/products/new" className={buttonVariants()}>
+          New dress
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {tiles.map((tile) => (
+          <Link key={tile.label} href={tile.href} className="rounded-xl border p-4 hover:bg-muted">
+            <div className="text-3xl font-semibold tabular-nums">{tile.value}</div>
+            <div className="text-sm text-muted-foreground">{tile.label}</div>
+          </Link>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Low stock (≤ {LOW_STOCK_THRESHOLD} left)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {dashboard.lowStock.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Everything live is well stocked.</p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {dashboard.lowStock.map((v) => (
+                <li key={`${v.productId}-${v.size}-${v.colorName}`} className="flex items-center justify-between py-2">
+                  <Link href={`/admin/products/${v.productId}`} className="hover:underline">
+                    {v.productName} · {v.size} · {v.colorName}
+                  </Link>
+                  <span className={v.stock === 0 ? "font-medium text-destructive" : "tabular-nums"}>
+                    {v.stock === 0 ? "Sold out" : `${v.stock} left`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-muted-foreground">
+        Orders and production arrive in Phase 5, quotes in Phase 7, and brand-logo flags, disputes, AI metrics and the
+        audit log viewer in Phase 8.
+      </p>
+    </div>
   );
 }

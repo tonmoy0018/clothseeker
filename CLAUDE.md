@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 1 complete (2026-10-06). Next: Phase 2, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 2 complete (2026-10-06). Next: Phase 3, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -170,7 +170,15 @@ docs/developers/
 - **Auth:** the role always comes from the `users` table (`getCurrentUser`). Pages use `requireUser`/`requireAdmin` from `lib/auth/guards.ts`. Every admin page and action calls `requireAdmin()`; the layout alone is not a guard.
 - **Tests:** unit tests in `tests/unit`. Integration tests in `tests/integration`, which use the `clothseeker_test` database (the name must end in `_test`) and the `resetDatabaseBeforeEach()`, `createUser()` and `createProduct()` helpers. E2E journeys that need sign-in are tagged `@supabase` and are excluded in CI.
 - **Seed:** `prisma/seed.ts` is idempotent and refuses remote databases. The demo password is `SEED_DEMO_PASSWORD`.
-- The `CustomizationTemplate.config` schema is `types/template.ts` (`schemaVersion` 1).
+- The `CustomizationTemplate.config` schema is `types/template.ts`.
+
+## Implementation conventions (established in Phase 2)
+
+- **Admin services** live in `lib/admin/*`. Each one calls `assertAdmin`, parses with Zod, and writes `writeAudit(tx, …)` **in the same transaction** as the change. Audit metadata holds field names, ids and statuses, never values or personal data. Expected failures throw `AdminError`, and server actions map them with `toFormState` (`app/admin/form-state.ts`).
+- **Uploads:** always go through `processImage()` (`lib/media`), which only accepts real JPEG/PNG/WebP, re-encodes to WebP and strips metadata. The limit is 4 MB, because Vercel caps request bodies at 4.5 MB. Store images with `storeProductImage()` and keys from `buildObjectKey`. Never use client filenames.
+- **Storage:** use the `StorageAdapter` interface (`getStorage()` in the app, `MemoryStorageAdapter` in tests). Buckets stay private; browsers only get signed URLs (`signCatalogImages`), and only for content the viewer may see.
+- **Templates:** always read them with `parseTemplateConfig()`, which upgrades old versions. Saves use optimistic locking on `version`. Image keys must start with `{productId}/`. Customers load templates only through `getCustomizationTemplate()` (live product and live template). Patterns and fonts come only from the curated libraries in `lib/catalog/`.
+- Shared client/server helpers such as `slugify` live in `lib/text/`. Client components must not import modules that pull in Prisma or `server-only`.
 
 ## Mapping the original build guide
 

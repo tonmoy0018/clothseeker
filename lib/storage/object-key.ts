@@ -49,3 +49,7 @@ export function assertSafeObjectKey(key: string): void {
     throw new InvalidObjectKeyError("Unsafe object key");
   }
 }
+
+export function isSafeObjectKey(key: string): boolean {
+  return !key.includes("..") && KEY_PATTERN.test(key);
+}

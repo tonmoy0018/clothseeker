@@ -55,6 +55,6 @@ test.describe("@supabase buy now journey", () => {
   test("admin signs in to the admin area", async ({ page }) => {
     await signIn(page, "admin@clothseeker.test", "/admin");
     await expect(page).toHaveURL(/\/admin$/);
-    await expect(page.getByTestId("phase-placeholder")).toContainText("ClothSeeker admin");
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   });
 });

@@ -5,6 +5,7 @@ import { ProductCard } from "@/components/shop/product-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { signCatalogImages } from "@/lib/catalog/images";
 import { getPrisma } from "@/lib/db";
 import { getFilterOptions, listProducts, parseProductFilters } from "@/lib/shop/catalog";
 
@@ -17,6 +18,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
   const filters = parseProductFilters(await searchParams);
   const db = getPrisma();
   const [products, options] = await Promise.all([listProducts(db, filters), getFilterOptions(db)]);
+  const covers = await signCatalogImages(products.map((p) => p.coverKey));
   const activeCategory = options.categories.find((c) => c.slug === filters.category);
   const hasFilters = Object.values(filters).some((v) => v !== undefined);
 
@@ -113,7 +115,11 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
         ) : (
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                imageUrl={product.coverKey ? covers.get(product.coverKey) : undefined}
+              />
             ))}
           </div>
         )}

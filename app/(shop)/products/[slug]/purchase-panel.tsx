@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useActionState, useMemo, useState } from "react";
 
 import { DressIllustration } from "@/components/shop/dress-illustration";
@@ -19,6 +20,8 @@ type PurchasePanelProps = {
   /** Sizes this dress is made in, in display order. */
   sizes: readonly Size[];
   colors: readonly { name: string; hex: string }[];
+  /** Signed photo URLs; when empty, a color illustration is shown instead. */
+  photos: readonly string[];
 };
 
 const initialState: BuyNowState = {};
@@ -27,11 +30,13 @@ const initialState: BuyNowState = {};
  * Size/color picker. Availability and prices shown here are display-only: the server
  * re-resolves the variant, price and stock when the form is submitted.
  */
-export function PurchasePanel({ productId, slug, name, variants, sizes, colors }: PurchasePanelProps) {
+export function PurchasePanel({ productId, slug, name, variants, sizes, colors, photos }: PurchasePanelProps) {
   const firstAvailable = variants.find((v) => v.available > 0);
   const [color, setColor] = useState(firstAvailable?.colorName ?? colors[0]?.name ?? "");
   const [size, setSize] = useState<Size | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const activePhoto = photos[photoIndex] ?? photos[0];
   const [state, formAction, pending] = useActionState(buyNow, initialState);
 
   const selected = useMemo(
@@ -49,7 +54,34 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors }
 
   return (
     <div className="grid gap-8 md:grid-cols-2">
-      <DressIllustration colorHex={colorHex} label={`${name} in ${color}`} className="aspect-[4/5]" />
+      {activePhoto ? (
+        <div className="flex flex-col gap-3">
+          <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-muted">
+            <Image src={activePhoto} alt={name} fill unoptimized priority sizes="(min-width: 768px) 50vw, 100vw" className="object-cover" />
+          </div>
+          {photos.length > 1 && (
+            <div className="flex gap-2" role="group" aria-label="Photos">
+              {photos.map((url, index) => (
+                <button
+                  key={url}
+                  type="button"
+                  onClick={() => setPhotoIndex(index)}
+                  aria-label={`Show photo ${index + 1}`}
+                  aria-pressed={index === photoIndex}
+                  className={cn(
+                    "relative size-16 overflow-hidden rounded-md bg-muted ring-1 ring-black/10",
+                    index === photoIndex && "ring-2 ring-foreground",
+                  )}
+                >
+                  <Image src={url} alt="" fill unoptimized sizes="64px" className="object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <DressIllustration colorHex={colorHex} label={`${name} in ${color}`} className="aspect-[4/5]" />
+      )}
 
       <form action={formAction} className="flex flex-col gap-6">
         <input type="hidden" name="productId" value={productId} />

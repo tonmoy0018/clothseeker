@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +8,7 @@ import { formatBDT } from "@/lib/money";
 import { ColorSwatches } from "./color-swatches";
 import { DressIllustration } from "./dress-illustration";
 
-export function ProductCard({ product }: { product: ProductCardData }) {
+export function ProductCard({ product, imageUrl }: { product: ProductCardData; imageUrl?: string }) {
   const firstColor = product.colors[0];
   return (
     <Link
@@ -16,11 +17,24 @@ export function ProductCard({ product }: { product: ProductCardData }) {
       data-testid="product-card"
     >
       <div className="relative">
-        <DressIllustration
-          colorHex={firstColor?.hex ?? ""}
-          label={`${product.name} in ${firstColor?.name ?? "default color"}`}
-          className="aspect-[4/5] transition-transform group-hover:scale-[1.01]"
-        />
+        {imageUrl ? (
+          <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-muted">
+            <Image
+              src={imageUrl}
+              alt={product.name}
+              fill
+              unoptimized
+              sizes="(min-width: 1024px) 25vw, 50vw"
+              className="object-cover transition-transform group-hover:scale-[1.01]"
+            />
+          </div>
+        ) : (
+          <DressIllustration
+            colorHex={firstColor?.hex ?? ""}
+            label={`${product.name} in ${firstColor?.name ?? "default color"}`}
+            className="aspect-[4/5] transition-transform group-hover:scale-[1.01]"
+          />
+        )}
         {product.customizable && (
           <Badge variant="secondary" className="absolute top-2 left-2">
             Customizable
