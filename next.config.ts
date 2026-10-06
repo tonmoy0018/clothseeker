@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "4.4mb",
     },
   },
+  // The server renderer reads font files from disk (lib/renderer/fonts.ts); make sure they are
+  // bundled with every server function, not only served from the CDN.
+  outputFileTracingIncludes: {
+    "/**": ["./public/fonts/*.ttf"],
+  },
 };
 
 export default nextConfig;

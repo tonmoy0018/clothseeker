@@ -58,6 +58,23 @@ export function LineControls({ itemId, quantity }: { itemId: string; quantity: n
   );
 }
 
+export function RemoveOnly({ itemId }: { itemId: string }) {
+  const [state, remove, removing] = useActionState(removeItemAction, initial);
+  return (
+    <form action={remove} className="flex flex-col items-end gap-1">
+      <input type="hidden" name="itemId" value={itemId} />
+      <Button type="submit" variant="ghost" size="sm" disabled={removing}>
+        Remove
+      </Button>
+      {state.error && (
+        <p role="alert" className="text-xs text-destructive">
+          {state.error}
+        </p>
+      )}
+    </form>
+  );
+}
+
 export function PayNowForm({ idempotencyKey, disabled }: { idempotencyKey: string; disabled: boolean }) {
   const [state, pay, paying] = useActionState(payNowAction, initial);
   return (

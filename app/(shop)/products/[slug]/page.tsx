@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { signCatalogImages } from "@/lib/catalog/images";
 import { SIZE_CHART, SIZE_ORDER } from "@/lib/catalog/size-chart";
 import { getPrisma } from "@/lib/db";
@@ -64,9 +64,9 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
             {product.customizable && (
-              <Button variant="outline" disabled title="Custom design arrives in Phase 3">
-                Customize (coming soon)
-              </Button>
+              <Link href={`/customize/${product.id}`} className={buttonVariants({ variant: "outline" })}>
+                Customize this dress
+              </Link>
             )}
             <Button variant="outline" disabled title="Virtual try-on arrives in Phase 7">
               Try on (coming soon)

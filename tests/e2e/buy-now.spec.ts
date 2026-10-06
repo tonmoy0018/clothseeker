@@ -28,9 +28,12 @@ test.describe("@supabase buy now journey", () => {
 
     // Pick the first in-stock size for the default color.
     const sizeButtons = page.getByRole("group", { name: "Size" }).getByRole("button").and(page.locator(":enabled"));
-    await sizeButtons.first().click();
+    // Retry until React has hydrated and the click registers (production pages render before hydration).
+    await expect(async () => {
+      await sizeButtons.first().click();
+      await expect(page.getByTestId("price")).toHaveText(/^৳[\d,]+$/, { timeout: 1000 });
+    }).toPass();
     const shownPrice = (await page.getByTestId("price").textContent())?.trim() ?? "";
-    expect(shownPrice).toMatch(/^৳[\d,]+$/);
 
     await page.getByRole("button", { name: "Buy now" }).click();
     await expect(page).toHaveURL(/\/cart$/);

@@ -3,7 +3,10 @@ import { z } from "zod";
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
 import type { PrismaClient } from "@/lib/db/client";
 import { Size } from "@/lib/generated/prisma/enums";
+import { priceStoredDesign } from "@/lib/design/service";
 import { lineTotalMinor } from "@/lib/money";
+import type { StorageAdapter } from "@/lib/storage/adapter";
+import { designSpecSchema } from "@/types/design-spec";
 
 import { MAX_UNITS_PER_LINE } from "./limits";
 import { ShopError } from "./errors";
@@ -84,7 +87,7 @@ export async function addToCart(db: PrismaClient, actor: Actor, rawInput: unknow
 async function findOwnedItem(db: PrismaClient, actor: Actor, itemId: string) {
   const item = await db.cartItem.findFirst({
     where: { id: itemId, cart: { customerId: actor.id } },
-    select: { id: true, variant: { select: { stock: true } } },
+    select: { id: true, kind: true, variant: { select: { stock: true } } },
   });
   if (!item) {
     throw new ShopError("NOT_FOUND", "That item is no longer in your cart.");
@@ -105,6 +108,9 @@ export async function updateCartItem(
     await db.cartItem.delete({ where: { id: item.id } });
     return;
   }
+  if (item.kind !== "READY_MADE") {
+    throw new ShopError("QUANTITY_LIMIT", "Each custom design is made once. Save a copy to order another.");
+  }
   const limit = maxAllowed(item.variant?.stock ?? 0);
   if (input.quantity > limit) {
     throw new ShopError("INSUFFICIENT_STOCK", `Only ${limit} available.`);
@@ -123,34 +129,50 @@ export async function removeCartItem(
   await db.cartItem.delete({ where: { id: item.id } });
 }
 
-export type CartLine = {
+type LineBase = {
   itemId: string;
-  productSlug: string;
   productName: string;
   size: Size;
-  colorName: string;
-  colorHex: string;
   unitPriceMinor: number;
   quantity: number;
   lineTotalMinor: number;
-  /** Set when the line can't be bought as-is (sold out, removed, not enough stock). */
+  /** Set when the line can't be bought as-is (sold out, removed, design needs changes…). */
   issue: string | null;
 };
+
+export type ReadyMadeLine = LineBase & {
+  kind: "READY_MADE";
+  productSlug: string;
+  colorName: string;
+  colorHex: string;
+};
+
+export type CustomDesignLine = LineBase & {
+  kind: "CUSTOM_DESIGN";
+  designId: string;
+  productId: string;
+  previewKey: string | null;
+};
+
+export type CartLine = ReadyMadeLine | CustomDesignLine;
 
 export type CartView = {
   lines: CartLine[];
   totalMinor: number;
   itemCount: number;
   canCheckout: boolean;
+  /** Custom designs are added to the cart now, but paid for in Phase 4's checkout. */
+  hasCustomDesigns: boolean;
 };
 
-/** The actor's cart, priced from current catalog data. */
-export async function getCart(db: PrismaClient, actor: Actor): Promise<CartView> {
+/** The actor's cart, priced from current catalog data (custom designs re-validated against their template). */
+export async function getCart(db: PrismaClient, storage: StorageAdapter, actor: Actor): Promise<CartView> {
   const items = await db.cartItem.findMany({
-    where: { cart: { customerId: actor.id }, kind: "READY_MADE" },
+    where: { cart: { customerId: actor.id }, kind: { in: ["READY_MADE", "CUSTOM_DESIGN"] } },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
+      kind: true,
       quantity: true,
       variant: {
         select: {
@@ -163,44 +185,67 @@ export async function getCart(db: PrismaClient, actor: Actor): Promise<CartView>
           product: { select: { slug: true, name: true, status: true } },
         },
       },
+      design: {
+        select: { id: true, productId: true, spec: true, previewKey: true, product: { select: { name: true } } },
+      },
     },
   });
 
   const lines: CartLine[] = [];
   for (const item of items) {
-    const v = item.variant;
-    if (!v) {
-      continue;
+    if (item.kind === "READY_MADE" && item.variant) {
+      const v = item.variant;
+      const available = v.isActive && v.product.status === "ACTIVE";
+      let issue: string | null = null;
+      if (!available) {
+        issue = "No longer available";
+      } else if (v.stock <= 0) {
+        issue = "Sold out";
+      } else if (v.stock < item.quantity) {
+        issue = `Only ${v.stock} left`;
+      }
+      lines.push({
+        kind: "READY_MADE",
+        itemId: item.id,
+        productSlug: v.product.slug,
+        productName: v.product.name,
+        size: v.size,
+        colorName: v.colorName,
+        colorHex: v.colorHex,
+        unitPriceMinor: v.priceMinor,
+        quantity: item.quantity,
+        lineTotalMinor: lineTotalMinor(v.priceMinor, item.quantity),
+        issue,
+      });
+    } else if (item.kind === "CUSTOM_DESIGN" && item.design) {
+      const d = item.design;
+      const check = await priceStoredDesign(db, storage, actor.id, d.spec);
+      const spec = designSpecSchema.safeParse(d.spec);
+      const unit = check.price?.totalMinor ?? 0;
+      lines.push({
+        kind: "CUSTOM_DESIGN",
+        itemId: item.id,
+        designId: d.id,
+        productId: d.productId,
+        productName: d.product.name,
+        size: spec.success ? spec.data.size : "M",
+        previewKey: d.previewKey,
+        unitPriceMinor: unit,
+        quantity: 1,
+        lineTotalMinor: unit,
+        issue: check.issue,
+      });
     }
-    const available = v.isActive && v.product.status === "ACTIVE";
-    let issue: string | null = null;
-    if (!available) {
-      issue = "No longer available";
-    } else if (v.stock <= 0) {
-      issue = "Sold out";
-    } else if (v.stock < item.quantity) {
-      issue = `Only ${v.stock} left`;
-    }
-    lines.push({
-      itemId: item.id,
-      productSlug: v.product.slug,
-      productName: v.product.name,
-      size: v.size,
-      colorName: v.colorName,
-      colorHex: v.colorHex,
-      unitPriceMinor: v.priceMinor,
-      quantity: item.quantity,
-      lineTotalMinor: lineTotalMinor(v.priceMinor, item.quantity),
-      issue,
-    });
   }
 
   const payable = lines.filter((l) => l.issue === null);
+  const hasCustomDesigns = lines.some((l) => l.kind === "CUSTOM_DESIGN");
   return {
     lines,
     totalMinor: payable.reduce((sum, l) => sum + l.lineTotalMinor, 0),
     itemCount: lines.reduce((sum, l) => sum + l.quantity, 0),
-    canCheckout: lines.length > 0 && payable.length === lines.length,
+    canCheckout: lines.length > 0 && payable.length === lines.length && !hasCustomDesigns,
+    hasCustomDesigns,
   };
 }
 

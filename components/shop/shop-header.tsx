@@ -27,6 +27,9 @@ export async function ShopHeader() {
           )}
           {user?.role === "CUSTOMER" && (
             <>
+              <Link href="/account/designs" className="text-muted-foreground hover:text-foreground">
+                My designs
+              </Link>
               <Link href="/account/orders" className="text-muted-foreground hover:text-foreground">
                 My orders
               </Link>

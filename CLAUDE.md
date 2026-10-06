@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 3a (design core + renderer) complete (2026-10-06). Next: Phase 3b (design screen). Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 3 complete (2026-10-06). Next: Phase 4, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -179,6 +179,15 @@ docs/developers/
 - **Storage:** use the `StorageAdapter` interface (`getStorage()` in the app, `MemoryStorageAdapter` in tests). Buckets stay private; browsers only get signed URLs (`signCatalogImages`), and only for content the viewer may see.
 - **Templates:** always read them with `parseTemplateConfig()`, which upgrades old versions. Saves use optimistic locking on `version`. Image keys must start with `{productId}/`. Customers load templates only through `getCustomizationTemplate()` (live product and live template). Patterns and fonts come only from the curated libraries in `lib/catalog/`.
 - Shared client/server helpers such as `slugify` live in `lib/text/`. Client components must not import modules that pull in Prisma or `server-only`.
+
+## Implementation conventions (established in Phase 3)
+
+- **DesignSpec** (`types/design-spec.ts`, v1) is the single description of a custom dress. Server writes always go through `lib/design/service.ts`, which parses, revalidates against the **current live template** (`validateDesignAgainstTemplate`), re-stamps the template version, and recomputes the price (`priceDesign`). Client prices and validation are previews only.
+- **Rendering:** the only input is `normalizeForRender(spec, template)`. Text is drawn from opentype.js outlines of `public/fonts/*.ttf`, never system fonts. Region recolor uses masks + multiply. Outputs must stay deterministic; `tests/unit/renderer.test.ts` hashes them. Don't render on page views, only on save/checkout/worker.
+- **Fabric 7 quirks:** objects default to **centre origin**, so set `originX/originY: "left"/"top"` for anything positioned by its corner. The editor is client-only (`ssr: false`). The spec in React state is the source of truth, and the canvas is rebuilt from it.
+- **sharp quirks:** `joinChannel` is a no-op on `create`d images, so build RGBA by hand (`rgbaFrom`). `.raw()` expands greyscale to 3 channels unless you extract a channel.
+- Customer uploads live in `design-assets` under `{customerId}/uploads/`, and previews under `{customerId}/previews/`. Image layers may only reference the owner's uploads.
+- `@imgly/background-removal` is AGPL. See `docs/developers/licences.md` before any commercial launch.
 
 ## Mapping the original build guide
 

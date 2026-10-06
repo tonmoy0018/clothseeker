@@ -5,7 +5,7 @@ import { ForbiddenError } from "@/lib/auth/policy";
 import { addToCart, getCart, removeCartItem, updateCartItem } from "@/lib/shop/cart";
 import { ShopError } from "@/lib/shop/errors";
 
-import { createProduct, createUser, db, resetDatabaseBeforeEach } from "./helpers";
+import { createProduct, createUser, db, memoryStorage, resetDatabaseBeforeEach } from "./helpers";
 
 resetDatabaseBeforeEach();
 
@@ -20,7 +20,7 @@ describe("addToCart", () => {
 
     await addToCart(db, customer, { productId: product.id, size: "M", color: "Sage", quantity: 2 });
 
-    const cart = await getCart(db, customer);
+    const cart = await getCart(db, memoryStorage, customer);
     expect(cart.lines).toHaveLength(1);
     expect(cart.lines[0]).toMatchObject({ size: "M", colorName: "Sage", unitPriceMinor: 320_000, quantity: 2 });
     expect(cart.totalMinor).toBe(640_000);
@@ -33,7 +33,7 @@ describe("addToCart", () => {
 
     await addToCart(db, customer, { productId: product.id, size: "S", color: "Black", quantity: 1, priceMinor: 1 });
 
-    expect((await getCart(db, customer)).totalMinor).toBe(590_000);
+    expect((await getCart(db, memoryStorage, customer)).totalMinor).toBe(590_000);
   });
 
   it("merges repeated adds into one line", async () => {
@@ -43,7 +43,7 @@ describe("addToCart", () => {
     await addToCart(db, customer, { productId: product.id, size: "L", color: "Navy", quantity: 1 });
     await addToCart(db, customer, { productId: product.id, size: "L", color: "Navy", quantity: 2 });
 
-    const cart = await getCart(db, customer);
+    const cart = await getCart(db, memoryStorage, customer);
     expect(cart.lines).toHaveLength(1);
     expect(cart.lines[0]?.quantity).toBe(3);
   });
@@ -103,7 +103,7 @@ describe("addToCart", () => {
     await expect(addToCart(db, customer, { productId: product.id, size: "HUGE", color: "Sage" })).rejects.toBeInstanceOf(
       ZodError,
     );
-    expect((await getCart(db, customer)).lines).toHaveLength(0);
+    expect((await getCart(db, memoryStorage, customer)).lines).toHaveLength(0);
   });
 
   it("does not let admins shop", async () => {
@@ -121,27 +121,27 @@ describe("cart ownership", () => {
     const bob = await createUser();
     const product = await createProduct({ variants: [{ size: "M", color: "Sage", priceMinor: 100_000, stock: 5 }] });
     await addToCart(db, alice, { productId: product.id, size: "M", color: "Sage", quantity: 1 });
-    const itemId = (await getCart(db, alice)).lines[0]?.itemId ?? "";
+    const itemId = (await getCart(db, memoryStorage, alice)).lines[0]?.itemId ?? "";
 
     await expectShopError(updateCartItem(db, bob, { itemId, quantity: 4 }), "NOT_FOUND");
     await expectShopError(removeCartItem(db, bob, { itemId }), "NOT_FOUND");
 
-    expect((await getCart(db, bob)).lines).toHaveLength(0);
-    expect((await getCart(db, alice)).lines[0]?.quantity).toBe(1);
+    expect((await getCart(db, memoryStorage, bob)).lines).toHaveLength(0);
+    expect((await getCart(db, memoryStorage, alice)).lines[0]?.quantity).toBe(1);
   });
 
   it("owner can update and remove their lines", async () => {
     const alice = await createUser();
     const product = await createProduct({ variants: [{ size: "M", color: "Sage", priceMinor: 100_000, stock: 5 }] });
     await addToCart(db, alice, { productId: product.id, size: "M", color: "Sage", quantity: 1 });
-    const itemId = (await getCart(db, alice)).lines[0]?.itemId ?? "";
+    const itemId = (await getCart(db, memoryStorage, alice)).lines[0]?.itemId ?? "";
 
     await updateCartItem(db, alice, { itemId, quantity: 3 });
-    expect((await getCart(db, alice)).lines[0]?.quantity).toBe(3);
+    expect((await getCart(db, memoryStorage, alice)).lines[0]?.quantity).toBe(3);
     await expectShopError(updateCartItem(db, alice, { itemId, quantity: 6 }), "INSUFFICIENT_STOCK");
 
     await removeCartItem(db, alice, { itemId });
-    expect((await getCart(db, alice)).lines).toHaveLength(0);
+    expect((await getCart(db, memoryStorage, alice)).lines).toHaveLength(0);
   });
 
   it("flags lines whose stock dropped after they were added", async () => {
@@ -150,7 +150,7 @@ describe("cart ownership", () => {
     await addToCart(db, alice, { productId: product.id, size: "M", color: "Sage", quantity: 3 });
     await db.variant.updateMany({ where: { productId: product.id }, data: { stock: 1 } });
 
-    const cart = await getCart(db, alice);
+    const cart = await getCart(db, memoryStorage, alice);
     expect(cart.lines[0]?.issue).toBe("Only 1 left");
     expect(cart.canCheckout).toBe(false);
   });

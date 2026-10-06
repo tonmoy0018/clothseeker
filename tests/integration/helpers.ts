@@ -4,11 +4,15 @@ import { afterAll, beforeEach } from "vitest";
 
 import type { Actor } from "@/lib/auth/policy";
 import { createPrismaClient } from "@/lib/db/client";
+import { MemoryStorageAdapter } from "@/lib/storage/memory";
 import type { ProductStatus, Role, Size } from "@/lib/generated/prisma/enums";
 
 import { getTestDatabaseUrl } from "./test-env";
 
 export const db = createPrismaClient(getTestDatabaseUrl());
+
+/** Shared in-memory storage for tests that don't care about stored files. */
+export const memoryStorage = new MemoryStorageAdapter();
 
 /** Empties every application table before each test in the calling file. */
 export function resetDatabaseBeforeEach(): void {

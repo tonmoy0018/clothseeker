@@ -55,7 +55,10 @@ test.describe("@supabase admin catalog", () => {
     const customerPage = await browser.newPage();
     await signIn(customerPage, "mia@example.test", shopPath);
     await expect(customerPage.getByRole("img", { name })).toBeVisible();
-    await customerPage.getByRole("group", { name: "Size" }).getByRole("button", { name: "M" }).click();
+    await expect(async () => {
+      await customerPage.getByRole("group", { name: "Size" }).getByRole("button", { name: "M" }).click();
+      await expect(customerPage.getByRole("button", { name: "Buy now" })).toBeEnabled({ timeout: 1000 });
+    }).toPass();
     await customerPage.getByRole("button", { name: "Buy now" }).click();
     await expect(customerPage).toHaveURL(/\/cart$/);
     const line = customerPage.getByTestId("cart-lines").getByRole("listitem").filter({ hasText: name });

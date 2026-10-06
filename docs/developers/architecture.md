@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 2. This document describes the target shape and marks what exists today.
+Status: Phase 3. This document describes the target shape and marks what exists today.
 
 ## Overview
 
@@ -49,8 +49,9 @@ Supabase's REST API is never used for data: every table has RLS enabled with no 
 | `lib/payments/` | `PaymentProvider` interface + `MockPaymentProvider` | Phase 1 (mock), Phase 4 (full) |
 | `lib/money.ts`, `lib/catalog/` | BDT minor units and formatting; brand size chart | Phase 1 |
 | `lib/ai/` | `PlannerProvider`, `ImageProvider`, `TryOnProvider` interfaces and implementations | Phase 6–7 |
-| `lib/renderer/` | DesignSpec → preview PNG, flat garment, 300 DPI print files | Phase 3 |
-| `types/` | Shared Zod schemas: `template.ts` (Phase 1), `DesignSpec` (Phase 3) | Phase 1+ |
+| `lib/renderer/` | Render plan → preview PNG, flat garment, 300 DPI print files (sharp + opentype.js outlines); see [rendering.md](rendering.md) | Phase 3 |
+| `lib/design/` | DesignSpec validation, pricing, normalization (pure), and the customer design service (save, cart, uploads) | Phase 3 |
+| `types/` | Shared Zod schemas: `template.ts` (v3), `design-spec.ts` (v1); see [design-spec.md](design-spec.md) | Phase 1+ |
 | `worker/` | Job loop, structured logging | Phase 0 (idle loop), Phase 6 (jobs) |
 | `prisma/` | Schema, migrations (incl. RLS lockdown), idempotent seed | Phase 1 |
 | `supabase/` | Local stack config, buckets; RLS and storage policies later | Phase 0 |

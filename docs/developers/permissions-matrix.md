@@ -40,11 +40,22 @@ Hiding a button in the UI is never the access control. The role is read from the
 
 Storage buckets are private with no policies, so the publishable key can't list, read or upload.
 
+## Implemented (Phase 3)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Open the design screen for a live template | ✅ (can design, not save) | ✅ | ✅ (can't save) | `loadDesignContext` (live product + live template only) |
+| Save a design / add it to the cart | ➡️ sign in (draft kept) | ✅ **own designs only** | ❌ | `saveDesign`, `addDesignToCart` → `assertCustomer`, owner-scoped queries |
+| Delete a saved design (and its cart line and preview) | ❌ | ✅ own, not once ordered | ❌ | `deleteDesign` |
+| Load a saved design in the editor | ❌ | ✅ own only (`?design=` of anyone else is ignored) | ❌ | `getDesignForEdit` (owner + product scoped) |
+| Upload an image for a design | ➡️ sign in | ✅ stored under `{customerId}/uploads/` | ❌ | `uploadDesignImage` |
+| Use an uploaded image in a design | ❌ | ✅ **own uploads only** | ❌ | `validateDesignAgainstTemplate` (key prefix) |
+| See prices | client preview | server recomputes on every save, cart view and checkout | — | `priceDesign` + `checkDesign` |
+
 ## Planned
 
 | Phase | Admin | Customer |
 |---|---|---|
-| 3 | — | Create, save and price their own designs |
 | 4 | View all orders | Order detail and tracking for their own orders |
 | 5 | Accept custom orders, spec sheets, QC photos, shipping | — |
 | 6 | AI metrics | AI rounds on their own designs (10/day) |

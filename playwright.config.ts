@@ -15,10 +15,16 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    // CI runs against the production build made in the previous step.
-    command: isCI ? `pnpm start --port ${PORT}` : `pnpm dev --port ${PORT}`,
+    // CI runs against the production build made in the previous step. Locally we build first:
+    // the dev server compiles routes on first visit, which made parallel runs flaky.
+    // Set E2E_DEV=1 to test against `pnpm dev` instead.
+    command: isCI
+      ? `pnpm start --port ${PORT}`
+      : process.env.E2E_DEV
+        ? `pnpm dev --port ${PORT}`
+        : `pnpm build && pnpm start --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !isCI,
-    timeout: 120_000,
+    timeout: 240_000,
   },
 });

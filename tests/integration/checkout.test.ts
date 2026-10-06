@@ -9,7 +9,7 @@ import { addToCart, getCart } from "@/lib/shop/cart";
 import { listOrders, payWithMock } from "@/lib/shop/checkout";
 import { ShopError } from "@/lib/shop/errors";
 
-import { createProduct, createUser, db, resetDatabaseBeforeEach } from "./helpers";
+import { createProduct, createUser, db, memoryStorage, resetDatabaseBeforeEach } from "./helpers";
 
 resetDatabaseBeforeEach();
 
@@ -47,7 +47,7 @@ describe("payWithMock", () => {
       status: "PAID",
     });
     expect(await stockOf(variantId)).toBe(3);
-    expect((await getCart(db, customer)).lines).toHaveLength(0);
+    expect((await getCart(db, memoryStorage, customer)).lines).toHaveLength(0);
   });
 
   it("keeps the price snapshot when the catalog price changes later", async () => {
@@ -99,7 +99,7 @@ describe("payWithMock", () => {
 
     expect(await db.order.count()).toBe(0);
     expect(await stockOf(variantId)).toBe(2);
-    expect((await getCart(db, customer)).lines).toHaveLength(1);
+    expect((await getCart(db, memoryStorage, customer)).lines).toHaveLength(1);
   });
 
   it("rejects an empty cart", async () => {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 import { DressIllustration } from "@/components/shop/dress-illustration";
@@ -6,9 +7,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { requireUser } from "@/lib/auth/guards";
 import { getPrisma } from "@/lib/db";
 import { formatBDT } from "@/lib/money";
-import { getCart } from "@/lib/shop/cart";
+import { getCart, type CartLine } from "@/lib/shop/cart";
+import { BUCKETS } from "@/lib/storage/buckets";
+import { getStorage } from "@/lib/storage/supabase";
 
-import { LineControls, PayNowForm } from "./cart-forms";
+import { LineControls, PayNowForm, RemoveOnly } from "./cart-forms";
 
 export const metadata: Metadata = { title: "Cart — ClothSeeker" };
 
@@ -24,7 +27,12 @@ export default async function CartPage() {
     );
   }
 
-  const cart = await getCart(getPrisma(), user);
+  const storage = getStorage();
+  const cart = await getCart(getPrisma(), storage, user);
+  const previews = await storage.signReadUrls(
+    BUCKETS.designAssets,
+    cart.lines.flatMap((l) => (l.kind === "CUSTOM_DESIGN" && l.previewKey ? [l.previewKey] : [])),
+  );
   // Fresh key per render: a double-submit of this page reuses it, so it can't create two orders.
   const idempotencyKey = crypto.randomUUID();
 
@@ -46,27 +54,7 @@ export default async function CartPage() {
         <h1 className="text-2xl font-semibold">Your cart</h1>
         <ul className="flex flex-col divide-y rounded-xl border" data-testid="cart-lines">
           {cart.lines.map((line) => (
-            <li key={line.itemId} className="flex gap-4 p-4">
-              <DressIllustration
-                colorHex={line.colorHex}
-                label={`${line.productName} in ${line.colorName}`}
-                className="size-20 shrink-0"
-              />
-              <div className="flex flex-1 flex-col gap-1">
-                <Link href={`/products/${line.productSlug}`} className="font-medium hover:underline">
-                  {line.productName}
-                </Link>
-                <span className="text-sm text-muted-foreground">
-                  Size {line.size} · {line.colorName}
-                </span>
-                <span className="text-sm">{formatBDT(line.unitPriceMinor)} each</span>
-                {line.issue && <span className="text-sm text-destructive">{line.issue}</span>}
-              </div>
-              <div className="flex flex-col items-end justify-between gap-2">
-                <span className="font-medium">{formatBDT(line.lineTotalMinor)}</span>
-                <LineControls itemId={line.itemId} quantity={line.quantity} />
-              </div>
-            </li>
+            <CartRow key={line.itemId} line={line} previewUrl={line.kind === "CUSTOM_DESIGN" && line.previewKey ? previews.get(line.previewKey) : undefined} />
           ))}
         </ul>
       </section>
@@ -85,11 +73,58 @@ export default async function CartPage() {
           <span>Total</span>
           <span data-testid="cart-total">{formatBDT(cart.totalMinor)}</span>
         </div>
-        {!cart.canCheckout && (
-          <p className="text-sm text-destructive">Update or remove the highlighted items before paying.</p>
+        {cart.hasCustomDesigns ? (
+          <p className="rounded-lg bg-muted p-3 text-sm" data-testid="custom-checkout-note">
+            Checkout for custom designs arrives in Phase 4. Your designs are saved in the cart until then; remove them to pay
+            for ready-made items now.
+          </p>
+        ) : (
+          !cart.canCheckout && <p className="text-sm text-destructive">Update or remove the highlighted items before paying.</p>
         )}
         <PayNowForm idempotencyKey={idempotencyKey} disabled={!cart.canCheckout} />
       </aside>
     </div>
+  );
+}
+
+function CartRow({ line, previewUrl }: { line: CartLine; previewUrl: string | undefined }) {
+  if (line.kind === "CUSTOM_DESIGN") {
+    return (
+      <li className="flex gap-4 p-4" data-testid="custom-line">
+        <div className="relative size-20 shrink-0 overflow-hidden rounded-xl bg-muted">
+          {previewUrl && <Image src={previewUrl} alt={`Your design for ${line.productName}`} fill unoptimized className="object-contain" />}
+        </div>
+        <div className="flex flex-1 flex-col gap-1">
+          <Link href={`/customize/${line.productId}?design=${line.designId}`} className="font-medium hover:underline">
+            {line.productName} — your design
+          </Link>
+          <span className="text-sm text-muted-foreground">Size {line.size} · Made to order</span>
+          {line.issue && <span className="text-sm text-destructive">{line.issue}</span>}
+        </div>
+        <div className="flex flex-col items-end justify-between gap-2">
+          <span className="font-medium">{line.issue ? "—" : formatBDT(line.lineTotalMinor)}</span>
+          <RemoveOnly itemId={line.itemId} />
+        </div>
+      </li>
+    );
+  }
+  return (
+    <li className="flex gap-4 p-4">
+      <DressIllustration colorHex={line.colorHex} label={`${line.productName} in ${line.colorName}`} className="size-20 shrink-0" />
+      <div className="flex flex-1 flex-col gap-1">
+        <Link href={`/products/${line.productSlug}`} className="font-medium hover:underline">
+          {line.productName}
+        </Link>
+        <span className="text-sm text-muted-foreground">
+          Size {line.size} · {line.colorName}
+        </span>
+        <span className="text-sm">{formatBDT(line.unitPriceMinor)} each</span>
+        {line.issue && <span className="text-sm text-destructive">{line.issue}</span>}
+      </div>
+      <div className="flex flex-col items-end justify-between gap-2">
+        <span className="font-medium">{formatBDT(line.lineTotalMinor)}</span>
+        <LineControls itemId={line.itemId} quantity={line.quantity} />
+      </div>
+    </li>
   );
 }

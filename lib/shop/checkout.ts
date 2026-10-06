@@ -93,6 +93,11 @@ function findOrderByKey(db: PrismaClient, idempotencyKey: string): Promise<Reser
 }
 
 async function reserveOrder(db: PrismaClient, actor: Actor, idempotencyKey: string, at: Date): Promise<ReservedOrder> {
+  const otherKinds = await db.cartItem.count({ where: { cart: { customerId: actor.id }, kind: { not: "READY_MADE" } } });
+  if (otherKinds > 0) {
+    // Never silently drop lines: custom designs and quotes are paid through Phase 4's checkout.
+    throw new ShopError("NOT_SUPPORTED", "Checkout for custom designs arrives in Phase 4. Remove them to pay for the other items now.");
+  }
   try {
     return await db.$transaction(async (tx) => {
       const items = await tx.cartItem.findMany({

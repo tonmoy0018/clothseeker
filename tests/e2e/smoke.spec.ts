@@ -29,7 +29,7 @@ test("admin area is hidden from signed-out visitors", async ({ page }) => {
   expect(response?.status()).toBe(404);
 });
 
-test("customize page is a labelled placeholder", async ({ page }) => {
+test("customize page explains when a dress isn't customizable", async ({ page }) => {
   await page.goto("/customize/example");
-  await expect(page.getByTestId("phase-placeholder")).toContainText("Coming in Phase 3");
+  await expect(page.getByTestId("not-customizable")).toBeVisible();
 });

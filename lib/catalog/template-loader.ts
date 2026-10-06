@@ -24,6 +24,7 @@ export async function getCustomizationTemplate(
   db: PrismaClient,
   storage: StorageAdapter,
   rawProductId: unknown,
+  options: { signImages?: boolean } = {},
 ): Promise<CustomerTemplate | null> {
   const productId = z.uuid().safeParse(rawProductId);
   if (!productId.success) {
@@ -42,7 +43,8 @@ export async function getCustomizationTemplate(
     return null;
   }
   const config = parseTemplateConfig(product.template.config);
-  const urls = await storage.signReadUrls(BUCKETS.productMedia, templateImageKeys(config));
+  const urls =
+    options.signImages === false ? new Map<string, string>() : await storage.signReadUrls(BUCKETS.productMedia, templateImageKeys(config));
   return {
     productId: product.id,
     productSlug: product.slug,

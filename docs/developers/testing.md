@@ -20,7 +20,9 @@
 
 ## E2E tests
 
-- `pnpm test:e2e` starts `pnpm dev` itself, or reuses a server already running on :3000.
+- `pnpm test:e2e` **builds and starts a production server** (`pnpm build && pnpm start`), or reuses a server already running on :3000. The dev server compiles routes on first visit, which made parallel runs flaky. Set `E2E_DEV=1` to run against `pnpm dev` instead.
+- Production pages render before React hydrates, so tests that click interactive controls right after navigation retry the click until it registers (`expect(...).toPass()`).
+- Test runs clean up after themselves: the design test deletes the design it saved, and the admin test archives its dress.
 - The `@supabase` journey signs in as the seeded `ava@example.test` and **really places an order**, which reduces stock in your dev database. Run `pnpm db:seed` to reset the catalog.
 - The demo password comes from `SEED_DEMO_PASSWORD` (default `clothseeker-demo`).
 

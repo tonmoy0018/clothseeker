@@ -1,7 +1,9 @@
 allowBuilds:
   "@prisma/engines": true
+  canvas: false
   esbuild: true
   prisma: true
+  protobufjs: false
   sharp: false
   supabase: true
   unrs-resolver: false
