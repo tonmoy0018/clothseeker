@@ -54,13 +54,15 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `DATABASE_URL` | Local: `DB_URL`. Hosted: pooled connection string (port 6543) | **Server-only** | Prisma at runtime |
 | `DIRECT_URL` | Local: same as `DATABASE_URL`. Hosted: direct/session string (port 5432) | **Server-only** | `prisma migrate` |
 | `WORKER_POLL_INTERVAL_MS` | Optional, default 5000 | Worker-only | Worker |
+| `TEST_DATABASE_URL` | Local: same server as `DB_URL`, database `clothseeker_test` | Tests only | `pnpm test:integration` |
+| `SEED_DEMO_PASSWORD` | You (default `clothseeker-demo`) | Local only | `pnpm db:seed`, E2E |
 
 All variables are validated with Zod in `lib/env/schema.ts`. A missing or invalid variable fails fast, and the error names the variable without printing its value. Only `NEXT_PUBLIC_*` variables can reach the browser. `lib/env/server.ts` imports `server-only`, so importing it from a Client Component breaks the build.
 
 ## 5. Verify connections
 
 ```bash
-pnpm db:check        # PASS/FAIL for env, Postgres, each bucket (and that it is private)
+pnpm db:check        # PASS/FAIL for env, Postgres, row level security, each bucket (and that it is private)
 pnpm worker:check    # worker connects, logs worker.db_connected, exits 0
 ```
 
@@ -73,7 +75,11 @@ pnpm db:migrate
 pnpm db:seed
 ```
 
-Both are no-ops until Phase 1 adds the domain models and seed data.
+The seed is idempotent, and it resets demo passwords and catalog stock. It creates:
+- `admin@clothseeker.test` (admin) and `ava@`, `noah@`, `mia@example.test` (customers), all with the password from `SEED_DEMO_PASSWORD`
+- 5 categories, 15 dresses (plus 1 hidden draft) and 5 customizable templates
+
+It refuses to run against a non-local database unless you pass `-- --allow-remote`.
 
 ## 7. Run
 
@@ -91,6 +97,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm exec playwright install chromium   # once
+pnpm test:integration                   # real Postgres, separate clothseeker_test database
 pnpm test:e2e                           # starts `pnpm dev` itself, or reuses a server on :3000
 pnpm build
 ```
@@ -106,4 +113,6 @@ pnpm build
 | `db:check` FAIL bucket … missing | Buckets are created on start: `pnpm db:stop && pnpm db:start` |
 | Port 554xx already in use | Another stack with the same ports is running. Change the ports in `supabase/config.toml`, then `pnpm env:local --force` |
 | `Cannot find module '@/lib/generated/prisma/client'` | `pnpm db:generate` |
+| Integration tests: `TEST_DATABASE_URL is missing` | `pnpm env:local --force`, or add it from `.env.example` |
+| Demo sign-in fails | `pnpm db:seed` (resets demo passwords) |
 | Playwright: browser not found | `pnpm exec playwright install chromium` |

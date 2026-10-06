@@ -1,6 +1,9 @@
 import { PhasePlaceholder } from "@/components/phase-placeholder";
+import { requireAdmin } from "@/lib/auth/guards";
 
-export default function AdminHomePage() {
+export default async function AdminHomePage() {
+  // Server-side guard on every admin page and action; non-admins get a 404.
+  await requireAdmin();
   return (
     <PhasePlaceholder
       title="ClothSeeker admin"

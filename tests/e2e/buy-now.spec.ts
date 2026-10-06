@@ -1,0 +1,60 @@
+import { expect, test, type Page } from "@playwright/test";
+
+// @supabase — needs the local Supabase stack with seed data (`pnpm db:seed`). Skipped in CI.
+
+const password = process.env.SEED_DEMO_PASSWORD ?? "clothseeker-demo";
+
+async function signIn(page: Page, email: string, next = "/") {
+  await page.goto(`/login?next=${encodeURIComponent(next)}`);
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+}
+
+test.describe("@supabase buy now journey", () => {
+  test("customer filters, buys now and sees the paid order", async ({ page }) => {
+    await signIn(page, "ava@example.test", "/products");
+    await expect(page).toHaveURL(/\/products$/);
+
+    // Filter: casual dresses in size M.
+    await page.getByLabel("Category").selectOption("casual");
+    await page.getByLabel("Size").selectOption("M");
+    await page.getByRole("button", { name: "Apply filters" }).click();
+    await expect(page).toHaveURL(/category=casual/);
+    await expect(page.getByRole("heading", { name: "Casual dresses" })).toBeVisible();
+
+    await page.getByTestId("product-card").first().click();
+    await expect(page).toHaveURL(/\/products\/[a-z0-9-]+$/);
+
+    // Pick the first in-stock size for the default color.
+    const sizeButtons = page.getByRole("group", { name: "Size" }).getByRole("button").and(page.locator(":enabled"));
+    await sizeButtons.first().click();
+    const shownPrice = (await page.getByTestId("price").textContent())?.trim() ?? "";
+    expect(shownPrice).toMatch(/^৳[\d,]+$/);
+
+    await page.getByRole("button", { name: "Buy now" }).click();
+    await expect(page).toHaveURL(/\/cart$/);
+    await expect(page.getByTestId("cart-lines").getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByTestId("cart-total")).toHaveText(shownPrice);
+
+    await page.getByRole("button", { name: "Pay now (mock)" }).click();
+    await expect(page).toHaveURL(/\/account\/orders\?placed=CS-/);
+    await expect(page.getByRole("status")).toContainText("is confirmed");
+    await expect(page.getByTestId("order-list")).toContainText("Paid");
+  });
+
+  test("another customer cannot see Ava's orders and gets 404 on admin", async ({ page }) => {
+    await signIn(page, "noah@example.test", "/account/orders");
+    await expect(page).toHaveURL(/\/account\/orders$/);
+    await expect(page.getByText("You haven't placed any orders yet.")).toBeVisible();
+
+    const response = await page.goto("/admin");
+    expect(response?.status()).toBe(404);
+  });
+
+  test("admin signs in to the admin area", async ({ page }) => {
+    await signIn(page, "admin@clothseeker.test", "/admin");
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByTestId("phase-placeholder")).toContainText("ClothSeeker admin");
+  });
+});

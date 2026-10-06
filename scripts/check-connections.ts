@@ -26,6 +26,13 @@ async function main(): Promise<number> {
   try {
     await prisma.$queryRaw`SELECT 1`;
     report("postgres (DATABASE_URL)", true);
+
+    // Every public table must have RLS on, or Supabase's REST API exposes it to the publishable key.
+    const unprotected = await prisma.$queryRaw<{ tablename: string }[]>`
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND NOT rowsecurity ORDER BY tablename`;
+    const rlsOk = unprotected.length === 0;
+    ok &&= rlsOk;
+    report("row level security on all public tables", rlsOk, `missing on: ${unprotected.map((t) => t.tablename).join(", ")}`);
   } catch (error) {
     ok = false;
     report("postgres (DATABASE_URL)", false, error instanceof Error ? error.name : "unknown error");

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 0. This document describes the target shape and marks what exists today.
+Status: Phase 1. This document describes the target shape and marks what exists today.
 
 ## Overview
 
@@ -29,6 +29,9 @@ Status: Phase 0. This document describes the target shape and marks what exists 
 2. Pages, server actions and route handlers authorize on the server: authentication, role (`customer` or `admin`), and, for customers, that the record belongs to them (`lib/auth/`, Phase 1). Hiding something in the UI is never the access control.
 3. Input is validated with Zod before any database or storage call.
 4. Data access goes through Prisma (`lib/db`). Multi-record state changes run in transactions.
+5. Server actions are thin: authenticate → call a `lib/shop` service → map `ShopError` to a friendly message → redirect or revalidate. Business rules live only in the services.
+
+Supabase's REST API is never used for data: every table has RLS enabled with no policies, so only server-side Prisma can access it (see [data-model.md](data-model.md#security-row-level-security)).
 
 ## Module map
 
@@ -38,12 +41,15 @@ Status: Phase 0. This document describes the target shape and marks what exists 
 | `lib/db/` | `client.ts`: Prisma factory (shared with the worker). `index.ts`: app singleton (server-only) | Phase 0 |
 | `lib/supabase/` | Browser, server (cookie) and admin (secret key) clients, plus the proxy session refresh | Phase 0 |
 | `lib/storage/` | Bucket constants, server-generated object keys, signed read URLs | Phase 0 |
-| `lib/auth/` | Session lookup, roles, permission/ownership guards | Phase 1 |
+| `lib/auth/` | `session.ts` (current user, role from DB), `guards.ts` (`requireUser`, `requireAdmin`), `policy.ts` (pure rules), `safe-next.ts` | Phase 1 |
+| `lib/shop/` | Domain services `(db, actor, input)`: `catalog.ts`, `cart.ts`, `checkout.ts`. No Next.js imports, so they're tested against a real DB | Phase 1 |
+| `lib/payments/` | `PaymentProvider` interface + `MockPaymentProvider` | Phase 1 (mock), Phase 4 (full) |
+| `lib/money.ts`, `lib/catalog/` | BDT minor units and formatting; brand size chart | Phase 1 |
 | `lib/ai/` | `PlannerProvider`, `ImageProvider`, `TryOnProvider` interfaces and implementations | Phase 6–7 |
 | `lib/renderer/` | DesignSpec → preview PNG, flat garment, 300 DPI print files | Phase 3 |
-| `types/` | Shared Zod schemas and types (`DesignSpec`, …) | Phase 3 |
+| `types/` | Shared Zod schemas: `template.ts` (Phase 1), `DesignSpec` (Phase 3) | Phase 1+ |
 | `worker/` | Job loop, structured logging | Phase 0 (idle loop), Phase 6 (jobs) |
-| `prisma/` | Schema, migrations, seed | Phase 0 (connection only), Phase 1 (models) |
+| `prisma/` | Schema, migrations (incl. RLS lockdown), idempotent seed | Phase 1 |
 | `supabase/` | Local stack config, buckets; RLS and storage policies later | Phase 0 |
 
 ## Key decisions

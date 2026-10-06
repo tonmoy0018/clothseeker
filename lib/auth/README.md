@@ -1,3 +1,8 @@
 # lib/auth
 
-Session lookup, roles (`customer`, `admin`) and reusable server-side guards: admin-only checks, and customer checks that a record belongs to the signed-in user. **Phase 1.**
+- `session.ts`: `getCurrentUser()`. Reads Supabase claims, then loads the role from the `users` table (never from the JWT or the client).
+- `guards.ts`: `requireUser(next)` redirects to `/login`; `requireAdmin()` returns a 404 for non-admins.
+- `policy.ts`: pure rules (`assertCustomer`, `assertOwns`, `assertAdmin`) used by domain services.
+- `safe-next.ts`: sanitizes `?next=` redirects.
+
+See [docs/developers/permissions-matrix.md](../../docs/developers/permissions-matrix.md).

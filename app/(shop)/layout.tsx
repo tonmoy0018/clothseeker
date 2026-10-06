@@ -1,15 +1,13 @@
-import { SurfaceHeader } from "@/components/surface-header";
-
-const SHOP_LINKS = [
-  { href: "/cart", label: "Cart" },
-  { href: "/account/orders", label: "My orders" },
-] as const;
+import { ShopHeader } from "@/components/shop/shop-header";
 
 export default function ShopLayout({ children }: LayoutProps<"/">) {
   return (
     <>
-      <SurfaceHeader surface="Shop" links={SHOP_LINKS} />
-      <main className="flex-1 px-4 py-10">{children}</main>
+      <ShopHeader />
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+      <footer className="border-t py-6 text-center text-xs text-muted-foreground">
+        ClothSeeker — academic prototype. Payments are simulated; no real charges are made.
+      </footer>
     </>
   );
 }

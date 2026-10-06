@@ -15,6 +15,12 @@ const statusSchema = z.object({
 
 const TARGET = ".env.local";
 
+function testDatabaseUrl(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  url.pathname = "/clothseeker_test";
+  return url.toString();
+}
+
 function main(): number {
   if (existsSync(TARGET) && !process.argv.includes("--force")) {
     console.error(`${TARGET} already exists. Re-run with --force to overwrite it.`);
@@ -44,6 +50,10 @@ function main(): number {
     `SUPABASE_SECRET_KEY=${s.SECRET_KEY}`,
     `DATABASE_URL=${s.DB_URL}`,
     `DIRECT_URL=${s.DB_URL}`,
+    "# Separate database for integration tests (created automatically by the test setup).",
+    `TEST_DATABASE_URL=${testDatabaseUrl(s.DB_URL)}`,
+    "# Password for the seeded demo accounts (local only).",
+    "SEED_DEMO_PASSWORD=clothseeker-demo",
     "",
   ];
   writeFileSync(TARGET, lines.join("\n"), { mode: 0o600 });

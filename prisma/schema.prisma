@@ -1,6 +1,7 @@
-// ClothSeeker database schema.
-// Phase 0: connection only. Domain models (User, Product, Variant, Order, AIJob, ...) arrive in Phase 1.
+// ClothSeeker database schema (single brand — no sellers or stores).
 // The connection URL lives in prisma.config.ts (Prisma 7), not here.
+// Every table has RLS enabled with no policies (see migrations): only server-side Prisma can access data.
+// Money is stored as integer minor units (poisha); the store currency is BDT (lib/money.ts).
 
 generator client {
   provider = "prisma-client"
@@ -9,4 +10,501 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+/// One row per Supabase auth user. `id` equals `auth.users.id`.
+model User {
+  id        String   @id @db.Uuid
+  email     String   @unique
+  name      String?
+  role      Role     @default(CUSTOMER)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cart          Cart?
+  orders        Order[]
+  designs       Design[]
+  aiRounds      AIRound[]
+  aiJobs        AIJob[]
+  tryOnPhotos   TryOnPhoto[]
+  quoteRequests QuoteRequest[]
+  reviews       Review[]
+  disputes      Dispute[]
+  flaggedItems  FlaggedItem[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+// ─── Catalog ──────────────────────────────────────────────────────────────────
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum Size {
+  XS
+  S
+  M
+  L
+  XL
+  XXL
+}
+
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String        @id @default(uuid()) @db.Uuid
+  slug        String        @unique
+  name        String
+  description String
+  categoryId  String        @map("category_id") @db.Uuid
+  status      ProductStatus @default(DRAFT)
+  /// Storage keys in the product-media bucket (uploads arrive in Phase 2).
+  imageKeys   String[]      @default([]) @map("image_keys")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  category Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  variants Variant[]
+  template CustomizationTemplate?
+  designs  Design[]
+  reviews  Review[]
+
+  @@index([status, categoryId])
+  @@map("products")
+}
+
+model Variant {
+  id         String   @id @default(uuid()) @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  sku        String   @unique
+  size       Size
+  colorName  String   @map("color_name")
+  colorHex   String   @map("color_hex")
+  priceMinor Int      @map("price_minor")
+  stock      Int      @default(0)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([productId, size, colorName])
+  @@index([productId, isActive])
+  @@map("variants")
+}
+
+/// Customization rules for one product. `config` is validated by types/template.ts.
+model CustomizationTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @unique @map("product_id") @db.Uuid
+  version   Int      @default(1)
+  config    Json
+  aiEnabled Boolean  @default(false) @map("ai_enabled")
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  designs Design[]
+
+  @@map("customization_templates")
+}
+
+// ─── Designs and AI ───────────────────────────────────────────────────────────
+
+enum DesignStartedFrom {
+  SHOP
+  PHOTO
+  DESCRIPTION
+}
+
+enum DesignStatus {
+  DRAFT
+  SAVED
+  ORDERED
+}
+
+model Design {
+  id                String            @id @default(uuid()) @db.Uuid
+  customerId        String            @map("customer_id") @db.Uuid
+  productId         String            @map("product_id") @db.Uuid
+  templateId        String?           @map("template_id") @db.Uuid
+  templateVersion   Int?              @map("template_version")
+  /// Versioned DesignSpec (types/design-spec.ts, Phase 3). Never trusted from the client.
+  spec              Json
+  startedFrom       DesignStartedFrom @default(SHOP) @map("started_from")
+  referencePhotoKey String?           @map("reference_photo_key")
+  previewKey        String?           @map("preview_key")
+  status            DesignStatus      @default(DRAFT)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  customer      User                   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product       Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
+  template      CustomizationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  aiRounds      AIRound[]
+  quoteRequests QuoteRequest[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+
+  @@index([customerId, updatedAt])
+  @@map("designs")
+}
+
+model AIRound {
+  id             String   @id @default(uuid()) @db.Uuid
+  designId       String   @map("design_id") @db.Uuid
+  customerId     String   @map("customer_id") @db.Uuid
+  instruction    String
+  attachmentKeys String[] @default([]) @map("attachment_keys")
+  /// Storage keys of the generated options (4 per round).
+  optionKeys     String[] @default([]) @map("option_keys")
+  chosenIndex    Int?     @map("chosen_index")
+  inputHash      String   @map("input_hash")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  design   Design @relation(fields: [designId], references: [id], onDelete: Cascade)
+  customer User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([designId, createdAt])
+  @@map("ai_rounds")
+}
+
+enum AIJobType {
+  DESIGN_ROUND
+  DRESS_MATCH
+  TRY_ON
+}
+
+enum AIJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+/// Postgres-backed job queue processed by the worker (Phase 6+).
+model AIJob {
+  id          String      @id @default(uuid()) @db.Uuid
+  type        AIJobType
+  status      AIJobStatus @default(QUEUED)
+  customerId  String      @map("customer_id") @db.Uuid
+  payload     Json
+  result      Json?
+  error       String?
+  attempts    Int         @default(0)
+  maxAttempts Int         @default(3) @map("max_attempts")
+  inputHash   String      @map("input_hash")
+  runAfter    DateTime    @default(now()) @map("run_after")
+  lockedAt    DateTime?   @map("locked_at")
+  lockedBy    String?     @map("locked_by")
+  startedAt   DateTime?   @map("started_at")
+  finishedAt  DateTime?   @map("finished_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([customerId, createdAt])
+  @@index([inputHash])
+  @@map("ai_jobs")
+}
+
+model TryOnPhoto {
+  id         String    @id @default(uuid()) @db.Uuid
+  customerId String    @map("customer_id") @db.Uuid
+  storageKey String    @map("storage_key")
+  consentAt  DateTime  @map("consent_at")
+  saved      Boolean   @default(false)
+  deletedAt  DateTime? @map("deleted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([saved, createdAt])
+  @@index([customerId])
+  @@map("try_on_photos")
+}
+
+enum QuoteStatus {
+  REQUESTED
+  QUOTED
+  DECLINED
+  ACCEPTED
+  EXPIRED
+}
+
+model QuoteRequest {
+  id           String      @id @default(uuid()) @db.Uuid
+  customerId   String      @map("customer_id") @db.Uuid
+  designId     String      @map("design_id") @db.Uuid
+  notes        String      @default("")
+  status       QuoteStatus @default(REQUESTED)
+  priceMinor   Int?        @map("price_minor")
+  responseNote String?     @map("response_note")
+  respondBy    DateTime    @map("respond_by")
+  respondedAt  DateTime?   @map("responded_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  customer   User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  design     Design      @relation(fields: [designId], references: [id], onDelete: Restrict)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([status, respondBy])
+  @@index([customerId, createdAt])
+  @@map("quote_requests")
+}
+
+// ─── Cart and orders ──────────────────────────────────────────────────────────
+
+enum ItemKind {
+  READY_MADE
+  CUSTOM_DESIGN
+  QUOTE
+}
+
+model Cart {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @unique @map("customer_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  customer User       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items    CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  cartId         String   @map("cart_id") @db.Uuid
+  kind           ItemKind
+  variantId      String?  @map("variant_id") @db.Uuid
+  designId       String?  @map("design_id") @db.Uuid
+  quoteRequestId String?  @map("quote_request_id") @db.Uuid
+  quantity       Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  cart         Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant      Variant?      @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  design       Design?       @relation(fields: [designId], references: [id], onDelete: Cascade)
+  quoteRequest QuoteRequest? @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+  @@map("cart_items")
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+model Order {
+  id             String      @id @default(uuid()) @db.Uuid
+  number         String      @unique
+  customerId     String      @map("customer_id") @db.Uuid
+  status         OrderStatus @default(PENDING_PAYMENT)
+  totalMinor     Int         @map("total_minor")
+  currency       String      @default("BDT")
+  /// Client retries with the same key return the existing order instead of creating a duplicate.
+  idempotencyKey String      @unique @map("idempotency_key")
+  paymentRef     String?     @unique @map("payment_ref")
+  paidAt         DateTime?   @map("paid_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  customer User        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items    OrderItem[]
+
+  @@index([customerId, createdAt])
+  @@map("orders")
+}
+
+/// Fulfilment lifecycle of one order line. Quote states live on QuoteRequest.
+/// Legal transitions are enforced in one domain module (Phase 4).
+enum OrderItemStatus {
+  PENDING_PAYMENT
+  PAID
+  AWAITING_ACCEPTANCE
+  ACCEPTED
+  IN_PRODUCTION
+  QC_SUBMITTED
+  READY_TO_SHIP
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+  DISPUTED
+}
+
+model OrderItem {
+  id             String          @id @default(uuid()) @db.Uuid
+  orderId        String          @map("order_id") @db.Uuid
+  kind           ItemKind
+  variantId      String?         @map("variant_id") @db.Uuid
+  designId       String?         @map("design_id") @db.Uuid
+  quoteRequestId String?         @map("quote_request_id") @db.Uuid
+  // Snapshots taken at payment time so later catalog edits never change a past order.
+  productName    String          @map("product_name")
+  size           Size
+  colorName      String?         @map("color_name")
+  unitPriceMinor Int             @map("unit_price_minor")
+  quantity       Int
+  designSpec     Json?           @map("design_spec")
+  status         OrderItemStatus @default(PENDING_PAYMENT)
+  acceptBy       DateTime?       @map("accept_by")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant      Variant?      @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  design       Design?       @relation(fields: [designId], references: [id], onDelete: SetNull)
+  quoteRequest QuoteRequest? @relation(fields: [quoteRequestId], references: [id], onDelete: SetNull)
+  shipment     Shipment?
+  review       Review?
+  disputes     Dispute[]
+
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("order_items")
+}
+
+enum ShipmentStatus {
+  LABEL_CREATED
+  IN_TRANSIT
+  DELIVERED
+}
+
+model Shipment {
+  id             String         @id @default(uuid()) @db.Uuid
+  orderItemId    String         @unique @map("order_item_id") @db.Uuid
+  carrier        String
+  trackingNumber String?        @map("tracking_number")
+  status         ShipmentStatus @default(LABEL_CREATED)
+  shippedAt      DateTime?      @map("shipped_at")
+  deliveredAt    DateTime?      @map("delivered_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@map("shipments")
+}
+
+model Review {
+  id          String   @id @default(uuid()) @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  orderItemId String   @unique @map("order_item_id") @db.Uuid
+  rating      Int
+  body        String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  customer  User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt])
+  @@map("reviews")
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED_REFUND
+  RESOLVED_REJECTED
+}
+
+model Dispute {
+  id          String        @id @default(uuid()) @db.Uuid
+  orderItemId String        @map("order_item_id") @db.Uuid
+  customerId  String        @map("customer_id") @db.Uuid
+  reason      String
+  status      DisputeStatus @default(OPEN)
+  resolution  String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  customer  User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("disputes")
+}
+
+// ─── Moderation and audit ─────────────────────────────────────────────────────
+
+enum FlagKind {
+  BRAND_LOGO
+}
+
+enum FlagStatus {
+  OPEN
+  CONFIRMED
+  DISMISSED
+}
+
+model FlaggedItem {
+  id         String     @id @default(uuid()) @db.Uuid
+  kind       FlagKind
+  status     FlagStatus @default(OPEN)
+  customerId String?    @map("customer_id") @db.Uuid
+  aiJobId    String?    @map("ai_job_id") @db.Uuid
+  storageKey String?    @map("storage_key")
+  reason     String
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  customer User? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("flagged_items")
+}
+
+/// Append-only record of sensitive actions. Never store secrets or personal data in metadata.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  targetType String   @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
 }

@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 0 complete (2026-10-06). Next: Phase 1, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 1 complete (2026-10-06). Next: Phase 2, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -160,6 +160,17 @@ docs/developers/
 - Local Supabase: `project_id = "clothseeker-p1"` on ports 55420–55429 (API 55421, DB 55422, Studio 55423), so it runs alongside another local project that uses `clothseeker` on the default ports. **Never stop, reset or migrate the `clothseeker` stack; it belongs to a different project.**
 - Logging: structured JSON with ids, counts and error names only. No personal data, prompts, image data or connection strings.
 - Lint forbids inline `eslint-disable` (`noInlineConfig`). Fix the code instead.
+
+## Implementation conventions (established in Phase 1)
+
+- Currency is **BDT**. Money is an `Int` in minor units (poisha) in `*Minor` fields; format with `formatBDT()` in `lib/money.ts`.
+- **RLS:** every migration that creates a table must also run `ALTER TABLE … ENABLE ROW LEVEL SECURITY` (no policies). `pnpm db:check` and `tests/integration/rls.test.ts` enforce this.
+- **Services:** business rules live in `lib/<area>/*.ts` as `fn(db, actor, rawInput)`. They parse input with Zod (`rawInput: unknown` when it comes from forms), check the role and ownership with `lib/auth/policy.ts`, and throw `ShopError` for expected failures. Server actions stay thin: guard, call the service, map the error, redirect.
+- **Ownership:** when another user's record is targeted, scope the query by owner id and answer "not found", never "forbidden".
+- **Auth:** the role always comes from the `users` table (`getCurrentUser`). Pages use `requireUser`/`requireAdmin` from `lib/auth/guards.ts`. Every admin page and action calls `requireAdmin()`; the layout alone is not a guard.
+- **Tests:** unit tests in `tests/unit`. Integration tests in `tests/integration`, which use the `clothseeker_test` database (the name must end in `_test`) and the `resetDatabaseBeforeEach()`, `createUser()` and `createProduct()` helpers. E2E journeys that need sign-in are tagged `@supabase` and are excluded in CI.
+- **Seed:** `prisma/seed.ts` is idempotent and refuses remote databases. The demo password is `SEED_DEMO_PASSWORD`.
+- The `CustomizationTemplate.config` schema is `types/template.ts` (`schemaVersion` 1).
 
 ## Mapping the original build guide
 
