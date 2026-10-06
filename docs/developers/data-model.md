@@ -49,9 +49,10 @@ Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`) live on 
 | `schemaVersion` | Shape |
 |---|---|
 | 1 (Phase 1 seed) | regions, placement areas in cm, style options, colors |
-| 2 (current) | adds `garmentImages` (front/back keys); a `rect` (0–1 fractions) on each placement area; `referenceImageKey` on style options; `allowedPatterns` / `allowedFonts` (ids from `lib/catalog/patterns.ts` / `fonts.ts`); `addOns` prices |
+| 3 (current) | adds `masks` (front/back keys) on each region and `allowedDecorations`; a recolorable region needs a mask to go live |
+| 2 | adds `garmentImages` (front/back keys); a `rect` (0–1 fractions) on each placement area; `referenceImageKey` on style options; `allowedPatterns` / `allowedFonts` (ids from `lib/catalog/patterns.ts` / `fonts.ts`); `addOns` prices |
 
-`parseTemplateConfig()` upgrades v1 to v2 when a row is read, so no data migration is needed. Saving always writes v2. Image keys in a template must start with the product's own id.
+`parseTemplateConfig()` upgrades v1 → v2 → v3 when a row is read, so no data migration is needed. Saving always writes v2. Image keys in a template must start with the product's own id.
 
 ## Audit log
 

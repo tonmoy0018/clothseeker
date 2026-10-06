@@ -6,6 +6,7 @@ import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DECORATIONS } from "@/lib/catalog/decorations";
 import { FONTS } from "@/lib/catalog/fonts";
 import { PATTERNS } from "@/lib/catalog/patterns";
 import { MINOR_PER_MAJOR } from "@/lib/money";
@@ -272,7 +273,10 @@ export function TemplateEditor(props: TemplateEditorProps) {
         </div>
       </Section>
 
-      <Section title="Recolorable regions" description="Parts of the dress customers can color or pattern separately.">
+      <Section
+        title="Recolorable regions"
+        description="Parts of the dress customers can color or pattern separately. Each needs a mask: a black image the same size as the garment image, painted white where the region is."
+      >
         <div className="flex flex-col gap-2">
           {config.regions.map((region, index) => (
             <div key={region.id} className="flex flex-wrap items-end gap-3 text-sm">
@@ -285,13 +289,57 @@ export function TemplateEditor(props: TemplateEditorProps) {
               <Button size="sm" variant="ghost" disabled={config.regions.length <= 1} onClick={() => update((c) => ({ ...c, regions: c.regions.filter((_, i) => i !== index) }))}>
                 Remove
               </Button>
+              <div className="flex w-full flex-wrap items-center gap-3 pb-2">
+                {(["front", "back"] as const).map((maskSide) => {
+                  const maskKey = region.masks[maskSide];
+                  const maskUrl = maskKey ? imageUrls[maskKey] : undefined;
+                  return (
+                    <div key={maskSide} className="flex items-center gap-2">
+                      {maskUrl ? (
+                        <span className="relative h-12 w-9 overflow-hidden rounded border bg-black">
+                          <Image src={maskUrl} alt={`${region.label} ${maskSide} mask`} fill unoptimized className="object-contain" />
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No {maskSide} mask</span>
+                      )}
+                      <FileButton
+                        size="xs"
+                        label={maskKey ? `Replace ${maskSide} mask` : `Upload ${maskSide} mask`}
+                        onFile={async (file) => {
+                          const key = await upload(`mask:${maskSide}:${region.id}`, file);
+                          if (key) {
+                            update((c) => ({
+                              ...c,
+                              regions: c.regions.map((r, i) => (i === index ? { ...r, masks: { ...r.masks, [maskSide]: key } } : r)),
+                            }));
+                          }
+                        }}
+                      />
+                      {maskKey && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() =>
+                            update((c) => ({
+                              ...c,
+                              regions: c.regions.map((r, i) => (i === index ? { ...r, masks: { ...r.masks, [maskSide]: undefined } } : r)),
+                            }))
+                          }
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ))}
           {config.regions.length < 12 && (
             <AddByName
               placeholder="e.g. Waistband"
               buttonLabel="Add region"
-              onAdd={(name) => update((c) => ({ ...c, regions: [...c.regions, { id: uniqueSlug(name, allIds), label: name, recolorable: true }] }))}
+              onAdd={(name) => update((c) => ({ ...c, regions: [...c.regions, { id: uniqueSlug(name, allIds), label: name, recolorable: true, masks: {} }] }))}
             />
           )}
         </div>
@@ -388,6 +436,13 @@ export function TemplateEditor(props: TemplateEditorProps) {
             options={PATTERNS.map((p) => ({ id: p.id, label: p.label }))}
             checked={config.allowedPatterns}
             onChange={(ids) => update((c) => ({ ...c, allowedPatterns: PATTERNS.map((p) => p.id).filter((id) => ids.includes(id)) }))}
+          />
+        </Section>
+        <Section title="Decorations" description="Decorations customers may place in placement areas.">
+          <CheckboxList
+            options={DECORATIONS.map((d) => ({ id: d.id, label: d.label }))}
+            checked={config.allowedDecorations}
+            onChange={(ids) => update((c) => ({ ...c, allowedDecorations: DECORATIONS.map((d) => d.id).filter((id) => ids.includes(id)) }))}
           />
         </Section>
         <Section title="Fonts" description="Fonts available for text layers.">

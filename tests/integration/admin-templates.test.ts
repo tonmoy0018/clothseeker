@@ -89,10 +89,21 @@ describe("templates", () => {
     expect(front.key.startsWith(`${product.id}/template/`)).toBe(true);
     const loaded = await getTemplateForEdit(db, storage, admin, product.id);
     if (!loaded) throw new Error("template missing");
+    const withImages = { ...loaded.config, garmentImages: { front: front.key, back: back.key } };
+    await saveTemplate(db, storage, admin, { productId: product.id, expectedVersion: 1, config: withImages });
+
+    // Recolorable regions still have no masks: activation is refused.
+    await expectAdminError(setTemplateState(db, admin, { productId: product.id, isActive: true, aiEnabled: true }), "BLOCKED");
+
+    // Masks are stored as lossless grayscale PNG under the product's template prefix.
+    const mask = await uploadTemplateImage(db, storage, admin, { productId: product.id, slot: "mask:front:bodice" }, await garment());
+    expect(mask.key).toMatch(new RegExp(`^${product.id}/template/[0-9a-f-]+\\.png$`));
+    const maskMeta = await sharp(await storage.get(BUCKETS.productMedia, mask.key) ?? Buffer.alloc(0)).metadata();
+    expect([maskMeta.format, maskMeta.channels]).toEqual(["png", 1]);
     await saveTemplate(db, storage, admin, {
       productId: product.id,
-      expectedVersion: 1,
-      config: { ...loaded.config, garmentImages: { front: front.key, back: back.key } },
+      expectedVersion: 2,
+      config: { ...withImages, regions: [{ id: "bodice", label: "Bodice", recolorable: true, masks: { front: mask.key } }] },
     });
 
     // Draft product + inactive template: invisible to customers.
@@ -155,6 +166,6 @@ describe("templates", () => {
       },
     });
     const loaded = await getTemplateForEdit(db, storage, admin, product.id);
-    expect(loaded?.config.schemaVersion).toBe(2);
+    expect(loaded?.config.schemaVersion).toBe(3);
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DECORATION_IDS } from "@/lib/catalog/decorations";
 import { FONT_IDS } from "@/lib/catalog/fonts";
 import { PATTERN_IDS } from "@/lib/catalog/patterns";
 import { isSafeObjectKey } from "@/lib/storage/object-key";
@@ -10,7 +11,7 @@ import { isSafeObjectKey } from "@/lib/storage/object-key";
 // `parseTemplateConfig()`, which upgrades older versions to the current one.
 // To change the shape: add a new version schema, an upgrade step, and bump TEMPLATE_CONFIG_VERSION.
 
-export const TEMPLATE_CONFIG_VERSION = 2;
+export const TEMPLATE_CONFIG_VERSION = 3;
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "Use lowercase letters, numbers and hyphens");
 const label = z.string().trim().min(1, "Required").max(40);
@@ -45,9 +46,17 @@ export const templateConfigV1Schema = z.object({
   allowedColors: z.array(z.object({ name: z.string().min(1).max(30), hex: hexColor })).min(1).max(40),
 });
 
-// ─── v2 (current) ─────────────────────────────────────────────────────────────
+// ─── v3 (current) ─────────────────────────────────────────────────────────────
+// v2 → v3: regions gained `masks` (where each region is on the garment image) and the
+// template gained `allowedDecorations`.
 
-export const templateRegionSchema = z.object({ id, label, recolorable: z.boolean() });
+export const templateRegionSchema = z.object({
+  id,
+  label,
+  recolorable: z.boolean(),
+  /** Grayscale mask images aligned with the garment images: white = this region. */
+  masks: z.object({ front: storageKey.optional(), back: storageKey.optional() }),
+});
 
 export const placementRectSchema = z
   .object({ x: fraction, y: fraction, w: fraction.positive(), h: fraction.positive() })
@@ -78,7 +87,7 @@ const styleOptionList = z.array(styleOptionSchema).min(1, "Add at least one opti
 
 export const templateConfigSchema = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     garmentImages: z.object({ front: storageKey.optional(), back: storageKey.optional() }),
     regions: z.array(templateRegionSchema).min(1, "Add at least one region").max(12),
     placementAreas: z.array(placementAreaSchema).max(8),
@@ -93,6 +102,7 @@ export const templateConfigSchema = z
       .max(40),
     allowedPatterns: z.array(z.enum(PATTERN_IDS)).max(PATTERN_IDS.length),
     allowedFonts: z.array(z.enum(FONT_IDS)).max(FONT_IDS.length),
+    allowedDecorations: z.array(z.enum(DECORATION_IDS)).max(DECORATION_IDS.length),
     addOns: z.object({
       textMinor: priceMinor,
       imageMinor: priceMinor,
@@ -118,10 +128,12 @@ export const templateConfigSchema = z
     reportDuplicates(config.allowedColors.map((c) => c.name.toLowerCase()), ["allowedColors"], "color names");
     reportDuplicates(config.allowedPatterns, ["allowedPatterns"], "patterns");
     reportDuplicates(config.allowedFonts, ["allowedFonts"], "fonts");
+    reportDuplicates(config.allowedDecorations, ["allowedDecorations"], "decorations");
   });
 
 export type TemplateConfig = z.infer<typeof templateConfigSchema>;
 export type PlacementArea = z.infer<typeof placementAreaSchema>;
+export type TemplateRegion = z.infer<typeof templateRegionSchema>;
 export type StyleOption = z.infer<typeof styleOptionSchema>;
 
 export const DEFAULT_ADD_ONS: TemplateConfig["addOns"] = {
@@ -159,6 +171,21 @@ function upgradeV1(v1: z.infer<typeof templateConfigV1Schema>): unknown {
   };
 }
 
+/** v2 → v3. Shape is checked loosely here; the final v3 parse validates everything. */
+const templateConfigV2Shape = z.looseObject({
+  schemaVersion: z.literal(2),
+  regions: z.array(z.looseObject({})),
+});
+
+function upgradeV2(v2: z.infer<typeof templateConfigV2Shape>): unknown {
+  return {
+    ...v2,
+    schemaVersion: 3,
+    regions: v2.regions.map((region) => ({ ...region, masks: {} })),
+    allowedDecorations: [...DECORATION_IDS],
+  };
+}
+
 export class TemplateConfigError extends Error {
   override readonly name = "TemplateConfigError";
 }
@@ -169,18 +196,26 @@ export function parseTemplateConfig(raw: unknown): TemplateConfig {
   if (!version.success) {
     throw new TemplateConfigError("Template config has no schemaVersion");
   }
+  const v = version.data.schemaVersion;
+  if (v < 1 || v > TEMPLATE_CONFIG_VERSION) {
+    throw new TemplateConfigError(`Unsupported template schemaVersion ${v}`);
+  }
   let candidate: unknown = raw;
-  if (version.data.schemaVersion === 1) {
-    candidate = upgradeV1(templateConfigV1Schema.parse(raw));
-  } else if (version.data.schemaVersion !== TEMPLATE_CONFIG_VERSION) {
-    throw new TemplateConfigError(`Unsupported template schemaVersion ${version.data.schemaVersion}`);
+  if (v === 1) {
+    candidate = upgradeV1(templateConfigV1Schema.parse(candidate));
+  }
+  if (v <= 2) {
+    candidate = upgradeV2(templateConfigV2Shape.parse(candidate));
   }
   return templateConfigSchema.parse(candidate);
 }
 
-/** Every storage key referenced by a config (garment and style reference images). */
+/** Every storage key referenced by a config (garment images, region masks, style reference images). */
 export function templateImageKeys(config: TemplateConfig): string[] {
   const keys = [config.garmentImages.front, config.garmentImages.back];
+  for (const region of config.regions) {
+    keys.push(region.masks.front, region.masks.back);
+  }
   for (const group of STYLE_GROUPS) {
     for (const option of config.styleOptions[group]) {
       keys.push(option.referenceImageKey);

@@ -1,13 +1,22 @@
 // Curated fonts for customer text layers. All are open-licence Google Fonts so print files can embed them.
+// Files live in public/fonts/<id>.ttf; the browser (@font-face) and the server renderer use the same files.
 
-export const FONTS = [
-  { id: "inter", label: "Inter", family: "Inter", style: "Clean sans-serif" },
-  { id: "montserrat", label: "Montserrat", family: "Montserrat", style: "Geometric sans-serif" },
-  { id: "playfair-display", label: "Playfair Display", family: "Playfair Display", style: "Elegant serif" },
-  { id: "roboto-slab", label: "Roboto Slab", family: "Roboto Slab", style: "Slab serif" },
-  { id: "dancing-script", label: "Dancing Script", family: "Dancing Script", style: "Handwritten script" },
-  { id: "lobster", label: "Lobster", family: "Lobster", style: "Bold display script" },
-] as const;
+export const FONT_IDS = ["inter", "montserrat", "playfair-display", "roboto-slab", "dancing-script", "lobster"] as const;
+export type FontId = (typeof FONT_IDS)[number];
 
-export type FontId = (typeof FONTS)[number]["id"];
-export const FONT_IDS = FONTS.map((f) => f.id) as [FontId, ...FontId[]];
+const FONT_INFO: Record<FontId, { label: string; style: string }> = {
+  inter: { label: "Inter", style: "Clean sans-serif" },
+  montserrat: { label: "Montserrat", style: "Geometric sans-serif" },
+  "playfair-display": { label: "Playfair Display", style: "Elegant serif" },
+  "roboto-slab": { label: "Roboto Slab", style: "Slab serif" },
+  "dancing-script": { label: "Dancing Script", style: "Handwritten script" },
+  lobster: { label: "Lobster", style: "Bold display script" },
+};
+
+/** `family` is the CSS font-family registered via @font-face on the design screen. */
+export const FONTS = FONT_IDS.map((id) => ({ id, ...FONT_INFO[id], family: `cs-${id}` }));
+
+/** Public URL of a font file (also its path under /public). */
+export function fontUrl(id: FontId): string {
+  return `/fonts/${id}.ttf`;
+}

@@ -18,6 +18,11 @@ export class MemoryStorageAdapter implements StorageAdapter {
     this.objects.set(this.id(bucket, key), { data, contentType });
   }
 
+  async get(bucket: BucketName, key: string): Promise<Buffer | null> {
+    assertSafeObjectKey(key);
+    return this.objects.get(this.id(bucket, key))?.data ?? null;
+  }
+
   async remove(bucket: BucketName, keys: readonly string[]): Promise<void> {
     for (const key of keys) {
       this.objects.delete(this.id(bucket, key));

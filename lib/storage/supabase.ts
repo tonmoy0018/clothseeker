@@ -23,6 +23,15 @@ export class SupabaseStorageAdapter implements StorageAdapter {
     }
   }
 
+  async get(bucket: BucketName, key: string): Promise<Buffer | null> {
+    assertSafeObjectKey(key);
+    const { data, error } = await createSupabaseAdminClient().storage.from(bucket).download(key);
+    if (error || !data) {
+      return null;
+    }
+    return Buffer.from(await data.arrayBuffer());
+  }
+
   async remove(bucket: BucketName, keys: readonly string[]): Promise<void> {
     if (keys.length === 0) {
       return;

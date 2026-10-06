@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { activationProblems } from "@/lib/admin/templates";
+import { DECORATION_IDS } from "@/lib/catalog/decorations";
 import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/catalog/default-template";
 import { parseTemplateConfig, TemplateConfigError, templateConfigSchema, templateImageKeys } from "@/types/template";
 
@@ -25,9 +27,11 @@ describe("template config", () => {
     expect(templateConfigSchema.safeParse(DEFAULT_TEMPLATE_CONFIG).success).toBe(true);
   });
 
-  it("upgrades v1 configs to v2 with default rects, fonts and add-ons", () => {
+  it("upgrades v1 configs all the way to v3 with default rects, fonts, add-ons and empty masks", () => {
     const upgraded = parseTemplateConfig(v1);
-    expect(upgraded.schemaVersion).toBe(2);
+    expect(upgraded.schemaVersion).toBe(3);
+    expect(upgraded.regions[0]?.masks).toEqual({});
+    expect(upgraded.allowedDecorations).toEqual([...DECORATION_IDS]);
     expect(upgraded.garmentImages).toEqual({});
     expect(upgraded.placementAreas.map((a) => a.rect)).toEqual([
       { x: 0.4, y: 0.2, w: 0.2, h: 0.14 },
@@ -38,8 +42,24 @@ describe("template config", () => {
   });
 
   it("rejects unknown versions and configs without a version", () => {
-    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 3 })).toThrow(TemplateConfigError);
+    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 4 })).toThrow(TemplateConfigError);
+    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 0 })).toThrow(TemplateConfigError);
     expect(() => parseTemplateConfig({ regions: [] })).toThrow(TemplateConfigError);
+  });
+
+  it("upgrades v2 configs by adding masks and decorations", () => {
+    const { allowedDecorations: _d, ...v2 } = DEFAULT_TEMPLATE_CONFIG;
+    const raw = { ...v2, schemaVersion: 2, regions: v2.regions.map(({ masks: _m, ...r }) => r) };
+    const upgraded = parseTemplateConfig(raw);
+    expect(upgraded.schemaVersion).toBe(3);
+    expect(upgraded.regions.every((r) => JSON.stringify(r.masks) === "{}")).toBe(true);
+  });
+
+  it("requires a mask for every recolorable region before going live", () => {
+    const withImages = { ...DEFAULT_TEMPLATE_CONFIG, garmentImages: { front: KEY, back: KEY } };
+    expect(activationProblems(withImages).join(" ")).toContain("Upload a mask for: Bodice, Sleeves, Skirt, Collar.");
+    const masked = { ...withImages, regions: withImages.regions.map((r) => ({ ...r, masks: { front: KEY } })) };
+    expect(activationProblems(masked)).toEqual([]);
   });
 
   it("rejects placement rectangles outside the garment image", () => {

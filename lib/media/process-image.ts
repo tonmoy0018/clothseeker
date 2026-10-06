@@ -12,12 +12,16 @@ export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_INPUT_EDGE = 8000;
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 
-export type ImagePurpose = "productPhoto" | "garment" | "styleReference";
+export type ImagePurpose = "productPhoto" | "garment" | "styleReference" | "mask" | "designUpload";
 
-const RULES: Record<ImagePurpose, { minEdge: number; maxOutputEdge: number }> = {
-  productPhoto: { minEdge: 600, maxOutputEdge: 2000 },
-  garment: { minEdge: 800, maxOutputEdge: 2000 },
-  styleReference: { minEdge: 300, maxOutputEdge: 1000 },
+const RULES: Record<ImagePurpose, { minEdge: number; maxOutputEdge: number; output: "webp" | "mask-png" }> = {
+  productPhoto: { minEdge: 600, maxOutputEdge: 2000, output: "webp" },
+  garment: { minEdge: 800, maxOutputEdge: 2000, output: "webp" },
+  styleReference: { minEdge: 300, maxOutputEdge: 1000, output: "webp" },
+  // Region masks: single-channel, lossless so edges stay crisp. Resized to the garment at render time.
+  mask: { minEdge: 400, maxOutputEdge: 2000, output: "mask-png" },
+  // Customer images/logos for design layers. WebP keeps transparency (alpha) from PNG uploads.
+  designUpload: { minEdge: 200, maxOutputEdge: 2000, output: "webp" },
 };
 
 export type ImageErrorCode = "EMPTY" | "TOO_LARGE" | "UNSUPPORTED" | "TOO_SMALL" | "DIMENSIONS_TOO_LARGE";
@@ -37,8 +41,8 @@ export type ProcessedImage = {
   data: Buffer;
   width: number;
   height: number;
-  contentType: "image/webp";
-  extension: "webp";
+  contentType: "image/webp" | "image/png";
+  extension: "webp" | "png";
 };
 
 export async function processImage(input: Uint8Array, purpose: ImagePurpose): Promise<ProcessedImage> {
@@ -80,11 +84,21 @@ export async function processImage(input: Uint8Array, purpose: ImagePurpose): Pr
   }
 
   try {
-    const { data, info } = await sharp(input, options)
+    const pipeline = sharp(input, options)
       .rotate() // apply EXIF orientation before the metadata is dropped
-      .resize({ width: rules.maxOutputEdge, height: rules.maxOutputEdge, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 85 })
-      .toBuffer({ resolveWithObject: true });
+      .resize({ width: rules.maxOutputEdge, height: rules.maxOutputEdge, fit: "inside", withoutEnlargement: true });
+    if (rules.output === "mask-png") {
+      // Transparent pixels count as black (outside the region).
+      const { data, info } = await pipeline
+        .flatten({ background: "#000000" })
+        .greyscale()
+        .extractChannel(0)
+        .toColourspace("b-w")
+        .png({ compressionLevel: 9 })
+        .toBuffer({ resolveWithObject: true });
+      return { data, width: info.width, height: info.height, contentType: "image/png", extension: "png" };
+    }
+    const { data, info } = await pipeline.webp({ quality: 88, alphaQuality: 100 }).toBuffer({ resolveWithObject: true });
     return { data, width: info.width, height: info.height, contentType: "image/webp", extension: "webp" };
   } catch {
     throw new ImageValidationError("UNSUPPORTED", "That image couldn't be processed. Try exporting it again as JPEG or PNG.");

@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 2 complete (2026-10-06). Next: Phase 3, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 3a (design core + renderer) complete (2026-10-06). Next: Phase 3b (design screen). Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 

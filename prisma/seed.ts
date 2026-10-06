@@ -11,7 +11,7 @@ import { BUCKETS } from "@/lib/storage/buckets";
 import { buildObjectKey } from "@/lib/storage/object-key";
 import { parseTemplateConfig, templateConfigSchema, type TemplateConfig } from "@/types/template";
 
-import { renderGarment } from "./seed-garments";
+import { renderGarment, renderMask, SEED_REGIONS } from "./seed-garments";
 import {
   SEED_CATEGORIES,
   SEED_PRODUCTS,
@@ -71,31 +71,40 @@ async function seedUsers(db: PrismaClient, supabase: SupabaseClient, password: s
   log("seed.users", { count: SEED_USERS.length });
 }
 
-/** Keeps an existing template's garment images; otherwise renders and uploads fresh ones. */
-async function templateConfigFor(
-  db: PrismaClient,
-  supabase: SupabaseClient,
-  productId: string,
-): Promise<TemplateConfig> {
+async function uploadSeedImage(supabase: SupabaseClient, productId: string, data: Buffer, extension: "webp" | "png"): Promise<string> {
+  const key = buildObjectKey(BUCKETS.productMedia, { ownerId: productId, category: "template", extension });
+  const { error } = await supabase.storage
+    .from(BUCKETS.productMedia)
+    .upload(key, data, { contentType: extension === "png" ? "image/png" : "image/webp", upsert: false });
+  if (error) {
+    throw new Error(`Could not upload seed template image: ${error.name}`);
+  }
+  return key;
+}
+
+/**
+ * Seeded templates: default rules with Straps/Bodice/Skirt regions and generated masks.
+ * Keeps already-uploaded garment images and masks so re-seeding doesn't duplicate files.
+ */
+async function templateConfigFor(db: PrismaClient, supabase: SupabaseClient, productId: string): Promise<TemplateConfig> {
   const existing = await db.customizationTemplate.findUnique({ where: { productId }, select: { config: true } });
-  if (existing) {
-    const current = parseTemplateConfig(existing.config);
-    if (current.garmentImages.front && current.garmentImages.back) {
-      return templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, garmentImages: current.garmentImages });
-    }
-  }
-  const garmentImages: TemplateConfig["garmentImages"] = {};
+  const current = existing ? parseTemplateConfig(existing.config) : null;
+
+  const garmentImages: TemplateConfig["garmentImages"] = { ...current?.garmentImages };
   for (const side of ["front", "back"] as const) {
-    const key = buildObjectKey(BUCKETS.productMedia, { ownerId: productId, category: "template", extension: "webp" });
-    const { error } = await supabase.storage
-      .from(BUCKETS.productMedia)
-      .upload(key, await renderGarment(side), { contentType: "image/webp", upsert: false });
-    if (error) {
-      throw new Error(`Could not upload seed garment image: ${error.name}`);
-    }
-    garmentImages[side] = key;
+    garmentImages[side] ??= await uploadSeedImage(supabase, productId, await renderGarment(side), "webp");
   }
-  return templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, garmentImages });
+
+  const regions: TemplateConfig["regions"] = [];
+  for (const { id, label } of SEED_REGIONS) {
+    const masks = { ...current?.regions.find((r) => r.id === id)?.masks };
+    for (const side of ["front", "back"] as const) {
+      masks[side] ??= await uploadSeedImage(supabase, productId, await renderMask(side, id), "png");
+    }
+    regions.push({ id, label, recolorable: true, masks });
+  }
+
+  return templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, garmentImages, regions });
 }
 
 async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<void> {

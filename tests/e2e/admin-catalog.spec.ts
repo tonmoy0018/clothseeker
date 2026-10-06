@@ -81,6 +81,14 @@ test.describe("@supabase admin catalog", () => {
     await page.getByPlaceholder("e.g. Waistband").fill(region);
     await page.getByRole("button", { name: "Add region" }).click();
     await expect(page.getByText("Unsaved changes")).toBeVisible();
+
+    // The template is live, so a recolorable region without a mask is refused…
+    await page.getByRole("button", { name: "Save template" }).click();
+    await expect(page.getByText(`Upload a mask for: ${region}.`, { exact: false })).toBeVisible();
+
+    // …but saves once it isn't recolorable.
+    const newRow = page.locator("div", { has: page.getByText(`id: ${regionId}`, { exact: true }) }).last();
+    await newRow.getByRole("checkbox", { name: "Recolorable" }).uncheck();
     await page.getByRole("button", { name: "Save template" }).click();
     await expect(page.getByRole("status")).toContainText(/Saved as version \d+/);
 

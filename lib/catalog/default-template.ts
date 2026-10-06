@@ -1,3 +1,4 @@
+import { DECORATION_IDS } from "@/lib/catalog/decorations";
 import { DEFAULT_ADD_ONS, TEMPLATE_CONFIG_VERSION, type TemplateConfig } from "@/types/template";
 
 // Starting point for a new customization template (admin "Enable customization" and the seed).
@@ -7,10 +8,10 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
   schemaVersion: TEMPLATE_CONFIG_VERSION,
   garmentImages: {},
   regions: [
-    { id: "bodice", label: "Bodice", recolorable: true },
-    { id: "sleeves", label: "Sleeves", recolorable: true },
-    { id: "skirt", label: "Skirt", recolorable: true },
-    { id: "collar", label: "Collar", recolorable: true },
+    { id: "bodice", label: "Bodice", recolorable: true, masks: {} },
+    { id: "sleeves", label: "Sleeves", recolorable: true, masks: {} },
+    { id: "skirt", label: "Skirt", recolorable: true, masks: {} },
+    { id: "collar", label: "Collar", recolorable: true, masks: {} },
   ],
   placementAreas: [
     {
@@ -71,5 +72,6 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
   ],
   allowedPatterns: ["stripes", "polka-dots", "gingham", "floral"],
   allowedFonts: ["inter", "playfair-display", "dancing-script", "montserrat"],
+  allowedDecorations: [...DECORATION_IDS],
   addOns: DEFAULT_ADD_ONS,
 };

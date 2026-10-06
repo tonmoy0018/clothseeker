@@ -95,6 +95,10 @@ export function activationProblems(config: TemplateConfig): string[] {
   if (!config.regions.some((r) => r.recolorable)) {
     problems.push("Make at least one region recolorable.");
   }
+  const unmasked = config.regions.filter((r) => r.recolorable && !r.masks.front && !r.masks.back);
+  if (unmasked.length > 0) {
+    problems.push(`Upload a mask for: ${unmasked.map((r) => r.label).join(", ")}.`);
+  }
   if (config.allowedFonts.length === 0 && config.placementAreas.length > 0) {
     problems.push("Allow at least one font for text in the placement areas.");
   }
@@ -211,6 +215,7 @@ export async function setTemplateState(db: PrismaClient, actor: Actor, rawInput:
 const slotSchema = z.union([
   z.enum(["front", "back"]),
   z.string().regex(new RegExp(`^style:(${STYLE_GROUPS.join("|")}):[a-z0-9][a-z0-9-]{0,39}$`)),
+  z.string().regex(/^mask:(front|back):[a-z0-9][a-z0-9-]{0,39}$/),
 ]);
 
 /**
@@ -232,12 +237,13 @@ export async function uploadTemplateImage(
     throw new AdminError("NOT_FOUND", "This dress has no template yet.");
   }
   const isGarment = slot === "front" || slot === "back";
+  const isMask = slot.startsWith("mask:");
   const key = await storeProductImage(
     storage,
     productId,
     bytes,
-    isGarment ? "garment" : "styleReference",
-    isGarment ? "template" : "style",
+    isGarment ? "garment" : isMask ? "mask" : "styleReference",
+    isGarment || isMask ? "template" : "style",
   );
   const urls = await storage.signReadUrls(BUCKETS.productMedia, [key]);
   return { key, url: urls.get(key) ?? null };

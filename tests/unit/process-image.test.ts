@@ -64,4 +64,25 @@ describe("processImage", () => {
     await expectCode(processImage(new Uint8Array(0), "productPhoto"), "EMPTY");
     await expectCode(processImage(new Uint8Array(MAX_UPLOAD_BYTES + 1), "productPhoto"), "TOO_LARGE");
   });
+
+  it("stores masks as single-channel lossless PNG, treating transparency as outside", async () => {
+    const input = await sharp({ create: { width: 600, height: 800, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 0 } } })
+      .composite([{ input: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect x="100" y="100" width="200" height="200" fill="#fff"/></svg>') }])
+      .png()
+      .toBuffer();
+    const out = await processImage(input, "mask");
+    expect(out.contentType).toBe("image/png");
+    expect((await sharp(out.data).metadata()).channels).toBe(1);
+    // .raw() expands greyscale to RGB, so step by the reported channel count.
+    const { data, info } = await sharp(out.data).raw().toBuffer({ resolveWithObject: true });
+    expect(data[0]).toBe(0); // transparent corner → black
+    expect(data[(200 * 600 + 200) * info.channels]).toBe(255); // painted square → white
+  });
+
+  it("keeps transparency for customer design uploads", async () => {
+    const input = await sharp({ create: { width: 300, height: 300, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 0 } } }).png().toBuffer();
+    const out = await processImage(input, "designUpload");
+    expect((await sharp(out.data).metadata()).hasAlpha).toBe(true);
+    await expect(processImage(await solid(150, 150).png().toBuffer(), "designUpload")).rejects.toBeInstanceOf(ImageValidationError);
+  });
 });
