@@ -7,8 +7,8 @@ Status: Phase 0. This document describes the target shape and marks what exists 
 ```
  Browser ──HTTPS──▶ Next.js app (Vercel Hobby)               Mac mini
                     ├─ app/(shop)   customer pages            ┌──────────────────────┐
-                    ├─ app/seller   seller portal             │ worker/ (Node, tsx)  │
-                    ├─ app/admin    admin tool                │  polls ai_jobs       │
+                    ├─ app/admin    team: catalog, orders,    │ worker/ (Node, tsx)  │
+                    │               production, oversight    │  polls ai_jobs       │
                     ├─ app/api      route handlers            │  calls AI providers  │
                     ├─ server actions (mutations)             │  renders, uploads    │
                     └─ proxy.ts     session refresh only      └──────────┬───────────┘
@@ -19,14 +19,14 @@ Status: Phase 0. This document describes the target shape and marks what exists 
                     └────────────────────────────────────────────────────────┘
 ```
 
-- **One Next.js app** serves all three surfaces. There is no separate backend service: reads happen in Server Components, mutations in server actions and route handlers.
+- **One Next.js app** serves both surfaces: the customer shop and the ClothSeeker team's admin tool. ClothSeeker is a single brand, not a marketplace, so there are no sellers or stores. There is no separate backend service: reads happen in Server Components, mutations in server actions and route handlers.
 - **The worker** runs outside the request path, so slow or rate-limited free-tier AI calls never block a user request. The app inserts rows into the Postgres `ai_jobs` table, the worker claims and processes them, and the browser polls job status. There is no Redis.
 - **Supabase** provides Postgres (accessed through Prisma), Auth (session cookies through `@supabase/ssr`) and Storage (private buckets with short-lived signed URLs).
 
 ## Request path
 
 1. `proxy.ts` refreshes the Supabase session cookie (`lib/supabase/proxy.ts`). It does **not** authorize anything.
-2. Pages, server actions and route handlers authorize on the server: authentication, role, and store ownership (`lib/auth/`, Phase 1). Hiding something in the UI is never the access control.
+2. Pages, server actions and route handlers authorize on the server: authentication, role (`customer` or `admin`), and, for customers, that the record belongs to them (`lib/auth/`, Phase 1). Hiding something in the UI is never the access control.
 3. Input is validated with Zod before any database or storage call.
 4. Data access goes through Prisma (`lib/db`). Multi-record state changes run in transactions.
 

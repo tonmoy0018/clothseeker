@@ -2,14 +2,14 @@
 
 export const PHASES = {
   0: "Skeleton",
-  1: "Store + auth + roles + Buy Now",
-  2: "Seller portal",
+  1: "Shop + auth + roles + Buy Now",
+  2: "Admin catalog + template editor",
   3: "Manual design + renderer",
-  4: "Checkout + order splitting",
-  5: "Seller production flow",
+  4: "Checkout + orders",
+  5: "Admin production flow",
   6: "AI design box",
   7: "Try-on + photo/description starts + quotes",
-  8: "Admin",
+  8: "Admin oversight",
   9: "Hardening + deployment",
   10: "Documentation guides",
 } as const;

@@ -1,3 +1,3 @@
 # lib/auth
 
-Session lookup, roles (`customer`, `seller_owner`, `seller_staff`, `admin`) and reusable server-side permission and ownership guards. **Phase 1.**
+Session lookup, roles (`customer`, `admin`) and reusable server-side guards: admin-only checks, and customer checks that a record belongs to the signed-in user. **Phase 1.**

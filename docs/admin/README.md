@@ -1,3 +1,3 @@
-# Admin guides
+# ClothSeeker team guides
 
-Admin checklist. **Phase 10.**
+Guides for the team using `/admin`: catalog, templates, quotes, orders, production, QC and shipping. **Phase 10.**

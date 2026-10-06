@@ -1,6 +1,6 @@
 # ClothSeeker
 
-An academic but realistic custom-clothing marketplace: a customer shop (ready-made dresses, template customization, AI-assisted design, optional virtual try-on, quotes), a seller portal, and an admin tool.
+The online store of ClothSeeker, a single clothing brand (an academic but realistic prototype). Customers shop ready-made dresses, customize ClothSeeker templates by hand or with AI, try designs on virtually, and request quotes for special tailoring. The ClothSeeker team runs the catalog, orders and production from `/admin`.
 
 **Status: Phase 0 (skeleton).** Pages are placeholders that name the phase that will implement them. See [CLAUDE.md](CLAUDE.md) for the full product contract and phase plan.
 
@@ -58,4 +58,4 @@ Local Supabase uses ports **55420–55429** (API 55421, Postgres 55422, Studio h
 
 - [docs/developers/local-setup.md](docs/developers/local-setup.md): setup in detail, environment variables, troubleshooting
 - [docs/developers/architecture.md](docs/developers/architecture.md): how the pieces fit together
-- Customer, seller and admin guides arrive in Phase 10.
+- Customer and team (admin) guides arrive in Phase 10.

@@ -78,7 +78,7 @@ Both are no-ops until Phase 1 adds the domain models and seed data.
 ## 7. Run
 
 ```bash
-pnpm dev       # terminal 1: http://localhost:3000, /seller, /admin
+pnpm dev       # terminal 1: http://localhost:3000 and /admin
 pnpm worker    # terminal 2: background worker (Ctrl+C stops it gracefully)
 ```
 

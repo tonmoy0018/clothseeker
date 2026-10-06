@@ -1,4 +1,4 @@
-# CLAUDE.md — ClothSeeker (Custom Clothing Marketplace)
+# CLAUDE.md — ClothSeeker (single-brand custom clothing store)
 
 This file is the persistent project contract. Read it before every task. If a request conflicts with it, stop and ask.
 
@@ -6,16 +6,19 @@ This file is the persistent project contract. Read it before every task. If a re
 
 ## Project
 
-An academic but realistic online custom-clothing marketplace with three surfaces:
+An academic but realistic online custom-clothing store for **one company: ClothSeeker**. ClothSeeker designs, makes and ships every garment itself. There are no third-party sellers, it is **not a marketplace**, and there is no store/seller concept anywhere in the data model.
 
-1. **Customer / shop** — browse, buy ready-made dresses, customize templates, use AI-assisted design, optionally try on, request quotes for special tailoring, check out, and track orders.
-2. **Seller portal** (`/seller`) — manage store, products and templates; receive orders and quote requests; produce garments; upload QC evidence; ship.
-3. **Admin** (`/admin`) — seller approvals, brand-logo flags, disputes, payouts, AI monitoring, audit logs.
+Two surfaces:
+
+1. **Shop** (`app/(shop)`): customers browse, buy ready-made dresses, customize templates, use AI-assisted design, optionally try on, request quotes for special tailoring, check out, and track orders.
+2. **Admin** (`/admin`): the ClothSeeker team manages the catalog (products, variants, templates), answers quote requests, accepts custom orders, runs production, uploads QC evidence, ships, and handles brand-logo flags, disputes, AI monitoring and the audit log.
+
+This replaces the original marketplace brief (decided 2026-10-06): seller onboarding/approval, multi-seller order splitting, commission, payouts and reported listings are out of scope.
 
 ## Product rules
 
 - Customers may buy a ready-made dress directly by choosing size and color.
-- Customers may customize a seller-provided template.
+- Customers may customize a ClothSeeker template.
 - A design may start from a shop dress, a customer-uploaded dress photo, or a written description.
 - Manual design supports per-part color/pattern, text, permitted images/logos, decorations, and style options: neckline, sleeve length, dress length.
 - AI design accepts text plus up to 3 photos and returns 4 options per round.
@@ -24,7 +27,7 @@ An academic but realistic online custom-clothing marketplace with three surfaces
 - Virtual try-on is optional and runs only after explicit consent.
 - Designs within a supported template can be ordered instantly.
 - Designs started from a reference dress photo that need special tailoring can become quote requests.
-- Sellers answer quote requests with a price within 24 hours.
+- The ClothSeeker team answers quote requests with a price (or a decline) within 24 hours.
 - The only content rule: **clothing brand logos cannot be used.**
 
 ## Stack (free-tier-first — do not change without approval)
@@ -59,8 +62,8 @@ Do not introduce a paid service without explicit approval.
 - Write business logic so it can be unit tested without a browser: pure domain modules, with I/O at the edges.
 - Database migrations must be reproducible (`prisma migrate`, committed migrations).
 - Use transactions for multi-record state changes.
-- Never trust client-calculated price, role, seller/store ID, order status, or DesignSpec. Recompute and revalidate on the server.
-- Add indexes for common marketplace, order and queue queries.
+- Never trust client-calculated price, role, user/owner ID, order status, or DesignSpec. Recompute and revalidate on the server.
+- Add indexes for common catalog, order and queue queries.
 - Keep every external integration (AI, payments, courier) behind an interface so providers can be swapped.
 - Background jobs must be idempotent, safe under concurrency, and have timeouts, bounded retries and a terminal failure state.
 
@@ -86,9 +89,10 @@ Defined once in `types/` as a Zod schema, with an inferred TypeScript type.
 
 ## Ordering
 
-- One customer order may split into OrderItems grouped by seller store.
+- One customer order has one or more OrderItems (ready-made, custom design, or accepted quote). No splitting: ClothSeeker fulfils every item.
 - Ready-made lifecycle: `paid → ready_to_ship → shipped → delivered`.
-- Custom lifecycle states: `quote_requested, quoted, quote_declined, pending_payment, paid, awaiting_seller, accepted, in_production, qc_submitted, ready_to_ship, shipped, delivered, cancelled, refunded, disputed`.
+- Custom lifecycle states: `quote_requested, quoted, quote_declined, pending_payment, paid, awaiting_acceptance, accepted, in_production, qc_submitted, ready_to_ship, shipped, delivered, cancelled, refunded, disputed`.
+- Paid custom items wait in `awaiting_acceptance` until the team accepts them, with a 24-hour deadline.
 - Legal transitions live in **one** reusable domain module. Clients never set status directly.
 - Payment callbacks are idempotent: retries must not create duplicate orders.
 
@@ -97,21 +101,22 @@ Defined once in `types/` as a Zod schema, with an inferred TypeScript type.
 - Try-on requires explicit consent before any upload.
 - Unsaved try-on photos/results are deleted after 24 hours by an idempotent, auditable cleanup.
 - Try-on photos are never used for training.
-- Store only the customer information needed for fulfillment. Expose to sellers only what shipping requires.
+- Store only the customer information needed for fulfillment. Show production views only what making and shipping the garment requires.
 - Do not log personal data or image contents.
 
 ## Roles
 
-`customer`, `seller_owner`, `seller_staff`, `admin`.
+`customer`, `admin`. Exactly two roles. Do not add sellers, staff sub-roles or team-member permission levels.
 
-Every protected route and mutation checks the role, and for seller actions, store membership. Admin-only actions are explicit, and sensitive ones write an `AuditLog` record (actor, action, target, timestamp, non-secret metadata).
+- `customer`: can only read and change their own cart, designs, AI rounds, try-on photos, quotes and orders. Every customer query is scoped to the signed-in user's id on the server.
+- `admin`: the ClothSeeker team. Can do everything in `/admin`: catalog, templates, quotes, orders, production, QC, shipping, flags, disputes, AI metrics, audit log.
+- Every protected route and mutation checks the role on the server. Sensitive admin actions write an `AuditLog` record (actor, action, target, timestamp, non-secret metadata).
 
 ## Folder contract
 
 ```
 app/(shop)/        customer-facing routes
-app/seller/        seller portal
-app/admin/         admin tool
+app/admin/         ClothSeeker team tool (catalog, quotes, orders, production)
 app/api/           API routes
 components/        UI components (shadcn/ui under components/ui)
 lib/db/            Prisma client + data access
@@ -123,8 +128,7 @@ types/             shared types + Zod schemas (DesignSpec, etc.)
 prisma/            schema, migrations, seed
 supabase/          storage policies, RLS, config
 docs/customers/
-docs/sellers/
-docs/admin/
+docs/admin/        guides for the ClothSeeker team
 docs/developers/
 ```
 
@@ -133,14 +137,14 @@ docs/developers/
 | # | Phase |
 |---|---|
 | 0 | Skeleton |
-| 1 | Store + auth + roles + Buy Now |
-| 2 | Seller portal |
+| 1 | Shop + auth + roles + Buy Now |
+| 2 | Admin catalog + template editor |
 | 3 | Manual design + renderer |
-| 4 | Checkout + order splitting |
-| 5 | Seller production flow |
+| 4 | Checkout + orders |
+| 5 | Admin production flow (accept, spec sheet, QC, ship) |
 | 6 | AI design box |
 | 7 | Try-on + photo/description starts + quotes |
-| 8 | Admin |
+| 8 | Admin oversight (brand-logo flags, disputes, AI metrics, audit log) |
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
@@ -156,6 +160,14 @@ docs/developers/
 - Local Supabase: `project_id = "clothseeker-p1"` on ports 55420–55429 (API 55421, DB 55422, Studio 55423), so it runs alongside another local project that uses `clothseeker` on the default ports. **Never stop, reset or migrate the `clothseeker` stack; it belongs to a different project.**
 - Logging: structured JSON with ids, counts and error names only. No personal data, prompts, image data or connection strings.
 - Lint forbids inline `eslint-disable` (`noInlineConfig`). Fix the code instead.
+
+## Mapping the original build guide
+
+The phase prompts in *Enhanced_Claude_Code_Build_Prompts.pdf* were written for a marketplace. When following them, apply this file instead:
+- "seller" / "seller portal" → the ClothSeeker team in `/admin`.
+- Drop: Store, StoreMember and Payout models; seller application/approval; order splitting by store; commission; payouts; reported listings; cross-seller isolation tests.
+- Seed data: 1 admin, 3 customers, 15 dresses (no seller stores).
+- Keep every customer-ownership, validation, idempotency and privacy requirement.
 
 ## Working process
 
@@ -191,7 +203,5 @@ Run everything and fix all errors. Write or update tests for the changed busines
 
 ## Open decisions (resolve before the phase that needs them)
 
-- `seller_owner` vs `seller_staff` permissions (e.g. may staff edit pricing, manage members, or see payouts?). Needed by Phase 1/2.
-- Refund behavior when a seller misses the 24-hour acceptance deadline (full automatic refund assumed). Needed by Phase 5.
-- Commission model and payout schedule. Needed by Phase 8.
-- Quote validity window after a seller responds. Needed by Phase 7.
+- Refund behavior when the team misses the 24-hour acceptance deadline (full automatic refund assumed). Needed by Phase 5.
+- Quote validity window after the team responds. Needed by Phase 7.

@@ -1,11 +1,11 @@
 // Keep in sync with [storage.buckets.*] in supabase/config.toml. All buckets are private.
 
 export const BUCKETS = {
-  /** Seller product photos and template garment images (Phase 2). */
+  /** Catalog product photos and template garment images (Phase 2). */
   productMedia: "product-media",
   /** Customer design uploads, renders and print files (Phase 3+). */
   designAssets: "design-assets",
-  /** Seller QC evidence photos (Phase 5). */
+  /** Production QC evidence photos (Phase 5). */
   qcPhotos: "qc-photos",
   /** Try-on photos and results; unsaved objects deleted after 24h (Phase 7). */
   tryonPrivate: "tryon-private",

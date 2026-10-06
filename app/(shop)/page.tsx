@@ -7,7 +7,7 @@ export default function HomePage() {
       phase={1}
       features={[
         "Browse dresses by category",
-        "Filter by size, color, price and seller",
+        "Filter by size, color and price",
         "Product pages with size chart and Buy now",
       ]}
     />

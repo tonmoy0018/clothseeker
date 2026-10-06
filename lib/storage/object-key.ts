@@ -9,7 +9,7 @@ const SEGMENT = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}(\/[a-z0-9][a-z0-9-]{0,62}){1,4}\.[a-z0-9]{2,5}$/;
 
 const keyInputSchema = z.object({
-  /** Owning scope, e.g. a store or user id. */
+  /** Owning scope, e.g. a user id or product id. */
   ownerId: z.uuid(),
   /** Logical folder, e.g. "products", "qc", "renders". */
   category: z.string().regex(SEGMENT),
