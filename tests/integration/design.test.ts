@@ -1,14 +1,9 @@
-import { randomUUID } from "node:crypto";
-
 import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ForbiddenError } from "@/lib/auth/policy";
 import { addDesignToCart, deleteDesign, DesignError, getDesignForEdit, listDesigns, saveDesign, uploadDesignImage } from "@/lib/design/service";
-import { MockPaymentProvider } from "@/lib/payments/mock";
 import { getCart } from "@/lib/shop/cart";
-import { payWithMock } from "@/lib/shop/checkout";
-import { ShopError } from "@/lib/shop/errors";
 import { BUCKETS } from "@/lib/storage/buckets";
 import type { MemoryStorageAdapter } from "@/lib/storage/memory";
 import type { DesignSpec } from "@/types/design-spec";
@@ -147,7 +142,7 @@ describe("design images", () => {
 });
 
 describe("cart with custom designs", () => {
-  it("adds a design once, prices it on the server and blocks mock payment until Phase 4", async () => {
+  it("adds a design once, priced on the server, and the cart can be checked out", async () => {
     const customer = await createUser();
     const { product, template } = await customizableProduct();
     const saved = await saveDesign(db, storage, customer, { spec: specFor(product, template) });
@@ -158,12 +153,7 @@ describe("cart with custom designs", () => {
     expect(cart.lines).toHaveLength(1);
     expect(cart.lines[0]).toMatchObject({ kind: "CUSTOM_DESIGN", unitPriceMinor: 380_000, issue: null });
     expect(cart.hasCustomDesigns).toBe(true);
-    expect(cart.canCheckout).toBe(false);
-
-    await expect(payWithMock(db, customer, { idempotencyKey: randomUUID() }, new MockPaymentProvider())).rejects.toSatisfy(
-      (e) => e instanceof ShopError && e.code === "NOT_SUPPORTED",
-    );
-    expect(await db.order.count()).toBe(0);
+    expect(cart.canCheckout).toBe(true);
   });
 });
 

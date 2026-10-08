@@ -7,8 +7,7 @@ export type ShopErrorCode =
   | "QUANTITY_LIMIT"
   | "CART_EMPTY"
   | "CART_CHANGED"
-  | "PAYMENT_DECLINED"
-  | "NOT_SUPPORTED";
+  | "PAYMENT_DECLINED";
 
 export class ShopError extends Error {
   override readonly name = "ShopError";

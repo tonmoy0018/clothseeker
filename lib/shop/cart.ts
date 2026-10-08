@@ -161,7 +161,6 @@ export type CartView = {
   totalMinor: number;
   itemCount: number;
   canCheckout: boolean;
-  /** Custom designs are added to the cart now, but paid for in Phase 4's checkout. */
   hasCustomDesigns: boolean;
 };
 
@@ -244,7 +243,7 @@ export async function getCart(db: PrismaClient, storage: StorageAdapter, actor: 
     lines,
     totalMinor: payable.reduce((sum, l) => sum + l.lineTotalMinor, 0),
     itemCount: lines.reduce((sum, l) => sum + l.quantity, 0),
-    canCheckout: lines.length > 0 && payable.length === lines.length && !hasCustomDesigns,
+    canCheckout: lines.length > 0 && payable.length === lines.length,
     hasCustomDesigns,
   };
 }

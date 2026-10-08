@@ -1,14 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth/guards";
 import { getPrisma } from "@/lib/db";
-import { MockPaymentProvider } from "@/lib/payments/mock";
 import { removeCartItem, updateCartItem } from "@/lib/shop/cart";
-import { payWithMock } from "@/lib/shop/checkout";
 import { ShopError } from "@/lib/shop/errors";
 
 export type CartActionState = { error?: string };
@@ -51,26 +48,4 @@ export async function removeItemAction(_prev: CartActionState, formData: FormDat
   }
   revalidatePath("/cart");
   return {};
-}
-
-export async function payNowAction(_prev: CartActionState, formData: FormData): Promise<CartActionState> {
-  const user = await requireUser("/cart");
-  let orderNumber: string;
-  try {
-    const result = await payWithMock(
-      getPrisma(),
-      user,
-      { idempotencyKey: field(formData, "idempotencyKey") ?? "" },
-      new MockPaymentProvider(),
-    );
-    if (result.status !== "PAID") {
-      revalidatePath("/cart");
-      return { error: "This payment didn't go through. Please review your cart and try again." };
-    }
-    orderNumber = result.orderNumber;
-  } catch (error) {
-    revalidatePath("/cart");
-    return toState(error);
-  }
-  redirect(`/account/orders?placed=${encodeURIComponent(orderNumber)}`);
 }

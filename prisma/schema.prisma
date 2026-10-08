@@ -323,6 +323,11 @@ model CartItem {
   @@map("cart_items")
 }
 
+enum DeliveryZone {
+  INSIDE_DHAKA
+  OUTSIDE_DHAKA
+}
+
 enum OrderStatus {
   PENDING_PAYMENT
   PAID
@@ -341,13 +346,32 @@ model Order {
   idempotencyKey String      @unique @map("idempotency_key")
   paymentRef     String?     @unique @map("payment_ref")
   paidAt         DateTime?   @map("paid_at")
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
+  /// Pending orders hold stock until this time; then they are cancelled (lib/orders/expiry.ts).
+  expiresAt      DateTime?   @map("expires_at")
 
-  customer User        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  // Totals: subtotal + delivery fee = totalMinor. Computed on the server at checkout.
+  subtotalMinor    Int           @default(0) @map("subtotal_minor")
+  deliveryFeeMinor Int           @default(0) @map("delivery_fee_minor")
+  deliveryZone     DeliveryZone? @map("delivery_zone")
+
+  // Shipping snapshot: the minimum needed to deliver (nullable only for pre-Phase-4 orders).
+  shippingName       String? @map("shipping_name")
+  shippingPhone      String? @map("shipping_phone")
+  shippingLine1      String? @map("shipping_line1")
+  shippingLine2      String? @map("shipping_line2")
+  shippingCity       String? @map("shipping_city")
+  shippingPostalCode String? @map("shipping_postal_code")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  customer User         @relation(fields: [customerId], references: [id], onDelete: Restrict)
   items    OrderItem[]
+  payments Payment[]
+  events   OrderEvent[]
 
   @@index([customerId, createdAt])
+  @@index([status, expiresAt])
   @@map("orders")
 }
 
@@ -382,6 +406,9 @@ model OrderItem {
   unitPriceMinor Int             @map("unit_price_minor")
   quantity       Int
   designSpec     Json?           @map("design_spec")
+  /// Custom items: approved preview and 300 DPI print files frozen at checkout (design-assets keys).
+  previewKey     String?         @map("preview_key")
+  printFiles     Json?           @map("print_files")
   status         OrderItemStatus @default(PENDING_PAYMENT)
   acceptBy       DateTime?       @map("accept_by")
   createdAt      DateTime        @default(now()) @map("created_at")
@@ -394,10 +421,76 @@ model OrderItem {
   shipment     Shipment?
   review       Review?
   disputes     Dispute[]
+  events       OrderEvent[]
 
   @@index([orderId])
   @@index([status, createdAt])
   @@map("order_items")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+/// One payment attempt with an external (or mock) gateway.
+model Payment {
+  id          String        @id @default(uuid()) @db.Uuid
+  orderId     String        @map("order_id") @db.Uuid
+  provider    String
+  providerRef String        @unique @map("provider_ref")
+  status      PaymentStatus @default(PENDING)
+  amountMinor Int           @map("amount_minor")
+  currency    String
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  order  Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  events PaymentEvent[]
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+/// Webhook events already processed. The unique eventId makes webhook handling idempotent.
+model PaymentEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  eventId   String   @unique @map("event_id")
+  paymentId String   @map("payment_id") @db.Uuid
+  type      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("payment_events")
+}
+
+enum ActorType {
+  SYSTEM
+  CUSTOMER
+  ADMIN
+  COURIER
+}
+
+/// Order timeline: every status change (and notable note) of an order or one of its items.
+model OrderEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  orderId     String    @map("order_id") @db.Uuid
+  orderItemId String?   @map("order_item_id") @db.Uuid
+  fromStatus  String?   @map("from_status")
+  toStatus    String    @map("to_status")
+  actorType   ActorType @map("actor_type")
+  actorId     String?   @map("actor_id") @db.Uuid
+  note        String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_events")
 }
 
 enum ShipmentStatus {

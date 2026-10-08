@@ -6,7 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { requireUser } from "@/lib/auth/guards";
 import { getPrisma } from "@/lib/db";
 import { formatBDT } from "@/lib/money";
-import { listOrders } from "@/lib/shop/checkout";
+import { listOrders } from "@/lib/orders/queries";
 
 export const metadata: Metadata = { title: "My orders — ClothSeeker" };
 

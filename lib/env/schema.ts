@@ -18,6 +18,9 @@ export const serverEnvSchema = clientEnvSchema.extend({
   DATABASE_URL: postgresUrl,
   DIRECT_URL: postgresUrl,
   SUPABASE_SECRET_KEY: z.string().min(20),
+  PAYMENT_PROVIDER: z.enum(["mock"]).default("mock"),
+  /** Signs/verifies mock gateway webhooks. Random, at least 32 characters. */
+  MOCK_PAYMENT_WEBHOOK_SECRET: z.string().min(32),
 });
 
 export const workerEnvSchema = z.object({

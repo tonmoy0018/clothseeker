@@ -11,7 +11,7 @@ import { getCart, type CartLine } from "@/lib/shop/cart";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { getStorage } from "@/lib/storage/supabase";
 
-import { LineControls, PayNowForm, RemoveOnly } from "./cart-forms";
+import { LineControls, RemoveOnly } from "./cart-forms";
 
 export const metadata: Metadata = { title: "Cart — ClothSeeker" };
 
@@ -33,8 +33,6 @@ export default async function CartPage() {
     BUCKETS.designAssets,
     cart.lines.flatMap((l) => (l.kind === "CUSTOM_DESIGN" && l.previewKey ? [l.previewKey] : [])),
   );
-  // Fresh key per render: a double-submit of this page reuses it, so it can't create two orders.
-  const idempotencyKey = crypto.randomUUID();
 
   if (cart.lines.length === 0) {
     return (
@@ -67,21 +65,25 @@ export default async function CartPage() {
         </div>
         <div className="flex justify-between text-sm">
           <span>Delivery</span>
-          <span className="text-muted-foreground">Calculated at checkout (Phase 4)</span>
+          <span className="text-muted-foreground">Chosen at checkout</span>
         </div>
         <div className="flex justify-between border-t pt-3 font-semibold">
-          <span>Total</span>
+          <span>Subtotal</span>
           <span data-testid="cart-total">{formatBDT(cart.totalMinor)}</span>
         </div>
-        {cart.hasCustomDesigns ? (
-          <p className="rounded-lg bg-muted p-3 text-sm" data-testid="custom-checkout-note">
-            Checkout for custom designs arrives in Phase 4. Your designs are saved in the cart until then; remove them to pay
-            for ready-made items now.
-          </p>
+        {!cart.canCheckout && <p className="text-sm text-destructive">Update or remove the highlighted items before checking out.</p>}
+        {cart.canCheckout ? (
+          <Link href="/checkout" className={buttonVariants({ size: "lg" })}>
+            Checkout
+          </Link>
         ) : (
-          !cart.canCheckout && <p className="text-sm text-destructive">Update or remove the highlighted items before paying.</p>
+          <span className={buttonVariants({ size: "lg", className: "pointer-events-none opacity-50" })} aria-disabled="true">
+            Checkout
+          </span>
         )}
-        <PayNowForm idempotencyKey={idempotencyKey} disabled={!cart.canCheckout} />
+        {cart.hasCustomDesigns && (
+          <p className="text-xs text-muted-foreground">Custom designs are made to order after ClothSeeker accepts them (within 24 hours).</p>
+        )}
       </aside>
     </div>
   );

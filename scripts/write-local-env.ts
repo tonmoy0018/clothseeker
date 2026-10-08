@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 
 import { z } from "zod";
@@ -54,6 +55,8 @@ function main(): number {
     `TEST_DATABASE_URL=${testDatabaseUrl(s.DB_URL)}`,
     "# Password for the seeded demo accounts (local only).",
     "SEED_DEMO_PASSWORD=clothseeker-demo",
+    "# Signs mock payment gateway webhooks (random per machine).",
+    `MOCK_PAYMENT_WEBHOOK_SECRET=${randomBytes(32).toString("hex")}`,
     "",
   ];
   writeFileSync(TARGET, lines.join("\n"), { mode: 0o600 });

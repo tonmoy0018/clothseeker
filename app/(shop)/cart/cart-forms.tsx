@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { MAX_UNITS_PER_LINE } from "@/lib/shop/limits";
 
-import { payNowAction, removeItemAction, updateQuantityAction, type CartActionState } from "./actions";
+import { removeItemAction, updateQuantityAction, type CartActionState } from "./actions";
 
 const initial: CartActionState = {};
 
@@ -71,24 +71,6 @@ export function RemoveOnly({ itemId }: { itemId: string }) {
           {state.error}
         </p>
       )}
-    </form>
-  );
-}
-
-export function PayNowForm({ idempotencyKey, disabled }: { idempotencyKey: string; disabled: boolean }) {
-  const [state, pay, paying] = useActionState(payNowAction, initial);
-  return (
-    <form action={pay} className="flex flex-col gap-2">
-      <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
-      <Button type="submit" size="lg" disabled={disabled || paying}>
-        {paying ? "Processing…" : "Pay now (mock)"}
-      </Button>
-      {state.error && (
-        <p role="alert" className="text-sm text-destructive">
-          {state.error}
-        </p>
-      )}
-      <p className="text-xs text-muted-foreground">Simulated payment — no real money is charged.</p>
     </form>
   );
 }

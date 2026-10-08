@@ -1,12 +1,16 @@
 import { loadEnvConfig } from "@next/env";
 
+import { createClient } from "@supabase/supabase-js";
+
 import { createPrismaClient } from "@/lib/db/client";
 import { EnvValidationError, parseEnv, workerEnvSchema } from "@/lib/env/schema";
+import { expireStalePendingOrders } from "@/lib/orders/expiry";
+import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
 
 import { errorName, log } from "./logger";
 
 // Local background worker (runs on the developer's Mac mini).
-// Phase 0: connects and idles. Job claiming from the `ai_jobs` queue arrives in Phase 6.
+// Each poll: expire unpaid orders (Phase 4). Job claiming from the `ai_jobs` queue arrives in Phase 6.
 //
 //   pnpm worker          run until Ctrl+C
 //   pnpm worker:check    connect, verify the database, exit
@@ -42,9 +46,23 @@ async function main(): Promise<number> {
       return 0;
     }
 
+    const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const storage = new SupabaseStorageAdapter(() => supabase);
+
     log.info("worker.started", { pollIntervalMs: env.WORKER_POLL_INTERVAL_MS });
     while (!shutdown.signal.aborted) {
-      // Phase 6: claim and process queued jobs here.
+      try {
+        const expired = await expireStalePendingOrders(prisma, storage, new Date());
+        if (expired > 0) {
+          log.info("orders.expired", { count: expired });
+        }
+      } catch (error) {
+        // One failed sweep must not stop the worker; it retries on the next poll.
+        log.error("orders.expiry_failed", { error: errorName(error) });
+      }
+      // Phase 6: claim and process queued AI jobs here.
       await sleep(env.WORKER_POLL_INTERVAL_MS, shutdown.signal);
     }
     return 0;

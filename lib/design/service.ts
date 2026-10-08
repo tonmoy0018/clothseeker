@@ -109,6 +109,34 @@ async function checkDesign(
 
 const designIdSchema = z.uuid();
 
+export type OrderableDesign = {
+  designId: string;
+  productName: string;
+  spec: DesignSpec;
+  price: DesignPrice;
+  template: CustomerTemplate;
+};
+
+/**
+ * A customer's saved design, re-validated and re-priced against the live template, ready to be frozen
+ * into an order. Throws DesignError if it can't be ordered as it is.
+ */
+export async function checkSavedDesignForOrder(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  customerId: string,
+  designId: string,
+): Promise<OrderableDesign> {
+  const design = await db.design.findFirst({ where: { id: designId, customerId }, select: { id: true, spec: true } });
+  if (!design) {
+    throw new DesignError("NOT_FOUND", "A design in your cart no longer exists.");
+  }
+  const { spec, price, context } = await checkDesign(db, storage, customerId, design.spec);
+  return { designId: design.id, productName: context.template.productName, spec, price, template: context.template };
+}
+
+
+
 export type SavedDesign = { designId: string; price: DesignPrice; previewKey: string };
 
 /** Creates or updates the customer's own design, with a freshly rendered front preview. */
