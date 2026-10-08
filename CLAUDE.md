@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 3 complete (2026-10-06). Next: Phase 4, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 4 complete (2026-10-08). Next: Phase 5, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -188,6 +188,14 @@ docs/developers/
 - **sharp quirks:** `joinChannel` is a no-op on `create`d images, so build RGBA by hand (`rgbaFrom`). `.raw()` expands greyscale to 3 channels unless you extract a channel.
 - Customer uploads live in `design-assets` under `{customerId}/uploads/`, and previews under `{customerId}/previews/`. Image layers may only reference the owner's uploads.
 - `@imgly/background-removal` is AGPL. See `docs/developers/licences.md` before any commercial launch.
+
+## Implementation conventions (established in Phase 4)
+
+- **Order item status changes only through `transitionItems()`** (`lib/orders/transitions.ts`), which checks the kind, from/to and **actor type** (SYSTEM/ADMIN/COURIER/CUSTOMER) and writes an `OrderEvent`. Add new moves to the `TRANSITIONS` table and its tests.
+- **Payments:** checkout uses `PaymentProvider` only. Orders become PAID **only** via a verified webhook (`handlePaymentWebhook`), which dedupes on `PaymentEvent.eventId` and checks the amount. Never mark an order paid from a page or action.
+- `placeOrder` is idempotent per form-rendered key, renders print files **before** its transaction, deletes them if anything fails, and keeps the cart until payment succeeds. Unpaid orders expire after 30 min (`expireStalePendingOrders`, run by the worker).
+- The worker uses `lib/storage/supabase-core.ts` (no `server-only`). App code uses `getStorage()`.
+- Playwright spec files must not import each other; put shared steps in `tests/e2e/helpers.ts`.
 
 ## Mapping the original build guide
 

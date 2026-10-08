@@ -317,3 +317,30 @@ async function resumeOrder(
   });
   return { orderId: order.id, orderNumber: order.number, redirectUrl: payment.redirectUrl, reused: true };
 }
+
+/** "Complete payment" for one of the customer's own pending, unexpired orders. */
+export async function resumePayment(
+  db: PrismaClient,
+  provider: PaymentProvider,
+  actor: Actor,
+  rawOrderId: unknown,
+  options: { now?: Date; returnUrlFor: (orderId: string) => string },
+): Promise<PlacedOrder> {
+  assertCustomer(actor);
+  const orderId = z.uuid().safeParse(rawOrderId);
+  const order = orderId.success
+    ? await db.order.findFirst({
+        where: { id: orderId.data, customerId: actor.id },
+        select: { id: true, status: true, expiresAt: true, idempotencyKey: true },
+      })
+    : null;
+  if (!order) {
+    throw new OrderError("NOT_FOUND", "We couldn't find that order.");
+  }
+  const now = options.now ?? new Date();
+  if (order.status !== "PENDING_PAYMENT" || (order.expiresAt && order.expiresAt < now)) {
+    throw new OrderError("EXPIRED", "This order can no longer be paid. Please check out again from your cart.");
+  }
+  return resumeOrder(db, provider, actor, order.id, order.idempotencyKey, options);
+}
+

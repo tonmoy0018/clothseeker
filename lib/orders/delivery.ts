@@ -4,6 +4,8 @@ import { DeliveryZone } from "@/lib/generated/prisma/enums";
 
 // Delivery fees and the shipping address we keep — the minimum needed to deliver a parcel.
 
+export const DELIVERY_ZONES: readonly DeliveryZone[] = ["INSIDE_DHAKA", "OUTSIDE_DHAKA"];
+
 export const DELIVERY_FEES_MINOR: Record<DeliveryZone, number> = {
   INSIDE_DHAKA: 8_000,
   OUTSIDE_DHAKA: 15_000,

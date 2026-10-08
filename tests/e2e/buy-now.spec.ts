@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { fillAddress } from "./helpers";
+
 // @supabase — needs the local Supabase stack with seed data (`pnpm db:seed`). Skipped in CI.
 
 const password = process.env.SEED_DEMO_PASSWORD ?? "clothseeker-demo";
@@ -40,16 +42,25 @@ test.describe("@supabase buy now journey", () => {
     await expect(page.getByTestId("cart-lines").getByRole("listitem")).toHaveCount(1);
     await expect(page.getByTestId("cart-total")).toHaveText(shownPrice);
 
-    await page.getByRole("button", { name: "Pay now (mock)" }).click();
-    await expect(page).toHaveURL(/\/account\/orders\?placed=CS-/);
-    await expect(page.getByRole("status")).toContainText("is confirmed");
+    await page.getByRole("link", { name: "Checkout" }).click();
+    await expect(page).toHaveURL(/\/checkout$/);
+    await fillAddress(page);
+    await page.getByRole("button", { name: /Place order/ }).click();
+
+    await expect(page).toHaveURL(/\/mock-gateway\/mockpay_/);
+    await page.getByRole("button", { name: /^Pay ৳/ }).click();
+
+    await expect(page).toHaveURL(/\/account\/orders\/[0-9a-f-]{36}$/);
+    await expect(page.getByTestId("order-status")).toHaveText("Paid");
+    await expect(page.getByTestId("order-timeline")).toContainText("Payment received");
+    await page.getByRole("link", { name: "← My orders" }).click();
     await expect(page.getByTestId("order-list")).toContainText("Paid");
   });
 
   test("another customer cannot see Ava's orders and gets 404 on admin", async ({ page }) => {
     await signIn(page, "noah@example.test", "/account/orders");
     await expect(page).toHaveURL(/\/account\/orders$/);
-    await expect(page.getByText("You haven't placed any orders yet.")).toBeVisible();
+    await expect(page.getByTestId("order-list").getByText("Ava")).toHaveCount(0);
 
     const response = await page.goto("/admin");
     expect(response?.status()).toBe(404);

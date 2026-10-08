@@ -52,8 +52,7 @@ test.describe("@supabase design screen", () => {
     await expect(page).toHaveURL(/\/cart$/);
     const line = page.getByTestId("custom-line").filter({ hasText: "Linen Wrap Dress" });
     await expect(line).toContainText(expectedTotal);
-    await expect(page.getByTestId("custom-checkout-note")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Pay now (mock)" })).toBeDisabled();
+    await expect(page.getByRole("link", { name: "Checkout" })).toBeVisible();
 
     // Tidy up: deleting the design also removes it from the cart.
     await page.goto("/account/designs");
@@ -61,8 +60,9 @@ test.describe("@supabase design screen", () => {
     const count = await page.getByRole("button", { name: "Delete Linen Wrap Dress design" }).count();
     await page.getByRole("button", { name: "Delete Linen Wrap Dress design" }).first().click();
     await expect(page.getByRole("button", { name: "Delete Linen Wrap Dress design" })).toHaveCount(count - 1);
+    // Only check this test's design: other tests may use the same customer's cart in parallel.
     await page.goto("/cart");
-    await expect(page.getByTestId("custom-line")).toHaveCount(0);
+    await expect(page.getByTestId("custom-line").filter({ hasText: "Linen Wrap Dress" })).toHaveCount(0);
   });
 
   test("a signed-out visitor's design survives signing in", async ({ page }) => {

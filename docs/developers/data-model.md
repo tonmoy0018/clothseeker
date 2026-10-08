@@ -27,8 +27,11 @@ ClothSeeker is a **single brand**. There are no sellers, stores, store members o
 | | `TryOnPhoto` | Consented try-on upload. Unsaved photos are deleted after 24 h (Phase 7) | index (`saved`, `createdAt`) for cleanup |
 | | `QuoteRequest` | Special-tailoring quote, answered by the team within 24 h (Phase 7) | index (`status`, `respondBy`) |
 | Commerce | `Cart`, `CartItem` | One cart per customer. A line is `READY_MADE`, `CUSTOM_DESIGN` or `QUOTE` | `Cart.customerId` unique; unique (`cartId`, `variantId`) |
-| | `Order` | One checkout. `status` is `PENDING_PAYMENT`, `PAID`, `CANCELLED` or `REFUNDED` | `number` unique; **`idempotencyKey` unique**; `paymentRef` unique |
-| | `OrderItem` | One order line with **snapshots** (name, size, color, unit price, design spec) and its fulfilment `status` | index (`status`, `createdAt`) |
+| | `Order` | One checkout: payment `status` (`PENDING_PAYMENT`, `PAID`, `CANCELLED`, `REFUNDED`), shipping snapshot, subtotal + delivery fee, `expiresAt` for unpaid orders | `number` unique; **`idempotencyKey` unique**; `paymentRef` unique |
+| | `OrderItem` | One order line with **snapshots** (name, size, color, unit price, design spec, preview + print files) and its fulfilment `status` | index (`status`, `createdAt`) |
+| | `Payment` | One gateway payment for an order (`providerRef`, status, amount) | `providerRef` unique |
+| | `PaymentEvent` | Webhook events already processed | **`eventId` unique** (idempotency) |
+| | `OrderEvent` | Order timeline: every status change with its actor (SYSTEM, CUSTOMER, ADMIN, COURIER) | index (`orderId`, `createdAt`) |
 | | `Shipment`, `Review`, `Dispute` | Minimal now, extended in Phases 4, 5 and 8 | one shipment and one review per order item |
 | Oversight | `FlaggedItem` | Brand-logo detections for admin review | index (`status`, `createdAt`) |
 | | `AuditLog` | Append-only record of sensitive actions; no secrets or personal data in `metadata` | index (`createdAt`), (`targetType`, `targetId`) |
@@ -42,7 +45,7 @@ Custom:      PENDING_PAYMENT → PAID → AWAITING_ACCEPTANCE → ACCEPTED → I
 Any time:    CANCELLED, REFUNDED, DISPUTED (rules in Phase 4)
 ```
 
-Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`) live on `QuoteRequest`, because an `OrderItem` only exists after checkout. Phase 1 only uses `PENDING_PAYMENT`, `PAID` and `CANCELLED`. Phase 4 adds the single transition module that enforces legal moves.
+Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`) live on `QuoteRequest`, because an `OrderItem` only exists after checkout. All moves go through one module; see [order-lifecycle.md](order-lifecycle.md).
 
 ## Template config versions
 

@@ -2,7 +2,7 @@
 
 The online store of ClothSeeker, a single clothing brand (an academic but realistic prototype). Customers shop ready-made dresses, customize ClothSeeker templates by hand or with AI, try designs on virtually, and request quotes for special tailoring. The ClothSeeker team runs the catalog, orders and production from `/admin`.
 
-**Status: Phase 3 complete.** Customers can sign up or sign in, browse and filter dresses, Buy now, and pay with a mock payment. Customers can also design their own version of customizable dresses (colors, patterns, text, decorations, their own images) with a live price, save designs and add them to the cart. The ClothSeeker team manages dresses, sizes and colors, stock, photos and customization templates in `/admin`. Pages for later phases are placeholders that name the phase that will build them. See [CLAUDE.md](CLAUDE.md) for the product contract and phase plan.
+**Status: Phase 4 complete.** Customers can sign up or sign in, browse and filter dresses, Buy now, and pay with a mock payment. Customers can also design their own version of customizable dresses (colors, patterns, text, decorations, their own images) with a live price, save designs and add them to the cart. Checkout takes a delivery address, sends customers to a simulated payment gateway, and confirms orders through a signed webhook; customers can track each order's progress. The ClothSeeker team manages dresses, sizes and colors, stock, photos and customization templates in `/admin`. Pages for later phases are placeholders that name the phase that will build them. See [CLAUDE.md](CLAUDE.md) for the product contract and phase plan.
 
 ## Stack
 
@@ -74,6 +74,7 @@ Local Supabase uses ports **55420–55429** (API 55421, Postgres 55422, Studio h
 - [docs/developers/testing.md](docs/developers/testing.md): unit, integration and E2E tests
 - [docs/developers/media-uploads.md](docs/developers/media-uploads.md): image upload pipeline and limits
 - [docs/developers/design-spec.md](docs/developers/design-spec.md) and [rendering.md](docs/developers/rendering.md): custom designs and print files
+- [docs/developers/order-lifecycle.md](docs/developers/order-lifecycle.md) and [payments.md](docs/developers/payments.md): checkout, webhooks, order states
 - [docs/developers/licences.md](docs/developers/licences.md): third-party licences (**AGPL note for background removal**)
 - [docs/admin/catalog.md](docs/admin/catalog.md): guide for the ClothSeeker team
 - Customer and team (admin) guides arrive in Phase 10.

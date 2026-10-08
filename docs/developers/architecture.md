@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 3. This document describes the target shape and marks what exists today.
+Status: Phase 4. This document describes the target shape and marks what exists today.
 
 ## Overview
 
@@ -46,7 +46,8 @@ Supabase's REST API is never used for data: every table has RLS enabled with no 
 | `lib/catalog/` | Size chart, pattern/font libraries, default template, customer template loader, signed catalog images | Phase 1/2 |
 | `lib/auth/` | `session.ts` (current user, role from DB), `guards.ts` (`requireUser`, `requireAdmin`), `policy.ts` (pure rules), `safe-next.ts` | Phase 1 |
 | `lib/shop/` | Domain services `(db, actor, input)`: `catalog.ts`, `cart.ts`, `checkout.ts`. No Next.js imports, so they're tested against a real DB | Phase 1 |
-| `lib/payments/` | `PaymentProvider` interface + `MockPaymentProvider` | Phase 1 (mock), Phase 4 (full) |
+| `lib/payments/` | `PaymentProvider` (redirect + signed webhook) and the mock gateway; see [payments.md](payments.md) | Phase 4 |
+| `lib/orders/` | Checkout, webhook handling, expiry, **the order-item state machine**, queries; see [order-lifecycle.md](order-lifecycle.md) | Phase 4 |
 | `lib/money.ts`, `lib/catalog/` | BDT minor units and formatting; brand size chart | Phase 1 |
 | `lib/ai/` | `PlannerProvider`, `ImageProvider`, `TryOnProvider` interfaces and implementations | Phase 6–7 |
 | `lib/renderer/` | Render plan → preview PNG, flat garment, 300 DPI print files (sharp + opentype.js outlines); see [rendering.md](rendering.md) | Phase 3 |

@@ -52,11 +52,21 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Use an uploaded image in a design | ❌ | ✅ **own uploads only** | ❌ | `validateDesignAgainstTemplate` (key prefix) |
 | See prices | client preview | server recomputes on every save, cart view and checkout | — | `priceDesign` + `checkDesign` |
 
+## Implemented (Phase 4)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Check out / place an order | ➡️ sign in | ✅ own cart | ❌ | `placeOrder` → `assertCustomer` |
+| Open the simulated gateway for a payment | ➡️ sign in | ✅ own payments only | ❌ | `getPaymentForCustomer` |
+| View an order's detail and timeline | ➡️ sign in | ✅ own orders only (404 otherwise) | (Phase 5) | `getOrderForCustomer` |
+| Complete a pending payment | ➡️ sign in | ✅ own, while payable | ❌ | `resumePayment` |
+| Mark an order paid or cancelled | ❌ | ❌ | ❌ | Only a **signed webhook** (SYSTEM) can; `transitionItems` checks actors |
+
 ## Planned
 
 | Phase | Admin | Customer |
 |---|---|---|
-| 4 | View all orders | Order detail and tracking for their own orders |
+| 4 | — | — |
 | 5 | Accept custom orders, spec sheets, QC photos, shipping | — |
 | 6 | AI metrics | AI rounds on their own designs (10/day) |
 | 7 | Answer quote requests | Try-on (with consent), request and accept quotes |
