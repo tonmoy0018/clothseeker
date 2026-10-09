@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 7 complete (2026-10-09). Next: Phase 8, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 8 complete (2026-10-10). Next: Phase 9, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -241,6 +241,10 @@ docs/developers/
 - **Audit:** `writeAudit` stores `actorRole`, so entries keep their meaning after an account is deleted. System sweeps write `actorId: null, actorRole: "SYSTEM"`. New admin pages, actions and routes must call `requireAdmin()` (or check `role !== "ADMIN"`); a test scans `app/admin/**` and fails otherwise.
 - **AI health:** refusals by a daily limit call `recordLimitHit` after the refused transaction. Workers write `worker_heartbeats` each poll.
 - **Build output** goes to `.next.nosync` locally (iCloud ignores `*.nosync`); Vercel keeps `.next`.
+- **Emails** use the outbox (`lib/notifications`):
+  - Queue with `notify(tx, …)` in the event's transaction; item-status emails come automatically from `transitionItems` (`itemNotificationKind`).
+  - The worker sends them (`sendQueuedEmails`). The payload holds ids only; templates never include address, phone or images.
+  - Locally emails go to Mailpit (http://127.0.0.1:55424).
 
 ## Mapping the original build guide
 

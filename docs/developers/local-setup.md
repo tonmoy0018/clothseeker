@@ -67,6 +67,7 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |
 | `TRYON_PROVIDER` | Optional: `fake` (default) or `huggingface` | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
 | `HF_TOKEN` | Optional free Hugging Face token (`hf_…`) | **Worker-only secret** | Raises the shared ZeroGPU allowance |
+| `EMAIL_PROVIDER`, `SMTP_URL`, `EMAIL_FROM` | Optional: `log` (default) or `smtp`; `pnpm env:local` sets smtp → Mailpit (`smtp://127.0.0.1:55425`) | Worker-only (`SMTP_URL` may hold a password in production) | Customer emails ([notifications.md](notifications.md)); inbox at http://127.0.0.1:55424 |
 | `TRYON_SPACES`, `TRYON_TIMEOUT_MS` | Optional; default `levihsu/OOTDiffusion,franciszzj/Leffa` and 240000 | Worker-only | Try-on Spaces (in order) and per-attempt limit |
 | `MOCK_PAYMENT_WEBHOOK_SECRET` | Random, ≥ 32 chars (`openssl rand -hex 32`; `pnpm env:local` generates one) | **Server-only** | Signing/verifying payment webhooks |
 

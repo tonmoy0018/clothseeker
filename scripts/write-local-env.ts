@@ -59,6 +59,9 @@ function main(): number {
     `MOCK_PAYMENT_WEBHOOK_SECRET=${randomBytes(32).toString("hex")}`,
     "# Signs mock courier webhooks (random per machine).",
     `MOCK_COURIER_WEBHOOK_SECRET=${randomBytes(32).toString("hex")}`,
+    "# Customer emails go to Mailpit, Supabase's local test inbox (http://127.0.0.1:55424).",
+    "EMAIL_PROVIDER=smtp",
+    "SMTP_URL=smtp://127.0.0.1:55425",
     "",
   ];
   writeFileSync(TARGET, lines.join("\n"), { mode: 0o600 });

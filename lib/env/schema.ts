@@ -61,6 +61,15 @@ const aiEnvShape = {
   TRYON_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(900_000).default(240_000),
 };
 
+/** Customer emails (worker only). `log` sends nothing; `smtp` needs SMTP_URL (Mailpit locally). */
+const emailEnvShape = {
+  EMAIL_PROVIDER: z.enum(["log", "smtp"]).default("log"),
+  SMTP_URL: z.url({ protocol: /^smtps?$/ }).optional(),
+  EMAIL_FROM: z.string().min(3).max(120).default("ClothSeeker <orders@clothseeker.test>"),
+  /** Links in emails point here. */
+  NEXT_PUBLIC_APP_URL: httpUrl.default("http://localhost:3000"),
+};
+
 export const workerEnvSchema = z.object({
   DATABASE_URL: postgresUrl,
   NEXT_PUBLIC_SUPABASE_URL: httpUrl,
@@ -71,9 +80,13 @@ export const workerEnvSchema = z.object({
   /** If set, the worker answers GET /health on this port (used by local E2E runs). */
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1024).max(65_535).optional(),
   ...aiEnvShape,
+  ...emailEnvShape,
 }).superRefine((env, ctx) => {
   for (const key of missingAiKeys(env)) {
     ctx.addIssue({ code: "custom", path: [key], message: "Required by the chosen AI provider" });
+  }
+  if (env.EMAIL_PROVIDER === "smtp" && !env.SMTP_URL) {
+    ctx.addIssue({ code: "custom", path: ["SMTP_URL"], message: "Required when EMAIL_PROVIDER=smtp" });
   }
 });
 

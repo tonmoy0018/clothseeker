@@ -3,6 +3,7 @@ import { z } from "zod";
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
 import type { PrismaClient } from "@/lib/db/client";
 import { normalizeForRender } from "@/lib/design/normalize";
+import { notify } from "@/lib/notifications/outbox";
 import { checkDesign, DesignError } from "@/lib/design/service";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import type { QuoteStatus } from "@/lib/generated/prisma/enums";
@@ -264,13 +265,21 @@ export async function withdrawQuote(db: PrismaClient, actor: Actor, rawId: unkno
  */
 export async function expireQuotes(db: PrismaClient, now: Date = new Date()): Promise<number> {
   return db.$transaction(async (tx) => {
-    const unanswered = await tx.quoteRequest.updateMany({ where: { status: "REQUESTED", respondBy: { lte: now } }, data: { status: "EXPIRED" } });
-    const stale = await tx.quoteRequest.findMany({ where: { status: "QUOTED", expiresAt: { lte: now } }, select: { id: true } });
-    if (stale.length > 0) {
-      const ids = stale.map((q) => q.id);
-      await tx.quoteRequest.updateMany({ where: { id: { in: ids }, status: "QUOTED" }, data: { status: "EXPIRED" } });
-      await tx.cartItem.deleteMany({ where: { quoteRequestId: { in: ids } } });
+    const expiring = await tx.quoteRequest.findMany({
+      where: { OR: [{ status: "REQUESTED", respondBy: { lte: now } }, { status: "QUOTED", expiresAt: { lte: now } }] },
+      select: { id: true, customerId: true, status: true },
+      take: 500,
+    });
+    let count = 0;
+    for (const quote of expiring) {
+      const updated = await tx.quoteRequest.updateMany({ where: { id: quote.id, status: quote.status }, data: { status: "EXPIRED" } });
+      if (updated.count !== 1) continue;
+      count++;
+      if (quote.status === "QUOTED") {
+        await tx.cartItem.deleteMany({ where: { quoteRequestId: quote.id } });
+      }
+      await notify(tx, { customerId: quote.customerId, kind: "QUOTE_EXPIRED", uniqueKey: `QUOTE_EXPIRED:${quote.id}`, payload: { quoteId: quote.id } });
     }
-    return unanswered.count + stale.length;
+    return count;
   });
 }

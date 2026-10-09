@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@/lib/db/client";
 import { Prisma } from "@/lib/generated/prisma/client";
+import { notify } from "@/lib/notifications/outbox";
 import type { PaymentProvider } from "@/lib/payments/types";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 
@@ -104,6 +105,8 @@ export async function handlePaymentWebhook(
       await tx.orderEvent.create({
         data: { orderId: payment.orderId, fromStatus: "PENDING_PAYMENT", toStatus: "PAID", actorType: "SYSTEM", note: "Payment received" },
       });
+      const paidOrder = await tx.order.findUniqueOrThrow({ where: { id: payment.orderId }, select: { customerId: true } });
+      await notify(tx, { customerId: paidOrder.customerId, kind: "ORDER_CONFIRMED", uniqueKey: `ORDER_CONFIRMED:${payment.orderId}`, payload: { orderId: payment.orderId } });
 
       // The quoted price is agreed: the quote is now an order (even if it expired while the payment was in flight).
       const quoteIds = items.flatMap((i) => (i.kind === "QUOTE" && i.quoteRequestId ? [i.quoteRequestId] : []));

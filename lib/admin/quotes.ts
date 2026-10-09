@@ -4,6 +4,7 @@ import { assertAdmin, type Actor } from "@/lib/auth/policy";
 import type { PrismaClient } from "@/lib/db/client";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { majorToMinor } from "@/lib/money";
+import { notify } from "@/lib/notifications/outbox";
 import { effectiveQuoteStatus, MAX_QUOTE_PRICE_MINOR, QUOTE_VALIDITY_MS } from "@/lib/quotes/rules";
 import { toQuoteViews, type QuoteView } from "@/lib/quotes/service";
 import type { StorageAdapter } from "@/lib/storage/adapter";
@@ -112,7 +113,7 @@ export async function respondToQuote(db: PrismaClient, actor: Actor, rawInput: u
     throw new AdminError("INVALID", parsed.error.issues[0]?.message ?? "Please check the form.");
   }
   const input = parsed.data;
-  const quote = await db.quoteRequest.findUnique({ where: { id: input.quoteId }, select: { id: true, status: true, respondBy: true, expiresAt: true } });
+  const quote = await db.quoteRequest.findUnique({ where: { id: input.quoteId }, select: { id: true, customerId: true, status: true, respondBy: true, expiresAt: true } });
   if (!quote) {
     throw new AdminError("NOT_FOUND", "That quote request doesn't exist.");
   }
@@ -128,6 +129,8 @@ export async function respondToQuote(db: PrismaClient, actor: Actor, rawInput: u
     if (updated.count !== 1) {
       throw new AdminError("CONFLICT", "This request is no longer waiting for a reply.");
     }
+    const kind = input.action === "price" ? "QUOTE_READY" : "QUOTE_DECLINED";
+    await notify(tx, { customerId: quote.customerId, kind, uniqueKey: `${kind}:${quote.id}`, payload: { quoteId: quote.id } });
     await writeAudit(
       tx,
       actor,

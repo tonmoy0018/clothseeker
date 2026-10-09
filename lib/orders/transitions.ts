@@ -1,5 +1,6 @@
 import type { Prisma } from "@/lib/generated/prisma/client";
 import type { ActorType, ItemKind, OrderItemStatus } from "@/lib/generated/prisma/enums";
+import { notifyItemMoves, type MovedItem } from "@/lib/notifications/outbox";
 
 // THE order-item state machine. Every status change of an order item goes through
 // transitionItems(); nothing else may write OrderItem.status.
@@ -108,6 +109,7 @@ export async function transitionItems(tx: Prisma.TransactionClient, request: Tra
     select: { id: true, orderId: true, kind: true, status: true },
   });
   const moved: string[] = [];
+  const movedItems: MovedItem[] = [];
   for (const item of items) {
     if (item.status === request.to) {
       continue;
@@ -121,6 +123,7 @@ export async function transitionItems(tx: Prisma.TransactionClient, request: Tra
     });
     if (updated.count === 1) {
       moved.push(item.id);
+      movedItems.push({ id: item.id, orderId: item.orderId, kind: item.kind, from: item.status });
       await tx.orderEvent.create({
         data: {
           orderId: item.orderId,
@@ -134,5 +137,7 @@ export async function transitionItems(tx: Prisma.TransactionClient, request: Tra
       });
     }
   }
+  // Customer emails for the moves that warrant one (lib/notifications/rules.ts), same transaction.
+  await notifyItemMoves(tx, movedItems, request.to);
   return moved;
 }

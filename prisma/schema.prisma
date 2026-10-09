@@ -36,6 +36,7 @@ model User {
   tryOnPhotos   TryOnPhoto[]
   tryOnResults  TryOnResult[]
   aiLimitHits   AiLimitHit[]
+  notifications Notification[]
   quoteRequests QuoteRequest[]
   reviews       Review[]
   disputes      Dispute[]
@@ -787,4 +788,53 @@ model WorkerHeartbeat {
 
   @@index([lastSeenAt])
   @@map("worker_heartbeats")
+}
+
+// ─── Customer emails ──────────────────────────────────────────────────────────
+
+enum NotificationKind {
+  ORDER_CONFIRMED
+  DESIGN_ACCEPTED
+  ITEM_REFUNDED
+  SHIPPED
+  DELIVERED
+  QUOTE_READY
+  QUOTE_DECLINED
+  QUOTE_EXPIRED
+  DISPUTE_REFUNDED
+  DISPUTE_CLOSED
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+}
+
+/// Email outbox: written in the same transaction as the event, sent by the worker
+/// (lib/notifications). Holds ids only; the email is rendered from current data when it's sent.
+model Notification {
+  id         String             @id @default(uuid()) @db.Uuid
+  customerId String             @map("customer_id") @db.Uuid
+  kind       NotificationKind
+  /// One email per event, e.g. "SHIPPED:<sha of item ids>" or "QUOTE_READY:<quote id>".
+  uniqueKey  String             @unique @map("unique_key")
+  /// { orderId?, itemIds?, quoteId? }
+  payload    Json
+  status     NotificationStatus @default(QUEUED)
+  attempts   Int                @default(0)
+  runAfter   DateTime           @default(now()) @map("run_after")
+  lockedAt   DateTime?          @map("locked_at")
+  sentAt     DateTime?          @map("sent_at")
+  /// Error name/code of the last failure only (never addresses or content).
+  error      String?
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([customerId, createdAt])
+  @@map("notifications")
 }

@@ -16,6 +16,8 @@ import { MockPaymentProvider } from "@/lib/payments/mock";
 import { expireOverdueAcceptances } from "@/lib/production/acceptance";
 import { retryPendingRefunds } from "@/lib/production/refunds";
 import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
+import { LogEmailProvider, SmtpEmailProvider } from "@/lib/notifications/providers";
+import { sendQueuedEmails } from "@/lib/notifications/sender";
 import { expireQuotes } from "@/lib/quotes/service";
 import { cleanupTryOnMedia } from "@/lib/tryon/service";
 
@@ -23,8 +25,8 @@ import { errorName, log } from "./logger";
 
 // Local background worker (runs on the developer's Mac mini).
 // Each poll: expire unpaid orders, refund custom items not accepted within 24 h, retry failed refunds,
-// delete unsaved try-on photos/results after 24 h, expire unanswered or unpaid quotes, then claim and
-// run queued AI jobs (lib/ai/worker).
+// delete unsaved try-on photos/results after 24 h, expire unanswered or unpaid quotes, send queued
+// customer emails, then claim and run queued AI jobs (lib/ai/worker).
 // Several workers can run at once safely.
 //
 //   pnpm worker          run until Ctrl+C
@@ -77,6 +79,7 @@ async function main(): Promise<number> {
       timeoutsMs: { TRY_ON: env.TRYON_TIMEOUT_MS },
       log: (msg, fields) => log.info(msg, fields),
     };
+    const email = env.EMAIL_PROVIDER === "smtp" && env.SMTP_URL ? new SmtpEmailProvider(env.SMTP_URL) : new LogEmailProvider();
     health = env.WORKER_HEALTH_PORT ? await startHealthServer(env.WORKER_HEALTH_PORT) : null;
     const heartbeat = { workerId: ai.workerId, planner: providers.planner.name, image: providers.image.name, tryOn: providers.tryOn.name, startedAt: new Date() };
 
@@ -85,6 +88,7 @@ async function main(): Promise<number> {
       planner: providers.planner.name,
       images: providers.image.name,
       tryOn: providers.tryOn.name,
+      email: email.name,
       healthPort: env.WORKER_HEALTH_PORT,
     });
     while (!shutdown.signal.aborted) {
@@ -97,6 +101,7 @@ async function main(): Promise<number> {
         ["refunds.settled", () => retryPendingRefunds(prisma, payments)],
         ["tryon.cleaned", () => cleanupTryOnMedia(prisma, storage, now)],
         ["quotes.expired", () => expireQuotes(prisma, now)],
+        ["emails.sent", () => sendQueuedEmails(prisma, { provider: email, appUrl: env.NEXT_PUBLIC_APP_URL, from: env.EMAIL_FROM, now, log: (msg, fields) => log.info(msg, fields) })],
       ];
       for (const [name, sweep] of sweeps) {
         try {

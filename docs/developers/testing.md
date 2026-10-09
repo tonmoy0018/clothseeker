@@ -21,6 +21,7 @@
 ## E2E tests
 
 - Locally, Playwright also starts **the worker** (`pnpm worker`) and waits for `GET http://127.0.0.1:3101/health` (`WORKER_HEALTH_PORT`). It forces the fake AI providers (`PLANNER_PROVIDER=fake`, `IMAGE_PROVIDER=fake`, `AI_FAKE_DELAY_MS=800`) whatever `.env.local` says. A worker you already run alongside is harmless, because job claiming is safe for several workers.
+- `tests/e2e/emails.spec.ts` reads the real emails from **Mailpit** (http://127.0.0.1:55424) through its API. It needs `EMAIL_PROVIDER=smtp` in `.env.local` (set by `pnpm env:local`).
 - The AI tests (`tests/e2e/ai.spec.ts`) sign up a fresh customer each, so the daily quota of 10 starts full.
 - `pnpm test:e2e` **builds and starts a production server** (`pnpm build && pnpm start`), or reuses a server already running on :3000. The dev server compiles routes on first visit, which made parallel runs flaky. Set `E2E_DEV=1` to run against `pnpm dev` instead.
 - Production pages render before React hydrates, so tests that click interactive controls right after navigation retry the click until it registers (`expect(...).toPass()`).
