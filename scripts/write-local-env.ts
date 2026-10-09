@@ -57,6 +57,8 @@ function main(): number {
     "SEED_DEMO_PASSWORD=clothseeker-demo",
     "# Signs mock payment gateway webhooks (random per machine).",
     `MOCK_PAYMENT_WEBHOOK_SECRET=${randomBytes(32).toString("hex")}`,
+    "# Signs mock courier webhooks (random per machine).",
+    `MOCK_COURIER_WEBHOOK_SECRET=${randomBytes(32).toString("hex")}`,
     "",
   ];
   writeFileSync(TARGET, lines.join("\n"), { mode: 0o600 });

@@ -361,6 +361,8 @@ model Order {
   shippingLine2      String? @map("shipping_line2")
   shippingCity       String? @map("shipping_city")
   shippingPostalCode String? @map("shipping_postal_code")
+  /// Optional note for the tailors (max 300 chars); printed on the production spec sheet.
+  customerNote       String? @map("customer_note")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -369,6 +371,7 @@ model Order {
   items    OrderItem[]
   payments Payment[]
   events   OrderEvent[]
+  refunds  Refund[]
 
   @@index([customerId, createdAt])
   @@index([status, expiresAt])
@@ -422,6 +425,8 @@ model OrderItem {
   review       Review?
   disputes     Dispute[]
   events       OrderEvent[]
+  qcPhotos     QcPhoto[]
+  refunds      Refund[]
 
   @@index([orderId])
   @@index([status, createdAt])
@@ -447,8 +452,9 @@ model Payment {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  order  Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  events PaymentEvent[]
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  events  PaymentEvent[]
+  refunds Refund[]
 
   @@index([orderId])
   @@map("payments")
@@ -496,6 +502,7 @@ model OrderEvent {
 enum ShipmentStatus {
   LABEL_CREATED
   IN_TRANSIT
+  OUT_FOR_DELIVERY
   DELIVERED
 }
 
@@ -503,16 +510,86 @@ model Shipment {
   id             String         @id @default(uuid()) @db.Uuid
   orderItemId    String         @unique @map("order_item_id") @db.Uuid
   carrier        String
-  trackingNumber String?        @map("tracking_number")
+  trackingNumber String?        @unique @map("tracking_number")
   status         ShipmentStatus @default(LABEL_CREATED)
   shippedAt      DateTime?      @map("shipped_at")
   deliveredAt    DateTime?      @map("delivered_at")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
-  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  orderItem     OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  courierEvents CourierEvent[]
 
   @@map("shipments")
+}
+
+/// Courier webhook events already processed (dedupe) — also the customer's tracking history.
+model CourierEvent {
+  id         String         @id @default(uuid()) @db.Uuid
+  eventId    String         @unique @map("event_id")
+  shipmentId String         @map("shipment_id") @db.Uuid
+  status     ShipmentStatus
+  note       String?
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, createdAt])
+  @@map("courier_events")
+}
+
+enum QcSide {
+  FRONT
+  BACK
+}
+
+/// Quality-check evidence for a made-to-order item (private qc-photos bucket). History is kept.
+model QcPhoto {
+  id           String   @id @default(uuid()) @db.Uuid
+  orderItemId  String   @map("order_item_id") @db.Uuid
+  side         QcSide
+  storageKey   String   @map("storage_key")
+  uploadedById String?  @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([orderItemId, createdAt])
+  @@map("qc_photos")
+}
+
+enum RefundKind {
+  ITEM
+  DELIVERY_FEE
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+}
+
+/// Money returned to the customer. `uniqueKey` ("item:<id>" / "delivery:<paymentId>") guarantees
+/// each item and each delivery fee is refunded at most once.
+model Refund {
+  id          String       @id @default(uuid()) @db.Uuid
+  uniqueKey   String       @unique @map("unique_key")
+  paymentId   String       @map("payment_id") @db.Uuid
+  orderId     String       @map("order_id") @db.Uuid
+  orderItemId String?      @map("order_item_id") @db.Uuid
+  kind        RefundKind
+  amountMinor Int          @map("amount_minor")
+  reason      String
+  status      RefundStatus @default(PENDING)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  payment   Payment    @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@map("refunds")
 }
 
 model Review {

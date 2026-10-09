@@ -21,12 +21,16 @@ export const serverEnvSchema = clientEnvSchema.extend({
   PAYMENT_PROVIDER: z.enum(["mock"]).default("mock"),
   /** Signs/verifies mock gateway webhooks. Random, at least 32 characters. */
   MOCK_PAYMENT_WEBHOOK_SECRET: z.string().min(32),
+  /** Signs/verifies mock courier status webhooks. Random, at least 32 characters. */
+  MOCK_COURIER_WEBHOOK_SECRET: z.string().min(32),
 });
 
 export const workerEnvSchema = z.object({
   DATABASE_URL: postgresUrl,
   NEXT_PUBLIC_SUPABASE_URL: httpUrl,
   SUPABASE_SECRET_KEY: z.string().min(20),
+  /** The worker refunds overdue custom items through the payment provider. */
+  MOCK_PAYMENT_WEBHOOK_SECRET: z.string().min(32),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
 });
 

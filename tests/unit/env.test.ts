@@ -16,6 +16,7 @@ const validServerEnv = {
   DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
   DIRECT_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
   MOCK_PAYMENT_WEBHOOK_SECRET: "test-webhook-secret-0123456789abcdef",
+  MOCK_COURIER_WEBHOOK_SECRET: "test-courier-secret-0123456789abcdef",
 };
 
 function captureError(fn: () => unknown): unknown {

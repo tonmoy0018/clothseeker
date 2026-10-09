@@ -128,6 +128,13 @@ export const placeOrderSchema = z.object({
   idempotencyKey: z.uuid(),
   zone: deliveryZoneSchema,
   address: shippingAddressSchema,
+  /** Optional note for the tailors; printed on the production spec sheet. */
+  customerNote: z
+    .string()
+    .trim()
+    .max(300, "Notes can be at most 300 characters")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 export type PlacedOrder = { orderId: string; orderNumber: string; redirectUrl: string; reused: boolean };
@@ -221,6 +228,7 @@ export async function placeOrder(
           shippingLine2: input.address.line2 ?? null,
           shippingCity: input.address.city,
           shippingPostalCode: input.address.postalCode ?? null,
+          customerNote: input.customerNote ?? null,
           items: {
             create: lines.map((line) =>
               line.kind === "READY_MADE"

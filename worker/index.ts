@@ -5,12 +5,16 @@ import { createClient } from "@supabase/supabase-js";
 import { createPrismaClient } from "@/lib/db/client";
 import { EnvValidationError, parseEnv, workerEnvSchema } from "@/lib/env/schema";
 import { expireStalePendingOrders } from "@/lib/orders/expiry";
+import { MockPaymentProvider } from "@/lib/payments/mock";
+import { expireOverdueAcceptances } from "@/lib/production/acceptance";
+import { retryPendingRefunds } from "@/lib/production/refunds";
 import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
 
 import { errorName, log } from "./logger";
 
 // Local background worker (runs on the developer's Mac mini).
-// Each poll: expire unpaid orders (Phase 4). Job claiming from the `ai_jobs` queue arrives in Phase 6.
+// Each poll: expire unpaid orders, refund custom items not accepted within 24 h, retry failed refunds.
+// Job claiming from the `ai_jobs` queue arrives in Phase 6.
 //
 //   pnpm worker          run until Ctrl+C
 //   pnpm worker:check    connect, verify the database, exit
@@ -50,17 +54,26 @@ async function main(): Promise<number> {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const storage = new SupabaseStorageAdapter(() => supabase);
+    const payments = new MockPaymentProvider(env.MOCK_PAYMENT_WEBHOOK_SECRET);
 
     log.info("worker.started", { pollIntervalMs: env.WORKER_POLL_INTERVAL_MS });
     while (!shutdown.signal.aborted) {
-      try {
-        const expired = await expireStalePendingOrders(prisma, storage, new Date());
-        if (expired > 0) {
-          log.info("orders.expired", { count: expired });
+      // Each sweep is idempotent; one failing must not stop the others or the worker.
+      const now = new Date();
+      const sweeps: [string, () => Promise<number>][] = [
+        ["orders.expired", () => expireStalePendingOrders(prisma, storage, now)],
+        ["acceptance.timed_out", () => expireOverdueAcceptances(prisma, payments, now)],
+        ["refunds.settled", () => retryPendingRefunds(prisma, payments)],
+      ];
+      for (const [name, sweep] of sweeps) {
+        try {
+          const count = await sweep();
+          if (count > 0) {
+            log.info(name, { count });
+          }
+        } catch (error) {
+          log.error(`${name}_failed`, { error: errorName(error) });
         }
-      } catch (error) {
-        // One failed sweep must not stop the worker; it retries on the next poll.
-        log.error("orders.expiry_failed", { error: errorName(error) });
       }
       // Phase 6: claim and process queued AI jobs here.
       await sleep(env.WORKER_POLL_INTERVAL_MS, shutdown.signal);
