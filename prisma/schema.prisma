@@ -304,26 +304,39 @@ model TryOnResult {
   @@map("try_on_results")
 }
 
+/// REQUESTED → QUOTED (team priced it) or DECLINED (team) or EXPIRED (no reply in 24 h)
+/// QUOTED → ACCEPTED (paid) or WITHDRAWN (customer) or EXPIRED (not paid within 7 days)
 enum QuoteStatus {
   REQUESTED
   QUOTED
   DECLINED
   ACCEPTED
   EXPIRED
+  WITHDRAWN
 }
 
 model QuoteRequest {
-  id           String      @id @default(uuid()) @db.Uuid
-  customerId   String      @map("customer_id") @db.Uuid
-  designId     String      @map("design_id") @db.Uuid
-  notes        String      @default("")
-  status       QuoteStatus @default(REQUESTED)
-  priceMinor   Int?        @map("price_minor")
-  responseNote String?     @map("response_note")
-  respondBy    DateTime    @map("respond_by")
-  respondedAt  DateTime?   @map("responded_at")
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  id                String      @id @default(uuid()) @db.Uuid
+  customerId        String      @map("customer_id") @db.Uuid
+  designId          String      @map("design_id") @db.Uuid
+  /// The customer's notes for the tailors (what needs special tailoring).
+  notes             String      @default("")
+  /// The design as it was when the quote was requested: later edits don't change what was quoted.
+  specSnapshot      Json        @map("spec_snapshot")
+  /// Preview rendered for this quote (design-assets, `{customerId}/quotes/`).
+  previewKey        String?     @map("preview_key")
+  /// The dress photo the design was started from (design-assets `{customerId}/references/`).
+  referencePhotoKey String?     @map("reference_photo_key")
+  status            QuoteStatus @default(REQUESTED)
+  priceMinor        Int?        @map("price_minor")
+  responseNote      String?     @map("response_note")
+  /// The team must reply by this time (24 hours after the request).
+  respondBy         DateTime    @map("respond_by")
+  respondedAt       DateTime?   @map("responded_at")
+  /// A price is valid until this time (7 days after it was sent).
+  expiresAt         DateTime?   @map("expires_at")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
 
   customer   User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   design     Design      @relation(fields: [designId], references: [id], onDelete: Restrict)
@@ -331,6 +344,7 @@ model QuoteRequest {
   orderItems OrderItem[]
 
   @@index([status, respondBy])
+  @@index([status, expiresAt])
   @@index([customerId, createdAt])
   @@map("quote_requests")
 }

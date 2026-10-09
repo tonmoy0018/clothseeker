@@ -90,9 +90,15 @@ export default async function CheckoutPage() {
                   </div>
                 )}
                 <div className="flex flex-1 flex-col">
-                  <span className="font-medium">{line.kind === "CUSTOM_DESIGN" ? `${line.design.productName} — your design` : line.productName}</span>
+                  <span className="font-medium">
+                    {line.kind === "CUSTOM_DESIGN" ? `${line.design.productName} — your design` : line.kind === "QUOTE" ? `${line.productName} — tailoring quote` : line.productName}
+                  </span>
                   <span className="text-muted-foreground">
-                    {line.kind === "CUSTOM_DESIGN" ? `Size ${line.design.spec.size} · made to order` : `Size ${line.size} · ${line.colorName} · × ${line.quantity}`}
+                    {line.kind === "CUSTOM_DESIGN"
+                      ? `Size ${line.design.spec.size} · made to order`
+                      : line.kind === "QUOTE"
+                        ? `Size ${line.spec.size} · made to order at the quoted price`
+                        : `Size ${line.size} · ${line.colorName} · × ${line.quantity}`}
                   </span>
                 </div>
                 <span>{formatBDT(lineTotalMinor(line.unitPriceMinor, line.quantity))}</span>

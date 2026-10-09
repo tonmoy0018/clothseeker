@@ -22,6 +22,7 @@ import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type 
 import { TryOnPanel } from "../../try-on-panel";
 
 import { AiBox } from "./ai-box";
+import { QuoteRequest } from "./quote-request";
 import { DesignCanvas, type LayerBox } from "./design-canvas";
 import { composeGarment, decorationDataUrl, loadImage, type ClientFill } from "./recolor";
 
@@ -800,6 +801,10 @@ export function DesignEditor(props: DesignEditorProps) {
               </p>
             ))}
           </div>
+        )}
+
+        {spec.startedFrom === "photo" && (
+          <QuoteRequest designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
         )}
 
         <div className="flex flex-wrap gap-2">

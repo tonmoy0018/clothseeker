@@ -1,9 +1,12 @@
+import sharp from "sharp";
+
 import { DECORATIONS } from "@/lib/catalog/decorations";
 import { FONTS } from "@/lib/catalog/fonts";
 import { PATTERNS } from "@/lib/catalog/patterns";
 import type { PrismaClient } from "@/lib/db/client";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
+import { isSafeObjectKey } from "@/lib/storage/object-key";
 import { designSpecSchema } from "@/types/design-spec";
 import { parseTemplateConfig, STYLE_GROUPS, type TemplateConfig } from "@/types/template";
 
@@ -45,6 +48,7 @@ export async function specSheetData(
     previewPng: item.previewKey ? await storage.get(BUCKETS.designAssets, item.previewKey) : null,
     referencePng: null,
     customerNote: order.customerNote,
+    tailoringNotes: null,
     adminUrl,
   };
 
@@ -52,6 +56,14 @@ export async function specSheetData(
   if (!spec.success) {
     return base;
   }
+  // Photo-started designs and quotes: the customer's dress photo, and for quotes what was agreed.
+  const quote = item.quoteRequestId
+    ? await db.quoteRequest.findUnique({ where: { id: item.quoteRequestId }, select: { notes: true, responseNote: true } })
+    : null;
+  base.tailoringNotes = quote ? `Customer: ${quote.notes}${quote.responseNote ? `\nQuoted by ClothSeeker: ${quote.responseNote}` : ""}` : null;
+  const referenceKey = spec.data.referencePhotoKey;
+  const reference = referenceKey && isSafeObjectKey(referenceKey) ? await storage.get(BUCKETS.designAssets, referenceKey) : null;
+  base.referencePng = reference ? await sharp(reference).resize(400, 400, { fit: "inside" }).png().toBuffer() : null;
   const productId = item.design?.productId ?? spec.data.productId;
   const row = await db.customizationTemplate.findUnique({ where: { productId }, select: { config: true } });
   let template: TemplateConfig | null = null;

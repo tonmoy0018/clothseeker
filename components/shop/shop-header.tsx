@@ -30,6 +30,9 @@ export async function ShopHeader() {
               <Link href="/account/designs" className="text-muted-foreground hover:text-foreground">
                 My designs
               </Link>
+              <Link href="/account/quotes" className="text-muted-foreground hover:text-foreground">
+                My quotes
+              </Link>
               <Link href="/account/orders" className="text-muted-foreground hover:text-foreground">
                 My orders
               </Link>

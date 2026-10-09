@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
-import { checkSavedDesignForOrder, DesignError, type OrderableDesign } from "@/lib/design/service";
+import { checkSavedDesignForOrder, DesignError, loadDesignContext, type OrderableDesign } from "@/lib/design/service";
+import { canAcceptQuote } from "@/lib/quotes/rules";
+import { parseDesignSpec, type DesignSpec } from "@/types/design-spec";
+import type { TemplateConfig } from "@/types/template";
 import { normalizeForRender } from "@/lib/design/normalize";
 import type { PrismaClient } from "@/lib/db/client";
 import { Prisma } from "@/lib/generated/prisma/client";
@@ -44,7 +47,20 @@ type CustomCheckoutLine = {
   quantity: 1;
 };
 
-export type CheckoutLine = ReadyMadeCheckoutLine | CustomCheckoutLine;
+/** An accepted tailoring quote: the design snapshot at the team's quoted price. */
+type QuoteCheckoutLine = {
+  kind: "QUOTE";
+  cartItemId: string;
+  quoteId: string;
+  designId: string;
+  productName: string;
+  spec: DesignSpec;
+  template: { config: TemplateConfig };
+  unitPriceMinor: number;
+  quantity: 1;
+};
+
+export type CheckoutLine = ReadyMadeCheckoutLine | CustomCheckoutLine | QuoteCheckoutLine;
 
 /** The customer's cart, fully re-priced and re-validated. Throws OrderError if it can't be bought as is. */
 async function loadCheckoutLines(db: PrismaClient, storage: StorageAdapter, customerId: string): Promise<CheckoutLine[]> {
@@ -56,6 +72,19 @@ async function loadCheckoutLines(db: PrismaClient, storage: StorageAdapter, cust
       kind: true,
       quantity: true,
       designId: true,
+      quoteRequest: {
+        select: {
+          id: true,
+          customerId: true,
+          status: true,
+          priceMinor: true,
+          respondBy: true,
+          expiresAt: true,
+          specSnapshot: true,
+          designId: true,
+          design: { select: { product: { select: { name: true } } } },
+        },
+      },
       variant: {
         select: {
           id: true,
@@ -103,8 +132,34 @@ async function loadCheckoutLines(db: PrismaClient, storage: StorageAdapter, cust
         }
         throw error;
       }
+    } else if (item.kind === "QUOTE" && item.quoteRequest) {
+      const quote = item.quoteRequest;
+      if (quote.customerId !== customerId || !canAcceptQuote(quote, new Date()) || quote.priceMinor === null) {
+        throw new OrderError("CART_CHANGED", "A tailoring quote in your cart has expired or was closed. Remove it to continue.");
+      }
+      let spec: DesignSpec;
+      try {
+        spec = parseDesignSpec(quote.specSnapshot);
+      } catch {
+        throw new OrderError("CART_CHANGED", "A tailoring quote in your cart can't be ordered. Please contact us.");
+      }
+      const context = await loadDesignContext(db, storage, spec.productId, { signImages: false });
+      if (!context) {
+        throw new OrderError("CART_CHANGED", "The dress for a tailoring quote in your cart is no longer available.");
+      }
+      lines.push({
+        kind: "QUOTE",
+        cartItemId: item.id,
+        quoteId: quote.id,
+        designId: quote.designId,
+        productName: quote.design.product.name,
+        spec,
+        template: { config: context.template.config },
+        unitPriceMinor: quote.priceMinor,
+        quantity: 1,
+      });
     } else {
-      throw new OrderError("NOT_SUPPORTED", "Quotes can be checked out once quote requests arrive (Phase 7).");
+      throw new OrderError("CART_CHANGED", "An item in your cart is no longer available. Please review your cart.");
     }
   }
   return lines;
@@ -142,7 +197,7 @@ export type PlacedOrder = { orderId: string; orderNumber: string; redirectUrl: s
 type RenderedDesign = { previewKey: string; printFiles: StoredPrintFile[] };
 
 /** Freezes a design's preview and 300 DPI print files under the customer's orders prefix. */
-async function renderForOrder(storage: StorageAdapter, customerId: string, design: OrderableDesign): Promise<RenderedDesign> {
+async function renderForOrder(storage: StorageAdapter, customerId: string, design: Pick<OrderableDesign, "spec"> & { template: { config: TemplateConfig } }): Promise<RenderedDesign> {
   const plan = normalizeForRender(design.spec, design.template.config);
   const assets = storageAssets(storage);
   const keyFor = () => buildObjectKey(BUCKETS.designAssets, { ownerId: customerId, category: "orders", extension: "png" });
@@ -187,8 +242,8 @@ export async function placeOrder(
   const cleanup = () => storage.remove(BUCKETS.designAssets, renderedKeys).catch(() => undefined);
   try {
     for (const line of lines) {
-      if (line.kind === "CUSTOM_DESIGN") {
-        const files = await renderForOrder(storage, actor.id, line.design);
+      if (line.kind === "CUSTOM_DESIGN" || line.kind === "QUOTE") {
+        const files = await renderForOrder(storage, actor.id, line.kind === "QUOTE" ? line : line.design);
         rendered.set(line.cartItemId, files);
         renderedKeys.push(files.previewKey, ...files.printFiles.map((f) => f.key));
       }
@@ -241,7 +296,20 @@ export async function placeOrder(
                     unitPriceMinor: line.unitPriceMinor,
                     quantity: line.quantity,
                   }
-                : {
+                : line.kind === "QUOTE"
+                  ? {
+                      kind: "QUOTE" as const,
+                      designId: line.designId,
+                      quoteRequestId: line.quoteId,
+                      productName: line.productName,
+                      size: line.spec.size,
+                      unitPriceMinor: line.unitPriceMinor,
+                      quantity: 1,
+                      designSpec: line.spec,
+                      previewKey: rendered.get(line.cartItemId)?.previewKey ?? null,
+                      printFiles: rendered.get(line.cartItemId)?.printFiles ?? [],
+                    }
+                  : {
                     kind: "CUSTOM_DESIGN" as const,
                     designId: line.design.designId,
                     productName: line.design.productName,

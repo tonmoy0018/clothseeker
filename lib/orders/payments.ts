@@ -85,7 +85,7 @@ export async function handlePaymentWebhook(
 
       const items = await tx.orderItem.findMany({
         where: { orderId: payment.orderId },
-        select: { id: true, kind: true, variantId: true, designId: true },
+        select: { id: true, kind: true, variantId: true, designId: true, quoteRequestId: true },
       });
       await transitionItems(tx, { itemIds: items.map((i) => i.id), to: "PAID", actor: SYSTEM, note: "Payment received" });
       await transitionItems(tx, {
@@ -105,6 +105,11 @@ export async function handlePaymentWebhook(
         data: { orderId: payment.orderId, fromStatus: "PENDING_PAYMENT", toStatus: "PAID", actorType: "SYSTEM", note: "Payment received" },
       });
 
+      // The quoted price is agreed: the quote is now an order (even if it expired while the payment was in flight).
+      const quoteIds = items.flatMap((i) => (i.kind === "QUOTE" && i.quoteRequestId ? [i.quoteRequestId] : []));
+      if (quoteIds.length > 0) {
+        await tx.quoteRequest.updateMany({ where: { id: { in: quoteIds }, status: { in: ["QUOTED", "EXPIRED"] } }, data: { status: "ACCEPTED" } });
+      }
       const designIds = items.flatMap((i) => (i.designId ? [i.designId] : []));
       const variantIds = items.flatMap((i) => (i.kind === "READY_MADE" && i.variantId ? [i.variantId] : []));
       if (designIds.length > 0) {
@@ -115,7 +120,7 @@ export async function handlePaymentWebhook(
       await tx.cartItem.deleteMany({
         where: {
           cart: { customerId: order.customerId },
-          OR: [{ designId: { in: designIds } }, { kind: "READY_MADE", variantId: { in: variantIds } }],
+          OR: [{ designId: { in: designIds } }, { quoteRequestId: { in: quoteIds } }, { kind: "READY_MADE", variantId: { in: variantIds } }],
         },
       });
       return "paid";

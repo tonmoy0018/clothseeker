@@ -5,7 +5,7 @@ Open **Admin → Orders**. The tabs follow the work:
 | Tab | What to do |
 |---|---|
 | **Needs acceptance** | Custom designs waiting for you. Each shows the time left. **Accept** before the deadline, or **Decline & refund** with a short reason the customer will see. After 24 hours the item is refunded automatically. |
-| **To make** | Accepted items: **Start production**, make the garment, then upload a **front** and a **back** QC photo and click **Submit for QC**. |
+| **To make** | Accepted items (including paid tailoring quotes, which start here): **Start production**, make the garment, then upload a **front** and a **back** QC photo and click **Submit for QC**. |
 | **Quality check** | Compare the photos with the design and spec sheet. **Approve QC**, or **Reject QC** with what needs fixing (it goes back to production and needs new photos). |
 | **To ship** | Ready-made items: pick from stock, pack, **Mark ready to ship**. Then **Ship with Mock Courier**, for ready-made and approved custom items alike. |
 | **Shipped** | Waiting for the courier. Updates arrive automatically; in this prototype use **Simulate courier** (in transit / out for delivery / delivered). |

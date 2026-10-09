@@ -5,6 +5,7 @@ import type { PrismaClient } from "@/lib/db/client";
 import { Size } from "@/lib/generated/prisma/enums";
 import { priceStoredDesign } from "@/lib/design/service";
 import { lineTotalMinor } from "@/lib/money";
+import { canAcceptQuote } from "@/lib/quotes/rules";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { designSpecSchema } from "@/types/design-spec";
 
@@ -154,7 +155,15 @@ export type CustomDesignLine = LineBase & {
   previewKey: string | null;
 };
 
-export type CartLine = ReadyMadeLine | CustomDesignLine;
+export type QuoteLine = LineBase & {
+  kind: "QUOTE";
+  quoteId: string;
+  productId: string;
+  previewKey: string | null;
+  expiresAt: string | null;
+};
+
+export type CartLine = ReadyMadeLine | CustomDesignLine | QuoteLine;
 
 export type CartView = {
   lines: CartLine[];
@@ -167,7 +176,7 @@ export type CartView = {
 /** The actor's cart, priced from current catalog data (custom designs re-validated against their template). */
 export async function getCart(db: PrismaClient, storage: StorageAdapter, actor: Actor): Promise<CartView> {
   const items = await db.cartItem.findMany({
-    where: { cart: { customerId: actor.id }, kind: { in: ["READY_MADE", "CUSTOM_DESIGN"] } },
+    where: { cart: { customerId: actor.id } },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
@@ -187,8 +196,21 @@ export async function getCart(db: PrismaClient, storage: StorageAdapter, actor: 
       design: {
         select: { id: true, productId: true, spec: true, previewKey: true, product: { select: { name: true } } },
       },
+      quoteRequest: {
+        select: {
+          id: true,
+          status: true,
+          priceMinor: true,
+          respondBy: true,
+          expiresAt: true,
+          previewKey: true,
+          specSnapshot: true,
+          design: { select: { productId: true, product: { select: { name: true } } } },
+        },
+      },
     },
   });
+  const now = new Date();
 
   const lines: CartLine[] = [];
   for (const item of items) {
@@ -235,6 +257,27 @@ export async function getCart(db: PrismaClient, storage: StorageAdapter, actor: 
         issue: check.issue,
       });
     }
+  }
+
+  for (const item of items) {
+    if (item.kind !== "QUOTE" || !item.quoteRequest) continue;
+    const q = item.quoteRequest;
+    const spec = designSpecSchema.safeParse(q.specSnapshot);
+    const unit = q.priceMinor ?? 0;
+    lines.push({
+      kind: "QUOTE",
+      itemId: item.id,
+      quoteId: q.id,
+      productId: q.design.productId,
+      productName: q.design.product.name,
+      size: spec.success ? spec.data.size : "M",
+      previewKey: q.previewKey,
+      expiresAt: q.expiresAt?.toISOString() ?? null,
+      unitPriceMinor: unit,
+      quantity: 1,
+      lineTotalMinor: unit,
+      issue: canAcceptQuote(q, now) && q.priceMinor !== null ? null : "This quote has expired or was closed",
+    });
   }
 
   const payable = lines.filter((l) => l.issue === null);

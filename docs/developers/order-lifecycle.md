@@ -61,3 +61,19 @@ Acceptance, the 24-hour automatic refund, production, QC, shipping and courier u
 
 - `/checkout`: address (BD mobile number required), delivery zone (Inside Dhaka ৳80, Outside Dhaka ৳150), server-priced summary.
 - `/account/orders` and `/account/orders/[id]`: per-item progress, design previews, address, totals, and the event timeline. "Complete payment" appears while the order is payable.
+
+## Tailoring quotes (Phase 7)
+
+```
+REQUESTED ──team prices it (within 24 h)──▶ QUOTED ──paid (within 7 days)──▶ ACCEPTED
+    │                                          │
+    ├─team declines──▶ DECLINED                ├─customer: "No thanks" ─▶ WITHDRAWN
+    ├─customer withdraws──▶ WITHDRAWN          └─7 days pass ──────────▶ EXPIRED (cart line removed)
+    └─24 h pass with no reply──▶ EXPIRED
+```
+
+- **Eligibility** (`quoteIneligibility`, `lib/quotes/rules.ts`): the customer's own **saved** design, started from a dress photo (`startedFrom = PHOTO` with a reference photo), with no open quote, and at most 5 open quotes per customer.
+- **Requesting** freezes the design (`specSnapshot`) and renders its own preview, so later edits to the design don't change what was quoted.
+- **Expiry** is enforced twice: `effectiveQuoteStatus` treats overdue rows as expired immediately (pages, accept, checkout, the team's reply), and the worker's `expireQuotes` sweep (also run when `/admin/quotes` loads) writes it and removes expired quote lines from carts.
+- **Accepting** adds a `QUOTE` cart line. The price always comes from the quote. Checkout re-checks that the quote is still `QUOTED`, unexpired and owned, then renders print files from the snapshot.
+- **Payment:** the webhook moves the item `PAID → ACCEPTED` (SYSTEM) and the quote to `ACCEPTED` in the same transaction, including when the price expired while the payment was in flight (the amount was locked when the order was placed).

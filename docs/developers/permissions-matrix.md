@@ -92,6 +92,16 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Poll a start request | ❌ | ✅ own only ("not found" otherwise) | ❌ | `getStartStatus` |
 | Use a reference photo on a design | ❌ | ✅ own key only | ❌ | `validateDesignAgainstTemplate` (`customerReferencePrefix`) |
 
+## Tailoring quotes (Phase 7)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Request a quote | ➡️ sign in | ✅ own saved, photo-started designs; ≤ 5 open | ❌ | `requestQuote` → `assertCustomer`, `quoteIneligibility` |
+| See quotes | ❌ | ✅ **own only** ("not found" otherwise) | ✅ all, in `/admin/quotes` (no contact details) | `listMyQuotes`/`getMyQuote` (scoped by `customerId`); `lib/admin/quotes.ts` → `assertAdmin` |
+| Price or decline a quote | ❌ | ❌ | ✅ once, while open (audited) | `respondToQuote` |
+| Accept (add to cart) / withdraw | ❌ | ✅ own, while open; the price comes from the quote | ❌ | `acceptQuote`, `withdrawQuote`; checkout re-checks |
+| Expire quotes | ❌ | ❌ | ❌ | System sweep (`expireQuotes`) |
+
 ## Virtual try-on (Phase 7)
 
 | Action | Anonymous | Customer | Admin | Enforced in |

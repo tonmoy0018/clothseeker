@@ -24,6 +24,8 @@ export type SpecSheetData = {
   previewPng: Buffer | null;
   referencePng: Buffer | null;
   customerNote: string | null;
+  /** Tailoring quotes: what the customer asked for and what the team quoted. */
+  tailoringNotes: string | null;
   /** Admin page for this order; encoded in the QR code. */
   adminUrl: string;
 };
@@ -152,6 +154,10 @@ export async function buildSpecSheet(data: SpecSheetData): Promise<Uint8Array> {
     const scale = Math.min(140 / ref.width, 140 / ref.height);
     below.y -= ref.height * scale + 4;
     page.drawImage(ref, { x: MARGIN, y: below.y, width: ref.width * scale, height: ref.height * scale });
+  }
+  if (data.tailoringNotes) {
+    below.heading("Tailoring request (quote)");
+    below.line(data.tailoringNotes);
   }
   below.heading("Customer note");
   below.line(data.customerNote?.trim() ? data.customerNote : "None");

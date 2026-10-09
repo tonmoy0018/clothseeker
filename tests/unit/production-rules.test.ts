@@ -102,6 +102,7 @@ describe("spec sheet and label PDFs", () => {
     printFiles: [{ areaId: "front-chest", label: "Front chest", key: "x/orders/abcdef12.png", widthPx: 2362, heightPx: 1772, widthCm: 20, heightCm: 15 }],
     referencePng: null,
     customerNote: "Please make the hem 2 cm shorter — thank you!",
+      tailoringNotes: "Customer: Take in the waist 2 cm\nQuoted by ClothSeeker: Includes hand-finished hem",
     adminUrl: "http://localhost:3000/admin/orders/x",
   };
 

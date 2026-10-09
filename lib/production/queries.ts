@@ -140,6 +140,7 @@ const adminOrderSelect = {
       previewKey: true,
       printFiles: true,
       designSpec: true,
+      quoteRequestId: true,
       design: { select: { productId: true } },
       variant: { select: { productId: true } },
       qcPhotos: { orderBy: { createdAt: "desc" }, select: { id: true, side: true, storageKey: true, createdAt: true } },

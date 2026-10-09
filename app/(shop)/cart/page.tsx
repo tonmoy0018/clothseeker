@@ -31,7 +31,7 @@ export default async function CartPage() {
   const cart = await getCart(getPrisma(), storage, user);
   const previews = await storage.signReadUrls(
     BUCKETS.designAssets,
-    cart.lines.flatMap((l) => (l.kind === "CUSTOM_DESIGN" && l.previewKey ? [l.previewKey] : [])),
+    cart.lines.flatMap((l) => ((l.kind === "CUSTOM_DESIGN" || l.kind === "QUOTE") && l.previewKey ? [l.previewKey] : [])),
   );
 
   if (cart.lines.length === 0) {
@@ -52,7 +52,7 @@ export default async function CartPage() {
         <h1 className="text-2xl font-semibold">Your cart</h1>
         <ul className="flex flex-col divide-y rounded-xl border" data-testid="cart-lines">
           {cart.lines.map((line) => (
-            <CartRow key={line.itemId} line={line} previewUrl={line.kind === "CUSTOM_DESIGN" && line.previewKey ? previews.get(line.previewKey) : undefined} />
+            <CartRow key={line.itemId} line={line} previewUrl={(line.kind === "CUSTOM_DESIGN" || line.kind === "QUOTE") && line.previewKey ? previews.get(line.previewKey) : undefined} />
           ))}
         </ul>
       </section>
@@ -90,6 +90,28 @@ export default async function CartPage() {
 }
 
 function CartRow({ line, previewUrl }: { line: CartLine; previewUrl: string | undefined }) {
+  if (line.kind === "QUOTE") {
+    return (
+      <li className="flex gap-4 p-4" data-testid="quote-line">
+        <div className="relative size-20 shrink-0 overflow-hidden rounded-xl bg-muted">
+          {previewUrl && <Image src={previewUrl} alt={`Quoted design for ${line.productName}`} fill unoptimized className="object-contain" />}
+        </div>
+        <div className="flex flex-1 flex-col gap-1">
+          <Link href={`/account/quotes/${line.quoteId}`} className="font-medium hover:underline">
+            {line.productName} — tailoring quote
+          </Link>
+          <span className="text-sm text-muted-foreground">
+            Size {line.size} · Made to order{line.expiresAt && !line.issue ? ` · Price valid until ${new Date(line.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Dhaka" })}` : ""}
+          </span>
+          {line.issue && <span className="text-sm text-destructive">{line.issue}</span>}
+        </div>
+        <div className="flex flex-col items-end justify-between gap-2">
+          <span className="font-medium">{line.issue ? "—" : formatBDT(line.lineTotalMinor)}</span>
+          <RemoveOnly itemId={line.itemId} />
+        </div>
+      </li>
+    );
+  }
   if (line.kind === "CUSTOM_DESIGN") {
     return (
       <li className="flex gap-4 p-4" data-testid="custom-line">

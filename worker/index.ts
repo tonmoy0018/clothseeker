@@ -15,13 +15,15 @@ import { MockPaymentProvider } from "@/lib/payments/mock";
 import { expireOverdueAcceptances } from "@/lib/production/acceptance";
 import { retryPendingRefunds } from "@/lib/production/refunds";
 import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
+import { expireQuotes } from "@/lib/quotes/service";
 import { cleanupTryOnMedia } from "@/lib/tryon/service";
 
 import { errorName, log } from "./logger";
 
 // Local background worker (runs on the developer's Mac mini).
 // Each poll: expire unpaid orders, refund custom items not accepted within 24 h, retry failed refunds,
-// delete unsaved try-on photos/results after 24 h, then claim and run queued AI jobs (lib/ai/worker).
+// delete unsaved try-on photos/results after 24 h, expire unanswered or unpaid quotes, then claim and
+// run queued AI jobs (lib/ai/worker).
 // Several workers can run at once safely.
 //
 //   pnpm worker          run until Ctrl+C
@@ -91,6 +93,7 @@ async function main(): Promise<number> {
         ["acceptance.timed_out", () => expireOverdueAcceptances(prisma, payments, now)],
         ["refunds.settled", () => retryPendingRefunds(prisma, payments)],
         ["tryon.cleaned", () => cleanupTryOnMedia(prisma, storage, now)],
+        ["quotes.expired", () => expireQuotes(prisma, now)],
       ];
       for (const [name, sweep] of sweeps) {
         try {

@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 6 complete (2026-10-09). Next: Phase 7, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 7 complete (2026-10-09). Next: Phase 8, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -228,6 +228,10 @@ docs/developers/
 - `PlannerProvider` also checks try-on photos (`checkTryOnPhoto`). Per-job-type timeouts go in `AiWorkerDeps.timeoutsMs`.
 - **Start from a photo/description** (`lib/ai/starts.ts`, worker `dress-match.ts`): the planner may only pick an offered dress (`parseDressMatch`), and its colours, pattern and style are fitted via `matchToSpec` → `variationToSpec`. The result is a DRAFT design with `startedFrom` and `referencePhotoKey`; descriptions also queue a design round (`?job=` makes the AI box poll it).
 - Motif images that are unusable or refused cost only that option's motif, never the round.
+- **Quotes** (`lib/quotes/*`, `lib/admin/quotes.ts`, [docs/admin/quotes.md](docs/admin/quotes.md)):
+  - Only for saved, photo-started designs. A quote freezes `specSnapshot` and its own preview.
+  - Always use `effectiveQuoteStatus` (24 h to reply, 7 days to pay) rather than the raw status. `expireQuotes` is the idempotent sweep.
+  - Quote cart lines are priced from the quote only; checkout re-checks them; the webhook sets the item to `ACCEPTED` and the quote to `ACCEPTED`.
 - **Screenshots in docs** must not contain photos of real people we don't have rights to (e.g. research-dataset examples).
 - This repo sits on an iCloud-synced Desktop: Finder can create "… 2.ts" copies (seen in `.next/` and once in `tests/`). Delete them, and never commit them.
 
@@ -270,7 +274,7 @@ Run everything and fix all errors. Write or update tests for the changed busines
 - The worker runs only while the Mac mini is on. Jobs must survive restarts (stuck-job recovery).
 - Clients poll job status. Realtime subscriptions are optional, for later.
 - Gemini's **free tier may use submitted prompts/images to improve Google's products**. Fine for testing with our own photos; before real customers use AI photo uploads, switch to a paid tier or disclose it in the privacy policy.
-- Test the try-on provider (`ai-scripts/` feasibility script) before building the full Phase 7 UI.
+- Free try-on Spaces give a rough preview and a tiny daily GPU allowance shared by the whole store (feasibility results in `docs/developers/try-on.md`). Real traffic needs a paid or self-hosted try-on model.
 
 ## Decided
 

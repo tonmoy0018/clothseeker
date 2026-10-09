@@ -26,7 +26,7 @@ ClothSeeker is a **single brand**. There are no sellers, stores, store members o
 | | `AIJob` (`ai_jobs`) | The worker queue: payload, attempts/`maxAttempts`, lease (`lockedAt`/`lockedBy`), `result` (`{ roundId }`), customer-safe `errorCode`. See [ai-pipelines.md](ai-pipelines.md) | index (`status`, `runAfter`) for claiming; `inputHash` for in-flight dedupe |
 | | `TryOnPhoto` | Consented try-on upload (`consentAt`, `checkedAt` once the photo check passed). Unsaved photos are deleted after 24 h; rows stay with `deletedAt` for the audit trail. See [try-on.md](try-on.md) | index (`saved`, `createdAt`) for cleanup |
 | | `TryOnResult` | One try-on: photo, design or product, `garmentHash` (for "your design changed"), private `resultKey`, `saved`, producing `jobId` (unique). Unsaved results are deleted after 24 h | (`saved`, `createdAt`) for cleanup; (`customerId`, `createdAt`) for the daily limit; (`customerId`, `inputHash`) for the cache |
-| | `QuoteRequest` | Special-tailoring quote, answered by the team within 24 h (Phase 7) | index (`status`, `respondBy`) |
+| | `QuoteRequest` | Special-tailoring quote for a photo-started design: customer `notes`, frozen `specSnapshot` + own `previewKey`, `referencePhotoKey`, team reply (`priceMinor`, `responseNote`) within 24 h (`respondBy`), price valid until `expiresAt` (7 days) | (`status`, `respondBy`) and (`status`, `expiresAt`) for the queue and expiry |
 | Commerce | `Cart`, `CartItem` | One cart per customer. A line is `READY_MADE`, `CUSTOM_DESIGN` or `QUOTE` | `Cart.customerId` unique; unique (`cartId`, `variantId`) |
 | | `Order` | One checkout: payment `status` (`PENDING_PAYMENT`, `PAID`, `CANCELLED`, `REFUNDED`), shipping snapshot, subtotal + delivery fee, `expiresAt` for unpaid orders | `number` unique; **`idempotencyKey` unique**; `paymentRef` unique |
 | | `OrderItem` | One order line with **snapshots** (name, size, color, unit price, design spec, preview + print files) and its fulfilment `status` | index (`status`, `createdAt`) |
@@ -49,7 +49,7 @@ Custom:      PENDING_PAYMENT → PAID → AWAITING_ACCEPTANCE → ACCEPTED → I
 Any time:    CANCELLED, REFUNDED, DISPUTED (rules in Phase 4)
 ```
 
-Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`) live on `QuoteRequest`, because an `OrderItem` only exists after checkout. All moves go through one module; see [order-lifecycle.md](order-lifecycle.md).
+Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`, `WITHDRAWN`) live on `QuoteRequest`, because an `OrderItem` only exists after checkout. All moves go through one module; see [order-lifecycle.md](order-lifecycle.md).
 
 ## Template config versions
 

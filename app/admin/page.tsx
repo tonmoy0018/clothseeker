@@ -4,6 +4,7 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAdminDashboard, LOW_STOCK_THRESHOLD } from "@/lib/admin/products";
+import { countQuotesNeedingReply } from "@/lib/admin/quotes";
 import { queueCounts } from "@/lib/production/queries";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getPrisma } from "@/lib/db";
@@ -14,12 +15,13 @@ export default async function AdminDashboardPage() {
   // Server-side guard on every admin page and action; non-admins get a 404.
   const admin = await requireAdmin();
   const db = getPrisma();
-  const [dashboard, queue] = await Promise.all([getAdminDashboard(db, admin), queueCounts(db, admin, new Date())]);
+  const [dashboard, queue, quotes] = await Promise.all([getAdminDashboard(db, admin), queueCounts(db, admin, new Date()), countQuotesNeedingReply(db, admin)]);
   const orderTiles = [
     { label: queue.overdue > 0 ? `Need acceptance (${queue.overdue} overdue)` : "Need acceptance", value: queue.needsAcceptance, href: "/admin/orders?tab=needs_acceptance" },
     { label: "To make", value: queue.toMake, href: "/admin/orders?tab=to_make" },
     { label: "Quality check", value: queue.qc, href: "/admin/orders?tab=qc" },
     { label: "To ship", value: queue.toShip, href: "/admin/orders?tab=to_ship" },
+    { label: "Quotes to answer", value: quotes, href: "/admin/quotes" },
   ];
 
   const tiles = [
@@ -42,7 +44,7 @@ export default async function AdminDashboardPage() {
         <h2 id="orders-heading" className="text-lg font-semibold">
           Orders
         </h2>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4" data-testid="order-tiles">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5" data-testid="order-tiles">
           {orderTiles.map((tile) => (
             <Link key={tile.label} href={tile.href} className="rounded-xl border p-4 hover:bg-muted">
               <div className="text-3xl font-semibold tabular-nums">{tile.value}</div>
@@ -87,7 +89,7 @@ export default async function AdminDashboardPage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Quotes arrive in Phase 7, and brand-logo flags, disputes, AI metrics and the audit log viewer in Phase 8.
+        Brand-logo flags, disputes, AI metrics and the audit log viewer arrive in Phase 8.
       </p>
     </div>
   );

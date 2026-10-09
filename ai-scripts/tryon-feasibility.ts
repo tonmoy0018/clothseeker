@@ -74,7 +74,7 @@ async function main() {
     process.exit(2);
   }
   const token = process.env.HF_TOKEN;
-  const hfToken = token && /^hf_[A-Za-z0-9]{20,}$/.test(token) ? (token as `hf_${string}`) : undefined;
+  const hfToken: `hf_${string}` | undefined = token && /^hf_[A-Za-z0-9]{20,}$/.test(token) ? `hf_${token.slice(3)}` : undefined;
   const person = new Blob([await readFile(personPath)], { type: "image/jpeg" });
   const garment = new Blob([await readFile(garmentPath)], { type: "image/png" });
   await mkdir(outDir, { recursive: true });
