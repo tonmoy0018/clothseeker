@@ -47,6 +47,18 @@ const aiEnvShape = {
   AI_FAKE_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(1_500),
   /** Hard limit for one attempt at an AI job. */
   AI_JOB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
+  /** Virtual try-on: deterministic fake (default) or free public Hugging Face Spaces. */
+  TRYON_PROVIDER: z.enum(["fake", "huggingface"]).default("fake"),
+  /** Optional free Hugging Face account token; raises the shared ZeroGPU allowance. */
+  HF_TOKEN: z.string().regex(/^hf_[A-Za-z0-9]{20,}$/).optional(),
+  /** Comma-separated Spaces tried in order (see lib/ai/tryon-hf.ts). */
+  TRYON_SPACES: z
+    .string()
+    .regex(/^(levihsu\/OOTDiffusion|franciszzj\/Leffa)(,(levihsu\/OOTDiffusion|franciszzj\/Leffa))*$/)
+    .default("levihsu/OOTDiffusion,franciszzj/Leffa")
+    .transform((v) => v.split(",")),
+  /** Limit for one try-on attempt (free Spaces queue and cold-start). */
+  TRYON_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(900_000).default(240_000),
 };
 
 export const workerEnvSchema = z.object({

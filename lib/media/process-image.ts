@@ -12,7 +12,16 @@ export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_INPUT_EDGE = 8000;
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 
-export type ImagePurpose = "productPhoto" | "garment" | "styleReference" | "mask" | "designUpload" | "aiInput" | "aiMotif";
+export type ImagePurpose =
+  | "productPhoto"
+  | "garment"
+  | "styleReference"
+  | "mask"
+  | "designUpload"
+  | "aiInput"
+  | "aiMotif"
+  | "tryOnPhoto"
+  | "tryOnResult";
 
 const RULES: Record<ImagePurpose, { minEdge: number; maxOutputEdge: number; output: "webp" | "mask-png" }> = {
   productPhoto: { minEdge: 600, maxOutputEdge: 2000, output: "webp" },
@@ -26,6 +35,10 @@ const RULES: Record<ImagePurpose, { minEdge: number; maxOutputEdge: number; outp
   aiInput: { minEdge: 200, maxOutputEdge: 1600, output: "webp" },
   // Motifs returned by an image provider (untrusted bytes, same checks as uploads).
   aiMotif: { minEdge: 128, maxOutputEdge: 1024, output: "webp" },
+  // A customer's photo for virtual try-on (metadata such as GPS is stripped by re-encoding).
+  tryOnPhoto: { minEdge: 400, maxOutputEdge: 1600, output: "webp" },
+  // A try-on result returned by a provider (untrusted bytes).
+  tryOnResult: { minEdge: 256, maxOutputEdge: 1600, output: "webp" },
 };
 
 export type ImageErrorCode = "EMPTY" | "TOO_LARGE" | "UNSUPPORTED" | "TOO_SMALL" | "DIMENSIONS_TOO_LARGE";

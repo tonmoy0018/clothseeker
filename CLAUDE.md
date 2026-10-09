@@ -218,6 +218,16 @@ docs/developers/
 - **AI drafts:** the first AI request on an unsaved design creates a hidden DRAFT design. The cache never hands a *saved* design to an editor that has no design open, because Save would overwrite it.
 - **E2E:** Playwright starts the worker locally (health port 3101, fake providers). AI E2E tests sign up fresh customers for a full quota.
 
+## Implementation conventions (established in Phase 7)
+
+- **Try-on** (`lib/tryon/*`, worker `lib/ai/worker/try-on.ts`, [docs/developers/try-on.md](docs/developers/try-on.md)):
+  - No upload without `consent: "yes"`. Photos and results live in `tryon-private` under `{customerId}/photos|results/`.
+  - Unsaved media is deleted after 24 h by the audited, idempotent `cleanupTryOnMedia`. Deleting sets `deletedAt`; rows are never hard-deleted.
+  - A design edit only marks a try-on stale (`isTryOnStale`). Never rerun automatically.
+  - The limit is 5 per Dhaka day. `TryOnProvider` defaults to the fake; `huggingface` calls free public Spaces: rough preview, a tiny shared GPU allowance, and photos leave our systems.
+- `PlannerProvider` also checks try-on photos (`checkTryOnPhoto`). Per-job-type timeouts go in `AiWorkerDeps.timeoutsMs`.
+- **Screenshots in docs** must not contain photos of real people we don't have rights to (e.g. research-dataset examples).
+
 ## Mapping the original build guide
 
 The phase prompts in *Enhanced_Claude_Code_Build_Prompts.pdf* were written for a marketplace. When following them, apply this file instead:

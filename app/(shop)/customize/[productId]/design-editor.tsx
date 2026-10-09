@@ -18,6 +18,8 @@ import { designSpecSchema, type DesignLayer, type DesignSpec } from "@/types/des
 import { STYLE_GROUPS, type StyleGroup, type TemplateConfig } from "@/types/template";
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
+import { TryOnPanel } from "../../try-on-panel";
+
 import { AiBox } from "./ai-box";
 import { DesignCanvas, type LayerBox } from "./design-canvas";
 import { composeGarment, decorationDataUrl, loadImage, type ClientFill } from "./recolor";
@@ -113,6 +115,7 @@ export function DesignEditor(props: DesignEditorProps) {
   const [dirty, setDirty] = useState(restoredDraft !== null);
   const [fontsReady, setFontsReady] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [showTryOn, setShowTryOn] = useState(false);
 
   // ── fonts ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -399,6 +402,19 @@ export function DesignEditor(props: DesignEditorProps) {
           </div>
         )}
         <p className="text-xs text-muted-foreground">Drag items to move them. Use the corner handles to resize or rotate. Items stay inside the dashed areas.</p>
+
+        <div className="flex flex-col gap-2">
+          <Button variant="outline" className="self-start" aria-expanded={showTryOn} onClick={() => setShowTryOn((v) => !v)}>
+            {showTryOn ? "Hide try-on" : "See it on me"}
+          </Button>
+          {showTryOn && (
+            <TryOnPanel
+              source={{ kind: "design", spec, designId }}
+              signedIn={props.customerId !== null}
+              onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+            />
+          )}
+        </div>
 
         {props.aiEnabled ? (
           <AiBox

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { ForbiddenError, type Actor } from "@/lib/auth/policy";
 import { AiError, AiProviderError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePlanner } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
 import { createDesignRoundJob, getAiQuota, getJobStatus, listRounds, pickOption, uploadAiAttachment, type DesignRoundRequest } from "@/lib/ai/jobs";
 import { QUOTA_MESSAGE } from "@/lib/ai/quota";
 import { storedOptionsSchema } from "@/lib/ai/rounds";
@@ -52,6 +52,7 @@ class SpyPlanner implements PlannerProvider {
   constructor(private readonly behaviour: (attempt: number, signal: AbortSignal) => Promise<void> = async () => undefined) {}
 
   detectBrandLogos: PlannerProvider["detectBrandLogos"] = (images, signal) => this.inner.detectBrandLogos(images, signal);
+  checkTryOnPhoto: PlannerProvider["checkTryOnPhoto"] = (image, signal) => this.inner.checkTryOnPhoto(image, signal);
 
   async planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown> {
     this.requests.push(request);
@@ -64,7 +65,7 @@ function deps(providers: Partial<AiProviders> = {}, overrides: Partial<AiWorkerD
   return {
     db,
     storage,
-    providers: { planner: new FakePlanner(), image: new FakeImage(), ...providers },
+    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), ...providers },
     workerId: "worker-a",
     timeoutMs: 10_000,
     backoffMs: () => 0,

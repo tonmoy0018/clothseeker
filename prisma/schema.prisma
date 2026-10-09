@@ -34,6 +34,7 @@ model User {
   aiRounds      AIRound[]
   aiJobs        AIJob[]
   tryOnPhotos   TryOnPhoto[]
+  tryOnResults  TryOnResult[]
   quoteRequests QuoteRequest[]
   reviews       Review[]
   disputes      Dispute[]
@@ -90,6 +91,7 @@ model Product {
   template CustomizationTemplate?
   designs  Design[]
   reviews  Review[]
+  tryOns   TryOnResult[]
 
   @@index([status, categoryId])
   @@map("products")
@@ -167,6 +169,7 @@ model Design {
   product       Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
   template      CustomizationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   aiRounds      AIRound[]
+  tryOnResults  TryOnResult[]
   quoteRequests QuoteRequest[]
   cartItems     CartItem[]
   orderItems    OrderItem[]
@@ -240,8 +243,9 @@ model AIJob {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  customer User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   round    AIRound?
+  tryOn    TryOnResult?
 
   @@index([status, runAfter])
   @@index([customerId, createdAt])
@@ -252,17 +256,52 @@ model AIJob {
 model TryOnPhoto {
   id         String    @id @default(uuid()) @db.Uuid
   customerId String    @map("customer_id") @db.Uuid
+  /// tryon-private key; the file is removed when the photo is deleted (the row stays for the audit trail).
   storageKey String    @map("storage_key")
+  /// When the customer agreed to the try-on terms for this photo.
   consentAt  DateTime  @map("consent_at")
+  /// Saved photos are kept until the customer deletes them; unsaved ones are deleted after 24 hours.
   saved      Boolean   @default(false)
+  /// When the photo passed the try-on photo check (one person, facing forward, good light, body visible).
+  checkedAt  DateTime? @map("checked_at")
   deletedAt  DateTime? @map("deleted_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer User          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  results  TryOnResult[]
 
   @@index([saved, createdAt])
   @@index([customerId])
   @@map("try_on_photos")
+}
+
+model TryOnResult {
+  id          String    @id @default(uuid()) @db.Uuid
+  customerId  String    @map("customer_id") @db.Uuid
+  photoId     String    @map("photo_id") @db.Uuid
+  /// What was tried on: a design (snapshot signature in garmentHash) or a ready-made product.
+  designId    String?   @map("design_id") @db.Uuid
+  productId   String?   @map("product_id") @db.Uuid
+  /// Signature of the garment as tried on; the UI compares it to detect "your design changed".
+  garmentHash String    @map("garment_hash")
+  inputHash   String    @map("input_hash")
+  /// tryon-private key of the result image (removed when deleted).
+  resultKey   String    @map("result_key")
+  saved       Boolean   @default(false)
+  jobId       String    @unique @map("job_id") @db.Uuid
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  customer User       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  photo    TryOnPhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  design   Design?    @relation(fields: [designId], references: [id], onDelete: SetNull)
+  product  Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  job      AIJob      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([saved, createdAt])
+  @@index([customerId, createdAt])
+  @@index([customerId, inputHash])
+  @@map("try_on_results")
 }
 
 enum QuoteStatus {

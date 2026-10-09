@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "@gradio/client": "^2.7.1",
     "@imgly/background-removal": "1.7.0",
     "@next/env": "16.3.8",
     "@prisma/adapter-pg": "7.10.0",

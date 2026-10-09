@@ -5,13 +5,26 @@ import sharp from "sharp";
 import { PATTERNS } from "@/lib/catalog/patterns";
 import { STYLE_GROUPS } from "@/types/template";
 
-import type { BrandLogoCheck, ImageProvider, MotifRequest, PlannerProvider, PlanRequest, ProviderImage } from "./types";
+import { knockOutWhite } from "./image-utils";
+import type {
+  BrandLogoCheck,
+  ImageProvider,
+  MotifRequest,
+  PlannerProvider,
+  PlanRequest,
+  ProviderImage,
+  TryOnPhotoCheck,
+  TryOnProvider,
+  TryOnRequest,
+} from "./types";
 
 // Deterministic stand-ins for the real providers. The default for development, tests and CI:
 // no keys, no network, and the same request always gives the same answer.
 //
-// Testing convention: FakePlanner reports a brand logo for any photo whose dominant color is the
-// marker red #E4002B. Real logo detection comes from Gemini (lib/ai/gemini.ts).
+// Testing conventions:
+// - FakePlanner reports a brand logo for any photo whose dominant color is the marker red #E4002B.
+// - FakePlanner rejects try-on photos that are dark (mean brightness < 60) or landscape.
+// Real checks come from Gemini (lib/ai/gemini.ts).
 
 export const FAKE_LOGO_MARKER = "#e4002b";
 
@@ -71,6 +84,19 @@ export class FakePlanner implements PlannerProvider {
       }
     }
     return { detected: false };
+  }
+
+  async checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck> {
+    await delay(Math.min(this.delayMs, 300), signal);
+    const { channels } = await sharp(image.data).greyscale().stats();
+    const meta = await sharp(image.data).metadata();
+    const brightness = channels[0]?.mean ?? 0;
+    return {
+      onePerson: true,
+      facingForward: true,
+      goodLight: brightness >= 60,
+      bodyVisible: (meta.height ?? 0) >= (meta.width ?? 1),
+    };
   }
 
   async planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown> {
@@ -161,5 +187,31 @@ export class FakeImage implements ImageProvider {
     const color = /^#[0-9a-f]{6}$/i.test(request.color) ? request.color : "#333333";
     const word = motifWord(request.prompt.toLowerCase(), request.seed);
     return sharp(Buffer.from(motifSvg(word, color, request.seed))).png().toBuffer();
+  }
+}
+
+/**
+ * Lays the garment over the middle of the photo. Obviously not a real try-on, but deterministic,
+ * private and instant, which is what development and tests need.
+ */
+export class FakeTryOn implements TryOnProvider {
+  readonly name = "fake";
+
+  constructor(private readonly delayMs = 0) {}
+
+  async tryOn(request: TryOnRequest, signal: AbortSignal): Promise<Buffer> {
+    await delay(this.delayMs, signal);
+    const person = sharp(request.person.data);
+    const { width = 600, height = 800 } = await person.metadata();
+    const garmentWidth = Math.round(width * 0.55);
+    const garment = await sharp(await knockOutWhite(request.garment.data))
+      .resize({ width: garmentWidth, height: Math.round(height * 0.62), fit: "inside" })
+      .png()
+      .toBuffer();
+    const placed = await sharp(garment).metadata();
+    return person
+      .composite([{ input: garment, left: Math.round((width - (placed.width ?? garmentWidth)) / 2), top: Math.round(height * 0.2) }])
+      .png()
+      .toBuffer();
   }
 }

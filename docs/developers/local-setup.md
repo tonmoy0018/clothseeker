@@ -65,6 +65,9 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `AI_FAKE_DELAY_MS` | Optional, default 1500 | Worker-only | Latency of the fake providers |
 | `AI_JOB_TIMEOUT_MS` | Optional, default 120000 | Worker-only | Limit for one AI job attempt |
 | `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |
+| `TRYON_PROVIDER` | Optional: `fake` (default) or `huggingface` | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
+| `HF_TOKEN` | Optional free Hugging Face token (`hf_…`) | **Worker-only secret** | Raises the shared ZeroGPU allowance |
+| `TRYON_SPACES`, `TRYON_TIMEOUT_MS` | Optional; default `levihsu/OOTDiffusion,franciszzj/Leffa` and 240000 | Worker-only | Try-on Spaces (in order) and per-attempt limit |
 | `MOCK_PAYMENT_WEBHOOK_SECRET` | Random, ≥ 32 chars (`openssl rand -hex 32`; `pnpm env:local` generates one) | **Server-only** | Signing/verifying payment webhooks |
 
 All variables are validated with Zod in `lib/env/schema.ts`. A missing or invalid variable fails fast, and the error names the variable without printing its value. Only `NEXT_PUBLIC_*` variables can reach the browser. `lib/env/server.ts` imports `server-only`, so importing it from a Client Component breaks the build.

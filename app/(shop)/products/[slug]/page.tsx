@@ -3,13 +3,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth/session";
 import { signCatalogImages } from "@/lib/catalog/images";
 import { SIZE_CHART, SIZE_ORDER } from "@/lib/catalog/size-chart";
 import { getPrisma } from "@/lib/db";
 import { getProductBySlug } from "@/lib/shop/catalog";
+import { productTryOnImageKey } from "@/lib/tryon/garment";
 
 import { PurchasePanel } from "./purchase-panel";
+import { TryOnButton } from "./try-on-button";
 
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
   const { slug } = await params;
@@ -27,7 +30,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
   const sizes = SIZE_ORDER.filter((s) => product.variants.some((v) => v.size === s));
   const colors = [...new Map(product.variants.map((v) => [v.colorName, { name: v.colorName, hex: v.colorHex }])).values()];
   const chartRows = SIZE_CHART.filter((row) => sizes.includes(row.size));
-  const signed = await signCatalogImages(product.imageKeys);
+  const [signed, user, tryOnImage] = await Promise.all([signCatalogImages(product.imageKeys), getCurrentUser(), productTryOnImageKey(getPrisma(), product.id)]);
   const photos = product.imageKeys.flatMap((key) => {
     const url = signed.get(key);
     return url ? [url] : [];
@@ -68,9 +71,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
                 Customize this dress
               </Link>
             )}
-            <Button variant="outline" disabled title="Virtual try-on arrives in Phase 7">
-              Try on (coming soon)
-            </Button>
+            {tryOnImage && <TryOnButton productId={product.id} slug={product.slug} signedIn={user?.role === "CUSTOMER"} />}
           </div>
         </div>
 

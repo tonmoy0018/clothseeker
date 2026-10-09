@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import sharp from "sharp";
 import { ZodError } from "zod";
 
 import { normalizeForRender } from "@/lib/design/normalize";
@@ -12,6 +11,7 @@ import { buildObjectKey } from "@/lib/storage/object-key";
 import { parseDesignSpec, type DesignSpec } from "@/types/design-spec";
 
 import { findBrandTerm } from "../brands";
+import { knockOutWhite } from "../image-utils";
 import { AiJobRejected, AiProviderError } from "../errors";
 import { parsePlan, planConstraints, summarizeSpec, variationToSpec, type PlannedOption } from "../plan";
 import { designRoundPayloadSchema, storedOptionsSchema, type StoredOption } from "../rounds";
@@ -28,6 +28,8 @@ import type { AiWorkerDeps } from "./run";
 /** Preview width for option cards (smaller than the editor's 1200 px preview). */
 export const OPTION_PREVIEW_WIDTH = 600;
 
+export { knockOutWhite };
+
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) {
     throw new AiProviderError("job aborted", true, "TIMEOUT");
@@ -37,42 +39,6 @@ function throwIfAborted(signal: AbortSignal): void {
 /** Seed for an option's motif: stable for the same request, different per option. */
 function motifSeed(seed: string, index: number): number {
   return Number.parseInt(seed.slice(index * 6, index * 6 + 8), 16) % 2_147_483_647;
-}
-
-/**
- * Provider images often come on a white background; make near-white transparent so only the motif
- * is printed, then crop the empty margins. Also decodes the untrusted bytes, so anything that isn't
- * an image fails here.
- */
-export async function knockOutWhite(input: Buffer): Promise<Buffer> {
-  let raw;
-  try {
-    raw = await sharp(input, { limitInputPixels: 4096 * 4096, failOn: "error" })
-      .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
-      .toColourspace("srgb")
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-  } catch {
-    throw new AiProviderError("image provider returned an unreadable image", true);
-  }
-  const { data, info } = raw;
-  for (let i = 0; i + 3 < data.length; i += 4) {
-    const lightest = Math.min(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0);
-    if (lightest >= 245) {
-      data[i + 3] = 0;
-    } else if (lightest > 225) {
-      // Soft edge between the motif and the background.
-      data[i + 3] = Math.min(data[i + 3] ?? 255, Math.round(((245 - lightest) / 20) * 255));
-    }
-  }
-  const cleaned = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
-  // Image models leave wide empty margins; crop to the motif so it fills its box on the dress.
-  try {
-    return await sharp(cleaned).trim({ threshold: 1 }).png().toBuffer();
-  } catch {
-    return cleaned; // nothing left to trim against (e.g. a fully transparent image)
-  }
 }
 
 async function loadAttachments(deps: AiWorkerDeps, keys: readonly string[]): Promise<ProviderImage[]> {

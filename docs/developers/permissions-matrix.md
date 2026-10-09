@@ -83,6 +83,15 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Call an AI provider | ❌ | ❌ | ❌ | **Worker only**; the app holds no provider keys |
 | Review brand-logo flags | ❌ | ❌ | (Phase 8) | `flagged_items` rows written by the worker |
 
+## Virtual try-on (Phase 7)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Upload a try-on photo | ➡️ sign in | ✅ only with explicit consent (`consent = "yes"`) | ❌ | `uploadTryOnPhoto` → `assertCustomer`, `consentSchema` |
+| Try on a design or dress, poll, keep, delete | ➡️ sign in | ✅ **own photos, jobs and results only** (others look like "not found"); 5 per day | ❌ | `lib/tryon/service.ts` (scoped by `customerId`) |
+| See try-on photos/results | ❌ | ✅ own, via short-lived signed URLs | ❌ | private `tryon-private` bucket |
+| Delete unsaved try-on media after 24 h | ❌ | ❌ | ❌ | **Worker sweep only** (`cleanupTryOnMedia`, audited) |
+
 ## Planned
 
 | Phase | Admin | Customer |

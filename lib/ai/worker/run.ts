@@ -8,6 +8,7 @@ import type { AiProviders } from "../types";
 
 import { claimNextJob, leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import { runDesignRound } from "./design-round";
+import { runTryOn } from "./try-on";
 
 // Runs claimed AI jobs with a hard timeout, retries transient failures with backoff, and recovers
 // jobs whose worker died. Logs carry ids, counts, durations and codes only — never prompts or images.
@@ -21,6 +22,8 @@ export type AiWorkerDeps = {
   workerId: string;
   /** Limit for one attempt; the job is aborted and retried (or failed) after this. */
   timeoutMs: number;
+  /** Per job type overrides of timeoutMs (try-ons on free Spaces queue for a while). */
+  timeoutsMs?: Partial<Record<ClaimedJob["type"], number>>;
   now?: () => Date;
   log?: AiLog;
   /** Delay before retry number `attempt` (1-based). */
@@ -50,9 +53,10 @@ async function execute(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal)
   switch (job.type) {
     case "DESIGN_ROUND":
       return runDesignRound(deps, job, signal);
-    case "DRESS_MATCH":
     case "TRY_ON":
-      // Arrive in Phase 7.
+      return runTryOn(deps, job, signal);
+    case "DRESS_MATCH":
+      // Arrives in Phase 7b.
       throw new AiJobRejected("INTERNAL");
   }
 }
@@ -73,7 +77,7 @@ export async function processNextJob(deps: AiWorkerDeps): Promise<boolean> {
     timer = setTimeout(() => {
       controller.abort();
       reject(new AiProviderError("job timed out", true, "TIMEOUT"));
-    }, deps.timeoutMs);
+    }, deps.timeoutsMs?.[job.type] ?? deps.timeoutMs);
   });
   const work = execute(deps, job, controller.signal);
   // After a timeout the work may still settle later; its outcome is ignored (the lease is gone).
@@ -131,7 +135,8 @@ export async function recoverStuckJobs(db: PrismaClient, now: Date, staleAfterMs
 /** One worker poll: recover stuck jobs, then run due jobs one at a time (free tiers dislike bursts). */
 export async function runAiJobs(deps: AiWorkerDeps, maxJobs = 5): Promise<number> {
   const now = deps.now ?? (() => new Date());
-  const recovered = await recoverStuckJobs(deps.db, now(), deps.timeoutMs + 60_000);
+  const longest = Math.max(deps.timeoutMs, ...Object.values(deps.timeoutsMs ?? {}));
+  const recovered = await recoverStuckJobs(deps.db, now(), longest + 60_000);
   if (recovered > 0) {
     deps.log?.("ai.jobs_recovered", { count: recovered });
   }

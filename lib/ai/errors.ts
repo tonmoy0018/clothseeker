@@ -4,7 +4,7 @@
 export const BRAND_LOGO_MESSAGE = "Clothing brand logos can't be used. Try your own logo or another image.";
 
 /** Customer-safe failure reasons stored on ai_jobs.error_code. */
-export const AI_FAILURE_CODES = ["BRAND_LOGO", "TIMEOUT", "PROVIDER", "INVALID_PLAN", "NOT_AVAILABLE", "INTERNAL"] as const;
+export const AI_FAILURE_CODES = ["BRAND_LOGO", "TIMEOUT", "PROVIDER", "INVALID_PLAN", "NOT_AVAILABLE", "INTERNAL", "PHOTO_REJECTED", "TRYON_LIMIT"] as const;
 export type AiFailureCode = (typeof AI_FAILURE_CODES)[number];
 
 export const AI_FAILURE_MESSAGES: Record<AiFailureCode, string> = {
@@ -14,6 +14,9 @@ export const AI_FAILURE_MESSAGES: Record<AiFailureCode, string> = {
   INVALID_PLAN: "The design helper couldn't make designs that fit this dress. Try describing it differently.",
   NOT_AVAILABLE: "This dress can't be customized right now.",
   INTERNAL: "Something went wrong while making your designs. Please try again.",
+  PHOTO_REJECTED:
+    "This photo won't work for a try-on. Use a photo of just you, facing the camera in good light, with your body visible from shoulders to knees.",
+  TRYON_LIMIT: "Our free try-on service has reached its limit for today. Please try again tomorrow.",
 };
 
 export function isAiFailureCode(code: unknown): code is AiFailureCode {
@@ -34,7 +37,7 @@ export class AiProviderError extends Error {
   constructor(
     message: string,
     readonly retryable: boolean,
-    readonly code: "TIMEOUT" | "PROVIDER" | "INVALID_PLAN" = "PROVIDER",
+    readonly code: "TIMEOUT" | "PROVIDER" | "INVALID_PLAN" | "TRYON_LIMIT" = "PROVIDER",
     /** HTTP status, when the provider answered with an error. */
     readonly status?: number,
   ) {

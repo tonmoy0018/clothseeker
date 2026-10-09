@@ -198,6 +198,8 @@ describe("getAiProviders", () => {
     GEMINI_FALLBACK_MODELS: ["gemini-3.6-flash"],
     CLOUDFLARE_IMAGE_MODEL: DEFAULT_CLOUDFLARE_IMAGE_MODEL,
     AI_FAKE_DELAY_MS: 0,
+    TRYON_PROVIDER: "fake" as const,
+    TRYON_SPACES: ["levihsu/OOTDiffusion"],
   };
 
   it("uses the fakes by default and the real adapters when configured", () => {

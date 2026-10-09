@@ -1,8 +1,9 @@
 import type { WorkerEnv } from "@/lib/env/schema";
 
 import { CloudflareImage } from "./cloudflare";
-import { FakeImage, FakePlanner } from "./fake";
+import { FakeImage, FakePlanner, FakeTryOn } from "./fake";
 import { GeminiPlanner } from "./gemini";
+import { HuggingFaceTryOn } from "./tryon-hf";
 import type { AiProviders } from "./types";
 
 // Picks the AI providers from the worker's environment. Only the worker calls this.
@@ -18,6 +19,9 @@ type ProviderEnv = Pick<
   | "CLOUDFLARE_API_TOKEN"
   | "CLOUDFLARE_IMAGE_MODEL"
   | "AI_FAKE_DELAY_MS"
+  | "TRYON_PROVIDER"
+  | "HF_TOKEN"
+  | "TRYON_SPACES"
 >;
 
 export class AiConfigError extends Error {
@@ -45,5 +49,10 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
     image = new FakeImage(env.AI_FAKE_DELAY_MS);
   }
 
-  return { planner, image };
+  const tryOn =
+    env.TRYON_PROVIDER === "huggingface"
+      ? new HuggingFaceTryOn({ spaces: env.TRYON_SPACES, token: env.HF_TOKEN })
+      : new FakeTryOn(env.AI_FAKE_DELAY_MS);
+
+  return { planner, image, tryOn };
 }

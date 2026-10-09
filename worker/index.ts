@@ -15,12 +15,14 @@ import { MockPaymentProvider } from "@/lib/payments/mock";
 import { expireOverdueAcceptances } from "@/lib/production/acceptance";
 import { retryPendingRefunds } from "@/lib/production/refunds";
 import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
+import { cleanupTryOnMedia } from "@/lib/tryon/service";
 
 import { errorName, log } from "./logger";
 
 // Local background worker (runs on the developer's Mac mini).
 // Each poll: expire unpaid orders, refund custom items not accepted within 24 h, retry failed refunds,
-// then claim and run queued AI jobs (lib/ai/worker). Several workers can run at once safely.
+// delete unsaved try-on photos/results after 24 h, then claim and run queued AI jobs (lib/ai/worker).
+// Several workers can run at once safely.
 //
 //   pnpm worker          run until Ctrl+C
 //   pnpm worker:check    connect, verify the database, exit
@@ -69,6 +71,7 @@ async function main(): Promise<number> {
       providers,
       workerId: `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`,
       timeoutMs: env.AI_JOB_TIMEOUT_MS,
+      timeoutsMs: { TRY_ON: env.TRYON_TIMEOUT_MS },
       log: (msg, fields) => log.info(msg, fields),
     };
     health = env.WORKER_HEALTH_PORT ? await startHealthServer(env.WORKER_HEALTH_PORT) : null;
@@ -77,6 +80,7 @@ async function main(): Promise<number> {
       pollIntervalMs: env.WORKER_POLL_INTERVAL_MS,
       planner: providers.planner.name,
       images: providers.image.name,
+      tryOn: providers.tryOn.name,
       healthPort: env.WORKER_HEALTH_PORT,
     });
     while (!shutdown.signal.aborted) {
@@ -86,6 +90,7 @@ async function main(): Promise<number> {
         ["orders.expired", () => expireStalePendingOrders(prisma, storage, now)],
         ["acceptance.timed_out", () => expireOverdueAcceptances(prisma, payments, now)],
         ["refunds.settled", () => retryPendingRefunds(prisma, payments)],
+        ["tryon.cleaned", () => cleanupTryOnMedia(prisma, storage, now)],
       ];
       for (const [name, sweep] of sweeps) {
         try {

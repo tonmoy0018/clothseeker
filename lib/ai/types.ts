@@ -3,7 +3,8 @@ import type { PatternId } from "@/lib/catalog/patterns";
 import type { StyleGroup } from "@/types/template";
 
 // Provider interfaces. Only the worker calls providers; the app only queues jobs (lib/ai/jobs.ts).
-// Implementations: fake.ts (default, deterministic), gemini.ts (planner), cloudflare.ts (images).
+// Implementations: fake.ts (default, deterministic), gemini.ts (planner), cloudflare.ts (images),
+// tryon-hf.ts (try-on on public Hugging Face Spaces).
 
 export type ProviderImage = { data: Buffer; mimeType: "image/webp" | "image/png" | "image/jpeg" };
 
@@ -40,12 +41,17 @@ export type PlanRequest = {
 
 export type BrandLogoCheck = { detected: boolean; label?: string };
 
+/** Whether a customer photo can be used for try-on (all must be true). */
+export type TryOnPhotoCheck = { onePerson: boolean; facingForward: boolean; goodLight: boolean; bodyVisible: boolean };
+
 export interface PlannerProvider {
   readonly name: string;
   /** Looks for clothing brand logos in customer photos. */
   detectBrandLogos(images: ProviderImage[], signal: AbortSignal): Promise<BrandLogoCheck>;
   /** Returns raw JSON. It is NEVER trusted: lib/ai/plan.ts validates it and fits it to the template. */
   planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown>;
+  /** Checks a try-on photo: one person, facing forward, good light, body visible. */
+  checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck>;
 }
 
 export type MotifRequest = { prompt: string; color: string; seed: number };
@@ -56,4 +62,17 @@ export interface ImageProvider {
   generateMotif(request: MotifRequest, signal: AbortSignal): Promise<Buffer>;
 }
 
-export type AiProviders = { planner: PlannerProvider; image: ImageProvider };
+export type TryOnRequest = {
+  /** The customer's photo (re-encoded, metadata stripped). */
+  person: ProviderImage;
+  /** The garment on a plain white 3:4 canvas, like a catalog product shot. */
+  garment: ProviderImage;
+};
+
+export interface TryOnProvider {
+  readonly name: string;
+  /** Returns the person wearing the garment (image bytes, untrusted until re-encoded). */
+  tryOn(request: TryOnRequest, signal: AbortSignal): Promise<Buffer>;
+}
+
+export type AiProviders = { planner: PlannerProvider; image: ImageProvider; tryOn: TryOnProvider };

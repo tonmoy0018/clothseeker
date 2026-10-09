@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import type { RoundView } from "@/lib/ai/jobs";
 import type { AiQuota } from "@/lib/ai/quota";
+import { downscalePhoto } from "@/lib/media/client-resize";
 import { cn } from "@/lib/utils";
 import type { DesignSpec } from "@/types/design-spec";
 
@@ -16,10 +17,6 @@ import { getAiOverviewAction, getJobStatusAction, pickOptionAction, requestDesig
 
 const EXAMPLES = ["Pastel florals on the skirt", "Make it evening-ready in emerald", "Like option 2 but darker"];
 const MAX_PHOTOS = 3;
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-/** Photos are resized in the browser so uploads stay under Vercel's 4.5 MB request limit. */
-const MAX_PHOTO_EDGE = 2000;
-const SEND_AS_IS_BYTES = 3.5 * 1024 * 1024;
 const POLL_MS = 2000;
 /** Stop polling eventually (3 attempts with timeouts and backoff fit well inside this). */
 const POLL_GIVE_UP_MS = 10 * 60 * 1000;
@@ -37,33 +34,6 @@ export type AiBoxProps = {
   onPick: (spec: DesignSpec, imageUrls: Record<string, string>, label: string) => void;
   onSignIn: () => void;
 };
-
-async function preparePhoto(file: File): Promise<Blob> {
-  if (file.size > MAX_PHOTO_BYTES) {
-    throw new Error("Photos can be up to 10 MB.");
-  }
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    throw new Error("That file isn't a photo we can read. Use JPEG, PNG or WebP.");
-  }
-  const scale = Math.min(1, MAX_PHOTO_EDGE / Math.max(bitmap.width, bitmap.height));
-  if (scale === 1 && file.size <= SEND_AS_IS_BYTES) {
-    bitmap.close();
-    return file;
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.88));
-  if (!blob) {
-    throw new Error("That photo couldn't be prepared. Try another one.");
-  }
-  return blob;
-}
 
 export function AiBox({ designId, spec, signedIn, onDesignId, onPick, onSignIn }: AiBoxProps) {
   const [instruction, setInstruction] = useState("");
@@ -186,7 +156,7 @@ export function AiBox({ designId, spec, signedIn, onDesignId, onPick, onSignIn }
     setPhase((p) => (p.kind === "error" ? { kind: "idle" } : p));
     try {
       for (const file of Array.from(files).slice(0, MAX_PHOTOS - attachments.length)) {
-        const blob = await preparePhoto(file);
+        const blob = await downscalePhoto(file);
         const form = new FormData();
         form.set("photo", blob, "photo.jpg");
         const result = await uploadAiAttachmentAction(form);
