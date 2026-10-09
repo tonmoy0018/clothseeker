@@ -19,7 +19,7 @@ export async function ShopHeader() {
         <Link href="/products" className="text-muted-foreground hover:text-foreground">
           Dresses
         </Link>
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 whitespace-nowrap">
           {user?.role === "ADMIN" && (
             <Link href="/admin" className="text-muted-foreground hover:text-foreground">
               Admin
@@ -28,13 +28,16 @@ export async function ShopHeader() {
           {user?.role === "CUSTOMER" && (
             <>
               <Link href="/account/designs" className="text-muted-foreground hover:text-foreground">
-                My designs
+                <span className="sm:hidden">Designs</span>
+                <span className="hidden sm:inline">My designs</span>
               </Link>
               <Link href="/account/quotes" className="text-muted-foreground hover:text-foreground">
-                My quotes
+                <span className="sm:hidden">Quotes</span>
+                <span className="hidden sm:inline">My quotes</span>
               </Link>
               <Link href="/account/orders" className="text-muted-foreground hover:text-foreground">
-                My orders
+                <span className="sm:hidden">Orders</span>
+                <span className="hidden sm:inline">My orders</span>
               </Link>
               <Link href="/cart" className="text-muted-foreground hover:text-foreground" data-testid="cart-link">
                 Cart{cartCount > 0 ? ` (${cartCount})` : ""}

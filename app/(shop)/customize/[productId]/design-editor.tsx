@@ -354,11 +354,14 @@ export function DesignEditor(props: DesignEditorProps) {
   const fontFaces = FONTS.map((f) => `@font-face{font-family:"${f.family}";src:url("${fontUrl(f.id)}") format("truetype");font-display:swap;}`).join("");
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,560px)_1fr]">
+    // Desktop: canvas (top left), try-on + AI (bottom left), controls (right, both rows).
+    // Phone: title + canvas, then the controls, then try-on + AI.
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,560px)_1fr] lg:grid-rows-[auto_1fr] lg:items-start">
       <style>{fontFaces}</style>
 
-      {/* ── canvas column ── */}
-      <div className="flex flex-col gap-3">
+      {/* ── canvas ── */}
+      <div className="flex flex-col gap-3 lg:col-start-1 lg:row-start-1">
+        <h1 className="text-2xl font-semibold lg:hidden">Design your {props.productName}</h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1" role="group" aria-label="Garment side">
             {(["front", "back"] as const).map((s) => (
@@ -438,53 +441,12 @@ export function DesignEditor(props: DesignEditorProps) {
           </div>
         )}
 
-        <div className="flex flex-col gap-2">
-          <Button variant="outline" className="self-start" aria-expanded={showTryOn} onClick={() => setShowTryOn((v) => !v)}>
-            {showTryOn ? "Hide try-on" : "See it on me"}
-          </Button>
-          {showTryOn && (
-            <TryOnPanel
-              source={{ kind: "design", spec, designId }}
-              signedIn={props.customerId !== null}
-              onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
-            />
-          )}
-        </div>
-
-        {props.aiEnabled ? (
-          <AiBox
-            initialJobId={props.initialAiJobId ?? null}
-            designId={designId}
-            spec={spec}
-            signedIn={props.customerId !== null}
-            onDesignId={(id) => {
-              if (!designId) {
-                setIsDraft(true);
-              }
-              setDesignId(id);
-              // Keep the draft (and its AI rounds) if the page is reloaded.
-              router.replace(`/customize/${props.productId}?design=${id}`, { scroll: false });
-            }}
-            onPick={(picked, imageUrls, label) => {
-              setUploadUrls((u) => ({ ...u, ...imageUrls }));
-              setSelectedLayerId(null);
-              commit(picked);
-              setMessage({ kind: "ok", text: `Applied ${label}. Keep editing it, or press Undo to go back.` });
-            }}
-            onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
-          />
-        ) : (
-          <div className="rounded-xl border border-dashed p-4" data-testid="ai-box">
-            <p className="font-medium">AI design box</p>
-            <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this dress.</p>
-          </div>
-        )}
       </div>
 
-      {/* ── controls column ── */}
-      <div className="flex flex-col gap-6">
+      {/* ── controls ── */}
+      <div className="flex flex-col gap-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         <div>
-          <h1 className="text-2xl font-semibold">Design your {props.productName}</h1>
+          <h1 className="hidden text-2xl font-semibold lg:block">Design your {props.productName}</h1>
           <p className="text-sm text-muted-foreground">Clothing brand logos can&apos;t be used.</p>
         </div>
 
@@ -815,6 +777,51 @@ export function DesignEditor(props: DesignEditorProps) {
             Add to cart
           </Button>
         </div>
+      </div>
+
+      {/* ── try-on + AI ── */}
+      <div className="flex flex-col gap-3 lg:col-start-1 lg:row-start-2">
+        <div className="flex flex-col gap-2">
+          <Button variant="outline" className="self-start" aria-expanded={showTryOn} onClick={() => setShowTryOn((v) => !v)}>
+            {showTryOn ? "Hide try-on" : "See it on me"}
+          </Button>
+          {showTryOn && (
+            <TryOnPanel
+              source={{ kind: "design", spec, designId }}
+              signedIn={props.customerId !== null}
+              onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+            />
+          )}
+        </div>
+
+        {props.aiEnabled ? (
+          <AiBox
+            initialJobId={props.initialAiJobId ?? null}
+            designId={designId}
+            spec={spec}
+            signedIn={props.customerId !== null}
+            onDesignId={(id) => {
+              if (!designId) {
+                setIsDraft(true);
+              }
+              setDesignId(id);
+              // Keep the draft (and its AI rounds) if the page is reloaded.
+              router.replace(`/customize/${props.productId}?design=${id}`, { scroll: false });
+            }}
+            onPick={(picked, imageUrls, label) => {
+              setUploadUrls((u) => ({ ...u, ...imageUrls }));
+              setSelectedLayerId(null);
+              commit(picked);
+              setMessage({ kind: "ok", text: `Applied ${label}. Keep editing it, or press Undo to go back.` });
+            }}
+            onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed p-4" data-testid="ai-box">
+            <p className="font-medium">AI design box</p>
+            <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this dress.</p>
+          </div>
+        )}
       </div>
     </div>
   );

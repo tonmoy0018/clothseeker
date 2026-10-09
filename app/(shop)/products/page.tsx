@@ -98,12 +98,14 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
       </aside>
 
       <section className="flex flex-1 flex-col gap-4" aria-live="polite">
-        <div className="flex items-baseline justify-between">
-          <h1 className="text-2xl font-semibold">{activeCategory ? `${activeCategory.name} dresses` : "All dresses"}</h1>
-          <span className="text-sm text-muted-foreground" data-testid="result-count">
-            {products.length} {products.length === 1 ? "dress" : "dresses"}
-          </span>
-          <Link href="/design/start" className="text-sm underline underline-offset-4">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-baseline justify-between gap-3">
+            <h1 className="text-2xl font-semibold">{activeCategory ? `${activeCategory.name} dresses` : "All dresses"}</h1>
+            <span className="shrink-0 text-sm text-muted-foreground" data-testid="result-count">
+              {products.length} {products.length === 1 ? "dress" : "dresses"}
+            </span>
+          </div>
+          <Link href="/design/start" className="self-start text-sm underline underline-offset-4">
             Have a dress in mind? Start from a photo or description
           </Link>
         </div>
