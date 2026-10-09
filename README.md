@@ -61,7 +61,8 @@ Local Supabase uses ports **55420–55429** (API 55421, Postgres 55422, Studio h
 | `pnpm db:generate` | Regenerate the Prisma client |
 | `pnpm db:migrate` | Create/apply migrations in development |
 | `pnpm db:deploy` | Apply committed migrations (CI / production) |
-| `pnpm db:seed` | Run `prisma/seed.ts` |
+| `pnpm db:seed` | Run `prisma/seed.ts` (also restores the demo dresses' stock) |
+| `pnpm db:clean-test` | Remove accounts and dresses left by tests from the local database (`--dry-run` to preview) |
 
 `GET /api/health` returns `{"ok":true,"db":"up"}` when the app can reach the database, or 503 otherwise.
 

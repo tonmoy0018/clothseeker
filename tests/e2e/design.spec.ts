@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { signUpFreshCustomer } from "./helpers";
+
 // @supabase — needs the local Supabase stack with seed data (customizable seeded dresses).
 
 const password = process.env.SEED_DEMO_PASSWORD ?? "clothseeker-demo";
@@ -21,9 +23,7 @@ async function openLinenDesigner(page: Page) {
 test.describe("@supabase design screen", () => {
   test("customer designs, saves, sees it in My designs and adds it to the cart", async ({ page }) => {
     test.setTimeout(90_000);
-    await page.goto("/login?next=/");
-    await signIn(page, "noah@example.test");
-    await page.waitForURL((u) => u.pathname === "/");
+    await signUpFreshCustomer(page);
     await openLinenDesigner(page);
 
     const total = page.getByTestId("design-total");

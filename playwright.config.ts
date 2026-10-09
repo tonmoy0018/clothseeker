@@ -6,6 +6,8 @@ const isCI = Boolean(process.env.CI);
 
 export default defineConfig({
   testDir: "tests/e2e",
+  // Removes test accounts and dresses afterwards (set E2E_KEEP_DATA=1 to inspect them).
+  globalTeardown: "./tests/e2e/global-teardown.ts",
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,

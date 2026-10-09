@@ -4,16 +4,6 @@ import { fillAddress, orderCustomDesign, signUpFreshCustomer } from "./helpers";
 
 // @supabase — needs the local Supabase stack with seed data.
 
-const password = process.env.SEED_DEMO_PASSWORD ?? "clothseeker-demo";
-
-async function signIn(page: Page, email: string) {
-  await page.goto("/login?next=/");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL((u) => u.pathname === "/");
-}
-
 async function buyNow(page: Page, slug: string) {
   await page.goto(`/products/${slug}`);
   await expect(async () => {
@@ -34,7 +24,7 @@ async function checkoutToGateway(page: Page) {
 test.describe("@supabase checkout", () => {
   test("a declined payment cancels the order and keeps the cart", async ({ page }) => {
     test.setTimeout(90_000);
-    await signIn(page, "mia@example.test");
+    await signUpFreshCustomer(page);
     await buyNow(page, "floral-sundress");
     await checkoutToGateway(page);
 

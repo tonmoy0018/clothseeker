@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import sharp from "sharp";
 
+import { signUpFreshCustomer } from "./helpers";
+
 // @supabase — needs the local Supabase stack with seed data. Skipped in CI.
 
 const password = process.env.SEED_DEMO_PASSWORD ?? "clothseeker-demo";
@@ -53,7 +55,8 @@ test.describe("@supabase admin catalog", () => {
 
     // A customer sees the photo and can buy it.
     const customerPage = await browser.newPage();
-    await signIn(customerPage, "mia@example.test", shopPath);
+    await signUpFreshCustomer(customerPage);
+    await customerPage.goto(shopPath);
     await expect(customerPage.getByRole("img", { name })).toBeVisible();
     await expect(async () => {
       await customerPage.getByRole("group", { name: "Size" }).getByRole("button", { name: "M" }).click();

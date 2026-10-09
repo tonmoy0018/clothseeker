@@ -25,7 +25,9 @@
 - `pnpm test:e2e` **builds and starts a production server** (`pnpm build && pnpm start`), or reuses a server already running on :3000. The dev server compiles routes on first visit, which made parallel runs flaky. Set `E2E_DEV=1` to run against `pnpm dev` instead.
 - Production pages render before React hydrates, so tests that click interactive controls right after navigation retry the click until it registers (`expect(...).toPass()`).
 - Test runs clean up after themselves: the design test deletes the design it saved, and the admin test archives its dress.
-- The `@supabase` journey signs in as the seeded `ava@example.test` and **really places an order**, which reduces stock in your dev database. Run `pnpm db:seed` to reset the catalog.
+- E2E tests that create data **sign up fresh `e2e-…@example.test` customers**; the demo accounts (ava, noah, mia) are only used read-only.
+- **Clean-up:** after every local run, `tests/e2e/global-teardown.ts` runs `pnpm db:clean-test`. That removes test accounts (with their orders, designs, files and sign-ins) and the admin test's `e2e-test-dress-…` dresses. Set `E2E_KEEP_DATA=1` to keep them for inspection. Test orders still use up demo-dress stock, so run `pnpm db:seed` to restore it.
+- `pnpm db:clean-test --dry-run` shows what would be removed. `--demo-before=<ISO time>` also clears the demo customers' older orders, designs, AI rounds, try-ons and quotes. It only ever runs against a local database.
 - The demo password comes from `SEED_DEMO_PASSWORD` (default `clothseeker-demo`).
 
 ## CI

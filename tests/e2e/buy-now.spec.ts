@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { fillAddress } from "./helpers";
+import { fillAddress, signUpFreshCustomer } from "./helpers";
 
 // @supabase — needs the local Supabase stack with seed data (`pnpm db:seed`). Skipped in CI.
 
@@ -15,8 +15,9 @@ async function signIn(page: Page, email: string, next = "/") {
 
 test.describe("@supabase buy now journey", () => {
   test("customer filters, buys now and sees the paid order", async ({ page }) => {
-    await signIn(page, "ava@example.test", "/products");
-    await expect(page).toHaveURL(/\/products$/);
+    // A fresh customer, so test orders never pile up on the demo accounts.
+    await signUpFreshCustomer(page);
+    await page.goto("/products");
 
     // Filter: casual dresses in size M.
     await page.getByLabel("Category").selectOption("casual");
