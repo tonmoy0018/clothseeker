@@ -262,7 +262,8 @@ Run everything and fix all errors. Write or update tests for the changed busines
 ## Decided
 
 - **Missed 24-hour acceptance deadline → full automatic refund** of the custom item (confirmed 2026-10-09). Same outcome when the team declines a custom item.
+- **Quotes stay valid for 7 days** after the team sends a price (confirmed 2026-10-09). An unaccepted quote then expires automatically, and the customer can request a new one.
 
 ## Open decisions (resolve before the phase that needs them)
 
-- Quote validity window after the team responds. Needed by Phase 7.
+- None right now.
