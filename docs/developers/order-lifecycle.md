@@ -77,3 +77,13 @@ REQUESTED ──team prices it (within 24 h)──▶ QUOTED ──paid (within 
 - **Expiry** is enforced twice: `effectiveQuoteStatus` treats overdue rows as expired immediately (pages, accept, checkout, the team's reply), and the worker's `expireQuotes` sweep (also run when `/admin/quotes` loads) writes it and removes expired quote lines from carts.
 - **Accepting** adds a `QUOTE` cart line. The price always comes from the quote. Checkout re-checks that the quote is still `QUOTED`, unexpired and owned, then renders print files from the snapshot.
 - **Payment:** the webhook moves the item `PAID → ACCEPTED` (SYSTEM) and the quote to `ACCEPTED` in the same transaction, including when the price expired while the payment was in flight (the amount was locked when the order was placed).
+
+## Disputes (Phase 8)
+
+```
+DELIVERED ──customer reports a problem (≤ 14 days, once)──▶ DISPUTED ──team: refund──▶ REFUNDED
+                                                                 └──team: no refund──▶ DELIVERED
+```
+
+- `openDispute` (`lib/disputes/service.ts`) checks the customer owns the item, that it's DELIVERED, the window (from its latest DELIVERED event) and that no earlier dispute exists. It stores up to 3 re-encoded photos and moves the item with `transitionItems` (CUSTOMER) in the same transaction as the `Dispute` row.
+- `resolveDispute` (`lib/admin/disputes.ts`) goes through `moveItemAsAdmin`. A refund uses `planItemRefunds` in the transaction and `settleRefunds` after commit, so each item is refunded once (`uniqueKey`).

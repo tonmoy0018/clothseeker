@@ -14,7 +14,7 @@ export async function writeAudit(
   metadata: AuditMetadata = {},
 ): Promise<void> {
   await tx.auditLog.create({
-    data: { actorId: actor.id, action, targetType: target.type, targetId: target.id, metadata },
+    data: { actorId: actor.id, actorRole: actor.role, action, targetType: target.type, targetId: target.id, metadata },
   });
 }
 

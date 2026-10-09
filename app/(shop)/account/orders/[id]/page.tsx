@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { requireUser } from "@/lib/auth/guards";
 import { getPrisma } from "@/lib/db";
+import { disputeInfoForOrder } from "@/lib/disputes/service";
 import { formatBDT, lineTotalMinor } from "@/lib/money";
 import { DELIVERY_ZONE_LABEL } from "@/lib/orders/delivery";
 import { ITEM_STATUS_LABEL, ORDER_STATUS_LABEL, statusLabel } from "@/lib/orders/labels";
@@ -15,6 +16,7 @@ import { BUCKETS } from "@/lib/storage/buckets";
 import { getStorage } from "@/lib/storage/supabase";
 import { cn } from "@/lib/utils";
 
+import { ReportProblem } from "./report-problem";
 import { ResumePayment } from "./resume-payment";
 
 export const metadata: Metadata = { title: "Order — ClothSeeker" };
@@ -30,6 +32,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
   if (!order) {
     notFound();
   }
+  const disputeInfo = await disputeInfoForOrder(getPrisma(), user, order.id);
   const previews = await getStorage().signReadUrls(
     BUCKETS.designAssets,
     order.items.flatMap((i) => (i.previewKey ? [i.previewKey] : [])),
@@ -39,7 +42,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
   const payment = order.payments[0];
   const refundReason = (itemId: string) => {
     const reason = order.refunds.find((r) => r.kind === "ITEM" && r.orderItemId === itemId)?.reason;
-    return reason?.replace(/^Declined by ClothSeeker: /, "");
+    return reason?.replace(/^(Declined by ClothSeeker|Problem reported after delivery): /, "");
   };
 
   return (
@@ -90,7 +93,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
             return (
               <li key={item.id} className="flex flex-col gap-3 p-4">
                 <div className="flex gap-4">
-                  {item.kind === "CUSTOM_DESIGN" && (
+                  {(item.kind === "CUSTOM_DESIGN" || item.kind === "QUOTE") && (
                     <div className="relative size-20 shrink-0 overflow-hidden rounded-lg bg-muted">
                       {preview && <Image src={preview} alt={`Your design for ${item.productName}`} fill unoptimized className="object-contain" />}
                     </div>
@@ -99,6 +102,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
                     <span className="font-medium">
                       {item.productName}
                       {item.kind === "CUSTOM_DESIGN" && " — your design"}
+                      {item.kind === "QUOTE" && " — tailoring quote"}
                     </span>
                     <span className="text-sm text-muted-foreground">
                       Size {item.size}
@@ -127,6 +131,21 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
                   <span className="font-medium">{formatBDT(lineTotalMinor(item.unitPriceMinor, item.quantity))}</span>
                 </div>
                 <StatusStepper item={item} />
+                {disputeInfo.disputes
+                  .filter((d) => d.itemId === item.id)
+                  .map((d) => (
+                    <div key={d.createdAt.toISOString()} className="rounded-lg bg-muted/50 p-2 text-sm" data-testid="dispute">
+                      <span className="font-medium">
+                        {d.status === "OPEN" ? "Problem reported — we're looking into it" : d.status === "RESOLVED_REFUND" ? "Problem resolved with a refund" : "Problem reviewed — no refund"}
+                      </span>
+                      {d.resolution && <p className="text-muted-foreground">ClothSeeker: {d.resolution}</p>}
+                    </div>
+                  ))}
+                {disputeInfo.reportable
+                  .filter((r) => r.itemId === item.id)
+                  .map((r) => (
+                    <ReportProblem key={r.itemId} orderId={order.id} itemId={item.id} deadline={r.deadline} />
+                  ))}
               </li>
             );
           })}

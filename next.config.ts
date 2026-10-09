@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Locally the repo lives on an iCloud-synced Desktop, which duplicates build files ("… 2.ts").
+  // iCloud never syncs folders ending in ".nosync". Vercel builds keep the standard ".next".
+  distDir: process.env.VERCEL ? ".next" : ".next.nosync",
   experimental: {
     serverActions: {
       // Image uploads are capped at 4 MB in lib/media/process-image.ts (Vercel Hobby rejects

@@ -7,6 +7,7 @@ import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
 
 import { getAiProviders } from "@/lib/ai";
+import { recordHeartbeat } from "@/lib/ai/worker/heartbeat";
 import { runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import { createPrismaClient } from "@/lib/db/client";
 import { EnvValidationError, parseEnv, workerEnvSchema } from "@/lib/env/schema";
@@ -77,6 +78,7 @@ async function main(): Promise<number> {
       log: (msg, fields) => log.info(msg, fields),
     };
     health = env.WORKER_HEALTH_PORT ? await startHealthServer(env.WORKER_HEALTH_PORT) : null;
+    const heartbeat = { workerId: ai.workerId, planner: providers.planner.name, image: providers.image.name, tryOn: providers.tryOn.name, startedAt: new Date() };
 
     log.info("worker.started", {
       pollIntervalMs: env.WORKER_POLL_INTERVAL_MS,
@@ -89,6 +91,7 @@ async function main(): Promise<number> {
       // Each sweep is idempotent; one failing must not stop the others or the worker.
       const now = new Date();
       const sweeps: [string, () => Promise<number>][] = [
+        ["worker.heartbeat", () => recordHeartbeat(prisma, heartbeat, now).then(() => 0)],
         ["orders.expired", () => expireStalePendingOrders(prisma, storage, now)],
         ["acceptance.timed_out", () => expireOverdueAcceptances(prisma, payments, now)],
         ["refunds.settled", () => retryPendingRefunds(prisma, payments)],

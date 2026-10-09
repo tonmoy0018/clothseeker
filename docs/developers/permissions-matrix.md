@@ -81,7 +81,6 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Poll a job, list rounds, pick or refine an option | ❌ | ✅ **own jobs and rounds only** (others look like "not found") | ❌ | `getJobStatus`, `listRounds`, `pickOption` (scoped by `customerId`) |
 | Use an AI motif in a design | ❌ | ✅ own `ai/` keys only | ❌ | `validateDesignAgainstTemplate` (`isCustomerImageKey`) |
 | Call an AI provider | ❌ | ❌ | ❌ | **Worker only**; the app holds no provider keys |
-| Review brand-logo flags | ❌ | ❌ | (Phase 8) | `flagged_items` rows written by the worker |
 
 ## Start from a photo or description (Phase 7)
 
@@ -101,6 +100,18 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Price or decline a quote | ❌ | ❌ | ✅ once, while open (audited) | `respondToQuote` |
 | Accept (add to cart) / withdraw | ❌ | ✅ own, while open; the price comes from the quote | ❌ | `acceptQuote`, `withdrawQuote`; checkout re-checks |
 | Expire quotes | ❌ | ❌ | ❌ | System sweep (`expireQuotes`) |
+
+## Disputes, flags, AI health, audit log (Phase 8)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Report a problem with a delivered item | ❌ | ✅ own items, within 14 days, once | ❌ | `openDispute` → `assertCustomer`, owner-scoped |
+| See disputes and their evidence (no address/phone) | ❌ | ✅ own outcome on the order page | ✅ | `lib/admin/disputes.ts` → `assertAdmin` |
+| Refund or close a dispute | ❌ | ❌ | ✅ once (audited) | `resolveDispute` → `moveItemAsAdmin` |
+| Review brand-logo flags | ❌ | ❌ | ✅ once (audited) | `lib/admin/flags.ts` |
+| AI health, audit log | ❌ | ❌ | ✅ read-only | `lib/admin/ai-metrics.ts`, `lib/admin/audit-log.ts` |
+
+Every `app/admin/**` page, action and route checks the role on the server. `tests/integration/oversight.test.ts` scans them all and fails if one doesn't.
 
 ## Virtual try-on (Phase 7)
 

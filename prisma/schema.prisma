@@ -35,6 +35,7 @@ model User {
   aiJobs        AIJob[]
   tryOnPhotos   TryOnPhoto[]
   tryOnResults  TryOnResult[]
+  aiLimitHits   AiLimitHit[]
   quoteRequests QuoteRequest[]
   reviews       Review[]
   disputes      Dispute[]
@@ -687,8 +688,11 @@ model Dispute {
   orderItemId String        @map("order_item_id") @db.Uuid
   customerId  String        @map("customer_id") @db.Uuid
   reason      String
+  /// Customer evidence photos (design-assets `{customerId}/disputes/`), up to 3.
+  photoKeys   String[]      @default([]) @map("photo_keys")
   status      DisputeStatus @default(OPEN)
   resolution  String?
+  resolvedAt  DateTime?     @map("resolved_at")
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
@@ -696,6 +700,7 @@ model Dispute {
   customer  User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt])
+  @@index([orderItemId])
   @@map("disputes")
 }
 
@@ -719,6 +724,9 @@ model FlaggedItem {
   aiJobId    String?    @map("ai_job_id") @db.Uuid
   storageKey String?    @map("storage_key")
   reason     String
+  /// The team's note when confirming or dismissing the flag.
+  reviewNote String?    @map("review_note")
+  reviewedAt DateTime?  @map("reviewed_at")
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
@@ -732,6 +740,8 @@ model FlaggedItem {
 model AuditLog {
   id         String   @id @default(uuid()) @db.Uuid
   actorId    String?  @map("actor_id") @db.Uuid
+  /// Who acted, kept even if the account is later deleted: ADMIN, CUSTOMER or SYSTEM.
+  actorRole  String?  @map("actor_role")
   action     String
   targetType String   @map("target_type")
   targetId   String?  @map("target_id")
@@ -743,4 +753,38 @@ model AuditLog {
   @@index([createdAt])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+// ─── Operations ───────────────────────────────────────────────────────────────
+
+enum AiLimitFeature {
+  DESIGN_ROUND
+  TRY_ON
+  SUBMISSIONS
+}
+
+/// A customer was refused because a daily AI limit was reached (for the AI metrics page).
+model AiLimitHit {
+  id         String         @id @default(uuid()) @db.Uuid
+  customerId String         @map("customer_id") @db.Uuid
+  feature    AiLimitFeature
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("ai_limit_hits")
+}
+
+/// Last sign of life of each worker process, with the providers it runs (for the AI metrics page).
+model WorkerHeartbeat {
+  workerId   String   @id @map("worker_id")
+  planner    String
+  image      String
+  tryOn      String   @map("try_on")
+  startedAt  DateTime @map("started_at")
+  lastSeenAt DateTime @map("last_seen_at")
+
+  @@index([lastSeenAt])
+  @@map("worker_heartbeats")
 }

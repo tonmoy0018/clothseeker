@@ -49,6 +49,8 @@ Custom:      PENDING_PAYMENT → PAID → AWAITING_ACCEPTANCE → ACCEPTED → I
 Any time:    CANCELLED, REFUNDED, DISPUTED (rules in Phase 4)
 ```
 
+Disputes: `Dispute` (reason, customer `photoKeys`, outcome `RESOLVED_REFUND`/`RESOLVED_REJECTED`, `resolution`, `resolvedAt`). Oversight: `FlaggedItem` gains `reviewNote`/`reviewedAt`; `AiLimitHit` (customer refused by a daily limit, for /admin/ai); `WorkerHeartbeat` (worker id, providers, `lastSeenAt`); `AuditLog.actorRole` (ADMIN/CUSTOMER/SYSTEM, kept when an account is deleted).
+
 Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`, `WITHDRAWN`) live on `QuoteRequest`, because an `OrderItem` only exists after checkout. All moves go through one module; see [order-lifecycle.md](order-lifecycle.md).
 
 ## Template config versions

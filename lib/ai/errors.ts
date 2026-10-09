@@ -4,7 +4,7 @@
 export const BRAND_LOGO_MESSAGE = "Clothing brand logos can't be used. Try your own logo or another image.";
 
 /** Customer-safe failure reasons stored on ai_jobs.error_code. */
-export const AI_FAILURE_CODES = ["BRAND_LOGO", "TIMEOUT", "PROVIDER", "INVALID_PLAN", "NOT_AVAILABLE", "INTERNAL", "PHOTO_REJECTED", "TRYON_LIMIT"] as const;
+export const AI_FAILURE_CODES = ["BRAND_LOGO", "TIMEOUT", "PROVIDER", "INVALID_PLAN", "NOT_AVAILABLE", "INTERNAL", "PHOTO_REJECTED", "PHOTO_NOT_ONE_PERSON", "PHOTO_NOT_FACING", "PHOTO_TOO_DARK", "PHOTO_BODY_NOT_VISIBLE", "TRYON_LIMIT"] as const;
 export type AiFailureCode = (typeof AI_FAILURE_CODES)[number];
 
 export const AI_FAILURE_MESSAGES: Record<AiFailureCode, string> = {
@@ -16,6 +16,10 @@ export const AI_FAILURE_MESSAGES: Record<AiFailureCode, string> = {
   INTERNAL: "Something went wrong while making your designs. Please try again.",
   PHOTO_REJECTED:
     "This photo won't work for a try-on. Use a photo of just you, facing the camera in good light, with your body visible from shoulders to knees.",
+  PHOTO_NOT_ONE_PERSON: "We need a photo of just you: there seems to be someone else in this one.",
+  PHOTO_NOT_FACING: "Face the camera in your photo so we can place the dress on you.",
+  PHOTO_TOO_DARK: "This photo is too dark to see you clearly. Try one taken in good light.",
+  PHOTO_BODY_NOT_VISIBLE: "We can't see you from your shoulders to your knees. Try a photo taken from further away.",
   TRYON_LIMIT: "Our free try-on service has reached its limit for today. Please try again tomorrow.",
 };
 

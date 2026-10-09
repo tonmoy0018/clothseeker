@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { aiInputHash } from "@/lib/ai/hash";
 import { failureMessage } from "@/lib/ai/errors";
+import { recordLimitHit } from "@/lib/ai/limit-hits";
 import { startOfDhakaDay, DAILY_SUBMISSION_LIMIT, SUBMISSION_LIMIT_MESSAGE } from "@/lib/ai/quota";
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
 import type { PrismaClient } from "@/lib/db/client";
@@ -141,7 +142,7 @@ export async function deleteTryOnPhoto(db: PrismaClient, storage: StorageAdapter
     await tx.tryOnPhoto.update({ where: { id: photo.id }, data: { deletedAt: now } });
     await tx.tryOnResult.updateMany({ where: { photoId: photo.id, deletedAt: null }, data: { deletedAt: now } });
     await tx.auditLog.create({
-      data: { actorId: actor.id, action: "tryon.photo_deleted", targetType: "try_on_photo", targetId: photo.id, metadata: { results: results.length } },
+      data: { actorId: actor.id, actorRole: actor.role, action: "tryon.photo_deleted", targetType: "try_on_photo", targetId: photo.id, metadata: { results: results.length } },
     });
   });
 }
@@ -217,26 +218,37 @@ export async function createTryOnJob(db: PrismaClient, storage: StorageAdapter, 
     return { jobId: cached.jobId, cached: true };
   }
 
-  return db.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${actor.id}`}, 0))`;
-    const inFlight = await tx.aIJob.findFirst({ where: { customerId: actor.id, inputHash, status: { in: [...ACTIVE] } }, select: { id: true } });
-    if (inFlight) {
-      return { jobId: inFlight.id, cached: true };
+  try {
+    return await queueTryOn();
+  } catch (error) {
+    if (error instanceof TryOnError && error.code === "QUOTA") {
+      await recordLimitHit(db, actor.id, error.message === TRYON_QUOTA_MESSAGE ? "TRY_ON" : "SUBMISSIONS");
     }
-    if ((await tryOnsToday(tx, actor.id, now)) >= TRYON_DAILY_LIMIT) {
-      throw new TryOnError("QUOTA", TRYON_QUOTA_MESSAGE);
-    }
-    if ((await tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: startOfDhakaDay(now) } } })) >= DAILY_SUBMISSION_LIMIT) {
-      throw new TryOnError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
-    }
-    const payload = { kind: "try_on", photoId: photo.id, source, garmentHash } satisfies TryOnPayload;
-    tryOnPayloadSchema.parse(payload);
-    const job = await tx.aIJob.create({
-      data: { type: "TRY_ON", customerId: actor.id, payload, inputHash, runAfter: now },
-      select: { id: true },
+    throw error;
+  }
+
+  function queueTryOn(): Promise<QueuedTryOn> {
+    return db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${actor.id}`}, 0))`;
+      const inFlight = await tx.aIJob.findFirst({ where: { customerId: actor.id, inputHash, status: { in: [...ACTIVE] } }, select: { id: true } });
+      if (inFlight) {
+        return { jobId: inFlight.id, cached: true };
+      }
+      if ((await tryOnsToday(tx, actor.id, now)) >= TRYON_DAILY_LIMIT) {
+        throw new TryOnError("QUOTA", TRYON_QUOTA_MESSAGE);
+      }
+      if ((await tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: startOfDhakaDay(now) } } })) >= DAILY_SUBMISSION_LIMIT) {
+        throw new TryOnError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
+      }
+      const payload = { kind: "try_on", photoId: photo.id, source, garmentHash } satisfies TryOnPayload;
+      tryOnPayloadSchema.parse(payload);
+      const job = await tx.aIJob.create({
+        data: { type: "TRY_ON", customerId: actor.id, payload, inputHash, runAfter: now },
+        select: { id: true },
+      });
+      return { jobId: job.id, cached: false };
     });
-    return { jobId: job.id, cached: false };
-  });
+  }
 }
 
 export type TryOnResultView = {
@@ -326,7 +338,7 @@ export async function cleanupTryOnMedia(db: PrismaClient, storage: StorageAdapte
     const p = await tx.tryOnPhoto.updateMany({ where: { id: { in: photos.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now } });
     const r = await tx.tryOnResult.updateMany({ where: { id: { in: results.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now } });
     await tx.auditLog.create({
-      data: { actorId: null, action: "tryon.cleanup", targetType: "try_on_media", targetId: null, metadata: { photos: p.count, results: r.count, olderThan: cutoff.toISOString() } },
+      data: { actorId: null, actorRole: "SYSTEM", action: "tryon.cleanup", targetType: "try_on_media", targetId: null, metadata: { photos: p.count, results: r.count, olderThan: cutoff.toISOString() } },
     });
   });
   return photos.length + results.length;

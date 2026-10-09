@@ -22,6 +22,18 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
           <Link href="/admin/quotes" className="text-muted-foreground hover:text-foreground">
             Quotes
           </Link>
+          <Link href="/admin/disputes" className="text-muted-foreground hover:text-foreground">
+            Disputes
+          </Link>
+          <Link href="/admin/flags" className="text-muted-foreground hover:text-foreground">
+            Flags
+          </Link>
+          <Link href="/admin/ai" className="text-muted-foreground hover:text-foreground">
+            AI
+          </Link>
+          <Link href="/admin/audit" className="text-muted-foreground hover:text-foreground">
+            Audit
+          </Link>
           <Link href="/admin/products" className="text-muted-foreground hover:text-foreground">
             Products
           </Link>

@@ -11,6 +11,7 @@ import { buildObjectKey, isSafeObjectKey } from "@/lib/storage/object-key";
 import type { DesignSpec } from "@/types/design-spec";
 
 import { findBrandTerm } from "./brands";
+import { recordLimitHit } from "./limit-hits";
 import { AiError, BRAND_LOGO_MESSAGE, failureMessage } from "./errors";
 import { aiInputHash, normalizeInstruction } from "./hash";
 import { DAILY_ROUND_LIMIT, DAILY_SUBMISSION_LIMIT, QUOTA_MESSAGE, quotaFrom, startOfDhakaDay, SUBMISSION_LIMIT_MESSAGE, type AiQuota } from "./quota";
@@ -134,67 +135,78 @@ export async function createDesignRoundJob(
     return { jobId: cached.jobId, designId: cachedDesign, cached: true };
   }
 
-  return db.$transaction(async (tx) => {
-    // One submission at a time per customer, so concurrent requests can't both slip under the quota.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${actor.id}`}, 0))`;
-
-    // An identical request still in progress (e.g. a double-click) gets that job back.
-    const inFlight = await tx.aIJob.findFirst({ where: { customerId: actor.id, inputHash, status: { in: [...ACTIVE] } }, select: { id: true, payload: true } });
-    const inFlightPayload = designRoundPayloadSchema.safeParse(inFlight?.payload);
-    const inFlightDesign = inFlight && inFlightPayload.success ? await reusableDesign(inFlightPayload.data.designId) : null;
-    if (inFlight && inFlightDesign) {
-      return { jobId: inFlight.id, designId: inFlightDesign, cached: true };
+  try {
+    return await queueRound();
+  } catch (error) {
+    if (error instanceof AiError && error.code === "QUOTA") {
+      await recordLimitHit(db, actor.id, error.message === SUBMISSION_LIMIT_MESSAGE ? "SUBMISSIONS" : "DESIGN_ROUND");
     }
+    throw error;
+  }
 
-    const since = startOfDhakaDay(now);
-    const [rounds, pending, submissions] = await Promise.all([
-      tx.aIRound.count({ where: { customerId: actor.id, createdAt: { gte: since } } }),
-      tx.aIJob.count({ where: { customerId: actor.id, type: "DESIGN_ROUND", status: { in: [...ACTIVE] } } }),
-      tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: since } } }),
-    ]);
-    if (rounds + pending >= DAILY_ROUND_LIMIT) {
-      throw new AiError("QUOTA", QUOTA_MESSAGE);
-    }
-    if (submissions >= DAILY_SUBMISSION_LIMIT) {
-      throw new AiError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
-    }
+  function queueRound(): Promise<QueuedRound> {
+    return db.$transaction(async (tx) => {
+      // One submission at a time per customer, so concurrent requests can't both slip under the quota.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${actor.id}`}, 0))`;
 
-    // AI rounds belong to a design; an unsaved design becomes a draft (hidden from My designs).
-    const id =
-      designId ??
-      (
-        await tx.design.create({
-          data: {
-            customerId: actor.id,
-            productId: spec.productId,
-            templateId: spec.templateId,
-            templateVersion: spec.templateVersion,
-            spec,
-            startedFrom: spec.startedFrom === "photo" ? "PHOTO" : spec.startedFrom === "description" ? "DESCRIPTION" : "SHOP",
-            referencePhotoKey: spec.referencePhotoKey ?? null,
-            status: "DRAFT",
-          },
-          select: { id: true },
-        })
-      ).id;
+      // An identical request still in progress (e.g. a double-click) gets that job back.
+      const inFlight = await tx.aIJob.findFirst({ where: { customerId: actor.id, inputHash, status: { in: [...ACTIVE] } }, select: { id: true, payload: true } });
+      const inFlightPayload = designRoundPayloadSchema.safeParse(inFlight?.payload);
+      const inFlightDesign = inFlight && inFlightPayload.success ? await reusableDesign(inFlightPayload.data.designId) : null;
+      if (inFlight && inFlightDesign) {
+        return { jobId: inFlight.id, designId: inFlightDesign, cached: true };
+      }
 
-    const payload = {
-      kind: "design_round",
-      designId: id,
-      productId: spec.productId,
-      instruction,
-      attachmentKeys,
-      reference: input.reference ?? null,
-      baseSpec: spec,
-      generation,
-      seed: inputHash,
-    } satisfies DesignRoundPayload;
-    const job = await tx.aIJob.create({
-      data: { type: "DESIGN_ROUND", customerId: actor.id, payload, inputHash, runAfter: now },
-      select: { id: true },
+      const since = startOfDhakaDay(now);
+      const [rounds, pending, submissions] = await Promise.all([
+        tx.aIRound.count({ where: { customerId: actor.id, createdAt: { gte: since } } }),
+        tx.aIJob.count({ where: { customerId: actor.id, type: "DESIGN_ROUND", status: { in: [...ACTIVE] } } }),
+        tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: since } } }),
+      ]);
+      if (rounds + pending >= DAILY_ROUND_LIMIT) {
+        throw new AiError("QUOTA", QUOTA_MESSAGE);
+      }
+      if (submissions >= DAILY_SUBMISSION_LIMIT) {
+        throw new AiError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
+      }
+
+      // AI rounds belong to a design; an unsaved design becomes a draft (hidden from My designs).
+      const id =
+        designId ??
+        (
+          await tx.design.create({
+            data: {
+              customerId: actor.id,
+              productId: spec.productId,
+              templateId: spec.templateId,
+              templateVersion: spec.templateVersion,
+              spec,
+              startedFrom: spec.startedFrom === "photo" ? "PHOTO" : spec.startedFrom === "description" ? "DESCRIPTION" : "SHOP",
+              referencePhotoKey: spec.referencePhotoKey ?? null,
+              status: "DRAFT",
+            },
+            select: { id: true },
+          })
+        ).id;
+
+      const payload = {
+        kind: "design_round",
+        designId: id,
+        productId: spec.productId,
+        instruction,
+        attachmentKeys,
+        reference: input.reference ?? null,
+        baseSpec: spec,
+        generation,
+        seed: inputHash,
+      } satisfies DesignRoundPayload;
+      const job = await tx.aIJob.create({
+        data: { type: "DESIGN_ROUND", customerId: actor.id, payload, inputHash, runAfter: now },
+        select: { id: true },
+      });
+      return { jobId: job.id, designId: id, cached: false };
     });
-    return { jobId: job.id, designId: id, cached: false };
-  });
+  }
 }
 
 /** Rounds used today (finished rounds plus requests still being made). */

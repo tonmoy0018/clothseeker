@@ -11,6 +11,7 @@ import { buildObjectKey, isSafeObjectKey } from "@/lib/storage/object-key";
 import { findBrandTerm } from "./brands";
 import { AiError, BRAND_LOGO_MESSAGE, failureMessage } from "./errors";
 import { aiInputHash, normalizeInstruction } from "./hash";
+import { recordLimitHit } from "./limit-hits";
 import { DAILY_ROUND_LIMIT, DAILY_SUBMISSION_LIMIT, QUOTA_MESSAGE, startOfDhakaDay, SUBMISSION_LIMIT_MESSAGE } from "./quota";
 
 // "Start a design from a dress photo or a description" (app side). Queues a DRESS_MATCH job; the
@@ -97,37 +98,48 @@ export async function startDesignFrom(
   }
 
   const inputHash = aiInputHash({ v: 1, type: "DRESS_MATCH", customerId: actor.id, referenceKey, description: description ? normalizeInstruction(description) : null });
-  return db.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${actor.id}`}, 0))`;
-    const earlier = await tx.aIJob.findFirst({
-      where: { customerId: actor.id, type: "DRESS_MATCH", inputHash, status: { in: [...ACTIVE, "SUCCEEDED"] } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, status: true, result: true },
-    });
-    const earlierResult = dressMatchResultSchema.safeParse(earlier?.result);
-    const designStillThere = earlierResult.success ? (await tx.design.count({ where: { id: earlierResult.data.designId, customerId: actor.id } })) === 1 : false;
-    if (earlier && (earlier.status !== "SUCCEEDED" || designStillThere)) {
-      return { jobId: earlier.id, cached: true };
+  try {
+    return await queueMatch();
+  } catch (error) {
+    if (error instanceof AiError && error.code === "QUOTA") {
+      await recordLimitHit(db, actor.id, error.message === SUBMISSION_LIMIT_MESSAGE ? "SUBMISSIONS" : "DESIGN_ROUND");
     }
+    throw error;
+  }
 
-    const since = startOfDhakaDay(now);
-    if ((await tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: since } } })) >= DAILY_SUBMISSION_LIMIT) {
-      throw new AiError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
-    }
-    if (input.mode === "description") {
-      // A description start runs one AI design round, so it needs one left today.
-      const [rounds, pending] = await Promise.all([
-        tx.aIRound.count({ where: { customerId: actor.id, createdAt: { gte: since } } }),
-        tx.aIJob.count({ where: { customerId: actor.id, type: "DESIGN_ROUND", status: { in: [...ACTIVE] } } }),
-      ]);
-      if (rounds + pending >= DAILY_ROUND_LIMIT) {
-        throw new AiError("QUOTA", QUOTA_MESSAGE);
+  function queueMatch(): Promise<{ jobId: string; cached: boolean }> {
+    return db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${actor.id}`}, 0))`;
+      const earlier = await tx.aIJob.findFirst({
+        where: { customerId: actor.id, type: "DRESS_MATCH", inputHash, status: { in: [...ACTIVE, "SUCCEEDED"] } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, status: true, result: true },
+      });
+      const earlierResult = dressMatchResultSchema.safeParse(earlier?.result);
+      const designStillThere = earlierResult.success ? (await tx.design.count({ where: { id: earlierResult.data.designId, customerId: actor.id } })) === 1 : false;
+      if (earlier && (earlier.status !== "SUCCEEDED" || designStillThere)) {
+        return { jobId: earlier.id, cached: true };
       }
-    }
-    const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash } satisfies DressMatchPayload;
-    const job = await tx.aIJob.create({ data: { type: "DRESS_MATCH", customerId: actor.id, payload, inputHash, runAfter: now }, select: { id: true } });
-    return { jobId: job.id, cached: false };
-  });
+
+      const since = startOfDhakaDay(now);
+      if ((await tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: since } } })) >= DAILY_SUBMISSION_LIMIT) {
+        throw new AiError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
+      }
+      if (input.mode === "description") {
+        // A description start runs one AI design round, so it needs one left today.
+        const [rounds, pending] = await Promise.all([
+          tx.aIRound.count({ where: { customerId: actor.id, createdAt: { gte: since } } }),
+          tx.aIJob.count({ where: { customerId: actor.id, type: "DESIGN_ROUND", status: { in: [...ACTIVE] } } }),
+        ]);
+        if (rounds + pending >= DAILY_ROUND_LIMIT) {
+          throw new AiError("QUOTA", QUOTA_MESSAGE);
+        }
+      }
+      const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash } satisfies DressMatchPayload;
+      const job = await tx.aIJob.create({ data: { type: "DRESS_MATCH", customerId: actor.id, payload, inputHash, runAfter: now }, select: { id: true } });
+      return { jobId: job.id, cached: false };
+    });
+  }
 }
 
 export type StartStatus =

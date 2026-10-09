@@ -84,7 +84,9 @@ async function cleanTestAccounts(db: PrismaClient, supabase: SupabaseClient, dry
   for (const order of orders) {
     files.push([BUCKETS.qcPhotos, await listKeys(supabase, BUCKETS.qcPhotos, order.id, null)]);
   }
-  // Orders don't cascade from customers (they're kept for accounting), so they go first.
+  // Orders don't cascade from customers (they're kept for accounting), so they go first; a dispute
+  // blocks deleting its order item, so disputes go before them.
+  await db.dispute.deleteMany({ where: { orderItem: { orderId: { in: orders.map((o) => o.id) } } } });
   await db.order.deleteMany({ where: { id: { in: orders.map((o) => o.id) } } });
   await db.flaggedItem.deleteMany({ where: { customerId: { in: ids } } });
   await db.user.deleteMany({ where: { id: { in: ids } } });
@@ -132,6 +134,7 @@ async function cleanDemoActivity(db: PrismaClient, supabase: SupabaseClient, bef
     files.push([BUCKETS.qcPhotos, await listKeys(supabase, BUCKETS.qcPhotos, order.id, null)]);
   }
   await db.$transaction(async (tx) => {
+    await tx.dispute.deleteMany({ where: { orderItem: { orderId: { in: orders.map((o) => o.id) } } } });
     await tx.order.deleteMany({ where: { id: { in: orders.map((o) => o.id) } } });
     await tx.cartItem.deleteMany({ where: { cart: { customerId: { in: ids } }, createdAt: { lt: before } } });
     await tx.quoteRequest.deleteMany({ where: old });

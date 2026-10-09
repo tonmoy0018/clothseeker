@@ -233,7 +233,14 @@ docs/developers/
   - Always use `effectiveQuoteStatus` (24 h to reply, 7 days to pay) rather than the raw status. `expireQuotes` is the idempotent sweep.
   - Quote cart lines are priced from the quote only; checkout re-checks them; the webhook sets the item to `ACCEPTED` and the quote to `ACCEPTED`.
 - **Screenshots in docs** must not contain photos of real people we don't have rights to (e.g. research-dataset examples).
-- This repo sits on an iCloud-synced Desktop: Finder can create "… 2.ts" copies (seen in `.next/` and once in `tests/`). Delete them, and never commit them.
+- This repo sits on an iCloud-synced Desktop: Finder can create "… 2.ts" copies (seen in `.next/`, `lib/generated/` and once in `tests/`). Delete them, and never commit them. The Next build now lives in `.next.nosync`, which iCloud skips.
+
+## Implementation conventions (established in Phase 8)
+
+- **Disputes:** customers report problems with delivered items for 14 days (`DISPUTE_WINDOW_DAYS`) via `openDispute`. The team resolves them through `resolveDispute` → `moveItemAsAdmin` (refunds use `planItemRefunds`/`settleRefunds`). Evidence views never include address or phone.
+- **Audit:** `writeAudit` stores `actorRole`, so entries keep their meaning after an account is deleted. System sweeps write `actorId: null, actorRole: "SYSTEM"`. New admin pages, actions and routes must call `requireAdmin()` (or check `role !== "ADMIN"`); a test scans `app/admin/**` and fails otherwise.
+- **AI health:** refusals by a daily limit call `recordLimitHit` after the refused transaction. Workers write `worker_heartbeats` each poll.
+- **Build output** goes to `.next.nosync` locally (iCloud ignores `*.nosync`); Vercel keeps `.next`.
 
 ## Mapping the original build guide
 

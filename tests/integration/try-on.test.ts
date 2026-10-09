@@ -173,7 +173,7 @@ describe("try-on jobs", () => {
     const dim = await uploaded(customer, 50);
     const queued = await tryOnDesign(customer, dim.id, spec);
     await runAiJobs(deps());
-    expect(await getTryOnStatus(db, storage, customer, queued.jobId)).toEqual({ state: "failed", message: AI_FAILURE_MESSAGES.PHOTO_REJECTED, code: "PHOTO_REJECTED" });
+    expect(await getTryOnStatus(db, storage, customer, queued.jobId)).toEqual({ state: "failed", message: AI_FAILURE_MESSAGES.PHOTO_TOO_DARK, code: "PHOTO_TOO_DARK" });
     expect(await db.aIJob.findUniqueOrThrow({ where: { id: queued.jobId } })).toMatchObject({ status: "FAILED", attempts: 1 });
     expect((await getTryOnQuota(db, customer)).used).toBe(0);
   });
