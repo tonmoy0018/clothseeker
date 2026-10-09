@@ -237,7 +237,10 @@ Run everything and fix all errors. Write or update tests for the changed busines
 - Clients poll job status. Realtime subscriptions are optional, for later.
 - Test the try-on provider (`ai-scripts/` feasibility script) before building the full Phase 7 UI.
 
+## Decided
+
+- **Missed 24-hour acceptance deadline → full automatic refund** of the custom item (confirmed 2026-10-09). Same outcome when the team declines a custom item.
+
 ## Open decisions (resolve before the phase that needs them)
 
-- Refund behavior when the team misses the 24-hour acceptance deadline (full automatic refund assumed). Needed by Phase 5.
 - Quote validity window after the team responds. Needed by Phase 7.
