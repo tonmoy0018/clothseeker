@@ -16,6 +16,9 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
           <Link href="/admin" className="text-muted-foreground hover:text-foreground">
             Dashboard
           </Link>
+          <Link href="/admin/orders" className="text-muted-foreground hover:text-foreground">
+            Orders
+          </Link>
           <Link href="/admin/products" className="text-muted-foreground hover:text-foreground">
             Products
           </Link>

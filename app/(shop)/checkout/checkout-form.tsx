@@ -65,6 +65,19 @@ export function CheckoutForm({ idempotencyKey, subtotalMinor, defaults }: { idem
         ))}
       </fieldset>
 
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="customerNote">Notes for our tailors (optional)</Label>
+        <textarea
+          id="customerNote"
+          name="customerNote"
+          maxLength={300}
+          rows={3}
+          placeholder="e.g. Please make the hem 2 cm shorter"
+          className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        />
+        <p className="text-xs text-muted-foreground">Don&apos;t include personal details; the note is printed on the workshop sheet.</p>
+      </div>
+
       <div className="flex flex-col gap-1 rounded-xl border p-4 text-sm">
         <div className="flex justify-between">
           <span>Subtotal</span>

@@ -24,12 +24,16 @@ export function PhotoUploadForm({
   hidden,
   label = "Add photo",
   hint = "JPEG, PNG or WebP, up to 4 MB, at least 600×600 px.",
+  fileField = "photo",
 }: {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   hidden: Record<string, string>;
   label?: string;
   hint?: string;
+  /** Form field name of the file input (read by the server action). */
+  fileField?: string;
 }) {
+  const inputId = `upload-${hidden.slot ?? fileField}`;
   const [state, formAction] = useActionState(action, {});
   const [clientError, setClientError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -47,14 +51,14 @@ export function PhotoUploadForm({
       {Object.entries(hidden).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />
       ))}
-      <label className="text-sm font-medium" htmlFor={`upload-${hidden.slot ?? "photo"}`}>
+      <label className="text-sm font-medium" htmlFor={inputId}>
         {label}
       </label>
       <div className="flex flex-wrap items-center gap-2">
         <input
           ref={inputRef}
-          id={`upload-${hidden.slot ?? "photo"}`}
-          name={hidden.slot ? "image" : "photo"}
+          id={inputId}
+          name={fileField}
           type="file"
           accept={ACCEPT}
           required

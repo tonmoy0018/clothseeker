@@ -62,12 +62,21 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Complete a pending payment | ➡️ sign in | ✅ own, while payable | ❌ | `resumePayment` |
 | Mark an order paid or cancelled | ❌ | ❌ | ❌ | Only a **signed webhook** (SYSTEM) can; `transitionItems` checks actors |
 
+## Implemented (Phase 5)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Order queue, order page, spec sheet and label PDFs | 404 | 404 | ✅ | `requireAdmin` / role check in PDF routes; `assertAdmin` in queries |
+| Accept / decline custom items, production, QC photos, ship | ❌ | ❌ | ✅ (audited) | `lib/production/*` → `moveItemAsAdmin` |
+| Refund on 24 h timeout | ❌ | ❌ | ❌ | SYSTEM sweep only |
+| Mark delivered | ❌ | ❌ | ✅ (override) | **Courier** via signed webhook, or admin |
+| See tracking and refunds | ❌ | ✅ own orders | ✅ | `getOrderForCustomer` |
+
 ## Planned
 
 | Phase | Admin | Customer |
 |---|---|---|
 | 4 | — | — |
-| 5 | Accept custom orders, spec sheets, QC photos, shipping | — |
 | 6 | AI metrics | AI rounds on their own designs (10/day) |
 | 7 | Answer quote requests | Try-on (with consent), request and accept quotes |
 | 8 | Brand-logo flags, disputes, audit log | Open disputes on their own order items |

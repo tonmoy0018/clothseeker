@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 4 complete (2026-10-08). Next: Phase 5, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 5 complete (2026-10-09). Next: Phase 6, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -196,6 +196,16 @@ docs/developers/
 - `placeOrder` is idempotent per form-rendered key, renders print files **before** its transaction, deletes them if anything fails, and keeps the cart until payment succeeds. Unpaid orders expire after 30 min (`expireStalePendingOrders`, run by the worker).
 - The worker uses `lib/storage/supabase-core.ts` (no `server-only`). App code uses `getStorage()`.
 - Playwright spec files must not import each other; put shared steps in `tests/e2e/helpers.ts`.
+
+## Implementation conventions (established in Phase 5)
+
+- Team actions on order items go through `moveItemAsAdmin()` (`lib/production/move.ts`): admin check, state machine, audit in one transaction. Map `IllegalTransitionError` to a friendly `ProductionError`.
+- **Refunds:** record `Refund` rows (`planItemRefunds`) in the status-change transaction, and pay out after commit (`settleRefunds`). Never call the provider inside a transaction. `uniqueKey` guarantees each refund happens at most once.
+- **Couriers:** like payments, a provider interface plus a signed webhook; dedupe on `CourierEvent.eventId`, and statuses only move forward.
+- **PDFs:** `pdf-lib` with the standard fonts; pass all text through `pdfSafe()`. The spec sheet must never include customer contact data (tested).
+- **Migrations:** `prisma migrate dev` needs an interactive terminal when a change triggers a warning (e.g. a new unique index). Generate the SQL non-interactively with `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<name>/migration.sql`, append RLS for new tables, then `prisma migrate deploy`.
+- **E2E tests that check out** sign up a fresh customer (`signUpFreshCustomer`), because checkout takes the whole cart.
+- In zsh, unquoted variables don't word-split: use `${=VAR}` in shell commands.
 
 ## Mapping the original build guide
 

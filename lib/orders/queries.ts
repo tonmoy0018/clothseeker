@@ -65,8 +65,17 @@ const orderDetailSelect = {
       acceptBy: true,
       previewKey: true,
       printFiles: true,
+      shipment: {
+        select: {
+          carrier: true,
+          trackingNumber: true,
+          status: true,
+          courierEvents: { orderBy: { createdAt: "asc" }, select: { id: true, status: true, note: true, createdAt: true } },
+        },
+      },
     },
   },
+  refunds: { orderBy: { createdAt: "asc" }, select: { id: true, kind: true, amountMinor: true, reason: true, status: true, orderItemId: true } },
   events: {
     orderBy: { createdAt: "asc" },
     select: { id: true, orderItemId: true, fromStatus: true, toStatus: true, actorType: true, note: true, createdAt: true },

@@ -21,6 +21,8 @@ export const metadata: Metadata = { title: "Order — ClothSeeker" };
 
 const when = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Dhaka" });
 
+const COURIER_LABEL = { LABEL_CREATED: "Label created", IN_TRANSIT: "In transit", OUT_FOR_DELIVERY: "Out for delivery", DELIVERED: "Delivered" } as const;
+
 export default async function OrderDetailPage({ params }: PageProps<"/account/orders/[id]">) {
   const { id } = await params;
   const user = await requireUser(`/account/orders/${id}`);
@@ -35,6 +37,10 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
   const now = new Date();
   const payable = order.status === "PENDING_PAYMENT" && (!order.expiresAt || order.expiresAt > now);
   const payment = order.payments[0];
+  const refundReason = (itemId: string) => {
+    const reason = order.refunds.find((r) => r.kind === "ITEM" && r.orderItemId === itemId)?.reason;
+    return reason?.replace(/^Declined by ClothSeeker: /, "");
+  };
 
   return (
     <div className="flex flex-col gap-8">
@@ -102,6 +108,21 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
                     {item.status === "AWAITING_ACCEPTANCE" && item.acceptBy && (
                       <span className="text-sm">ClothSeeker will confirm by {when.format(item.acceptBy)}.</span>
                     )}
+                    {item.status === "REFUNDED" && (
+                      <span className="text-sm">This item was refunded in full{refundReason(item.id) ? `: ${refundReason(item.id)}` : "."}</span>
+                    )}
+                    {item.shipment && (
+                      <div className="mt-1 rounded-lg bg-muted/50 p-2 text-sm" data-testid="tracking">
+                        {item.shipment.carrier} · tracking <strong>{item.shipment.trackingNumber}</strong>
+                        <ul className="mt-1 text-xs text-muted-foreground">
+                          {item.shipment.courierEvents.map((e) => (
+                            <li key={e.id}>
+                              {when.format(e.createdAt)} — {COURIER_LABEL[e.status]}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                   <span className="font-medium">{formatBDT(lineTotalMinor(item.unitPriceMinor, item.quantity))}</span>
                 </div>
@@ -110,7 +131,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
             );
           })}
         </ul>
-        <p className="text-xs text-muted-foreground">Shipment tracking numbers appear here once your parcel ships (Phase 5).</p>
+        <p className="text-xs text-muted-foreground">Tracking details appear here once an item ships.</p>
       </section>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -153,6 +174,12 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
             <span>Total</span>
             <span data-testid="order-total">{formatBDT(order.totalMinor)}</span>
           </div>
+          {order.refunds.map((r) => (
+            <div key={r.id} className="flex justify-between text-emerald-700 dark:text-emerald-400" data-testid="refund">
+              <span>{r.kind === "ITEM" ? "Refunded" : "Delivery fee refunded"}{r.status === "PENDING" ? " (processing)" : ""}</span>
+              <span>{formatBDT(r.amountMinor)}</span>
+            </div>
+          ))}
           {payment && <p className="text-muted-foreground">Payment: {payment.status.toLowerCase()} (simulated)</p>}
         </section>
       </div>

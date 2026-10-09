@@ -31,6 +31,9 @@ ClothSeeker is a **single brand**. There are no sellers, stores, store members o
 | | `OrderItem` | One order line with **snapshots** (name, size, color, unit price, design spec, preview + print files) and its fulfilment `status` | index (`status`, `createdAt`) |
 | | `Payment` | One gateway payment for an order (`providerRef`, status, amount) | `providerRef` unique |
 | | `PaymentEvent` | Webhook events already processed | **`eventId` unique** (idempotency) |
+| | `Refund` | Money returned for an item or the delivery fee | **`uniqueKey` unique** (`item:<id>`, `delivery:<paymentId>`) |
+| | `QcPhoto` | Front/back quality-check photos (private bucket) | index (`orderItemId`, `createdAt`) |
+| | `CourierEvent` | Courier status updates already processed (and tracking history) | **`eventId` unique** |
 | | `OrderEvent` | Order timeline: every status change with its actor (SYSTEM, CUSTOMER, ADMIN, COURIER) | index (`orderId`, `createdAt`) |
 | | `Shipment`, `Review`, `Dispute` | Minimal now, extended in Phases 4, 5 and 8 | one shipment and one review per order item |
 | Oversight | `FlaggedItem` | Brand-logo detections for admin review | index (`status`, `createdAt`) |

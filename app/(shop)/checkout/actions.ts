@@ -49,6 +49,7 @@ export async function placeOrderAction(_prev: CheckoutState, formData: FormData)
       {
         idempotencyKey: field(formData, "idempotencyKey"),
         zone: field(formData, "zone"),
+        customerNote: field(formData, "customerNote"),
         address: {
           name: field(formData, "name"),
           phone: field(formData, "phone"),

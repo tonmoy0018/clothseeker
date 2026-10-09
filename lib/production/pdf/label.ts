@@ -29,9 +29,10 @@ export async function buildShippingLabel(data: LabelData): Promise<Uint8Array> {
   page.drawText("PLACEHOLDER - NOT VALID FOR REAL SHIPPING", { x, y: y - 14, size: 7, font: regular, color: rgb(0.7, 0, 0) });
   y -= 40;
   page.drawText(pdfSafe(data.trackingNumber), { x, y, size: 18, font: bold, color: ink });
-  const qr = await doc.embedPng(await QRCode.toBuffer(data.trackingNumber, { type: "png", margin: 1, width: 200 }));
-  page.drawImage(qr, { x: SIZE.width - 18 - 80, y: y - 50, width: 80, height: 80 });
-  y -= 70;
+  // Scannable tracking number in the free bottom-right corner (never overlapping the text above).
+  const qr = await doc.embedPng(await QRCode.toBuffer(data.trackingNumber, { type: "png", margin: 1, width: 240 }));
+  page.drawImage(qr, { x: SIZE.width - 18 - 96, y: 18, width: 96, height: 96 });
+  y -= 40;
 
   page.drawText("TO", { x, y, size: 9, font: bold, color: ink });
   const r = data.recipient;

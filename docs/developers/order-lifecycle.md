@@ -53,6 +53,10 @@ Duplicate events are blocked by the unique `PaymentEvent.eventId`. Concurrent de
 
 CANCELLED and REFUNDED are final. `HAPPY_PATH` lists each kind's normal sequence for the progress stepper on the order page. The order-level `Order.status` tracks payment only: PENDING_PAYMENT, PAID, CANCELLED, REFUNDED.
 
+## After payment (Phase 5)
+
+Acceptance, the 24-hour automatic refund, production, QC, shipping and courier updates are described in [production.md](production.md). All of them go through the same state machine.
+
 ## Customer pages
 
 - `/checkout`: address (BD mobile number required), delivery zone (Inside Dhaka ৳80, Outside Dhaka ৳150), server-priced summary.

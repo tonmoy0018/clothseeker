@@ -57,6 +57,7 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `TEST_DATABASE_URL` | Local: same server as `DB_URL`, database `clothseeker_test` | Tests only | `pnpm test:integration` |
 | `SEED_DEMO_PASSWORD` | You (default `clothseeker-demo`) | Local only | `pnpm db:seed`, E2E |
 | `PAYMENT_PROVIDER` | `mock` (only option so far) | **Server-only** | Checkout |
+| `MOCK_COURIER_WEBHOOK_SECRET` | Random, ≥ 32 chars (`pnpm env:local` generates one) | **Server-only** | Signing/verifying courier webhooks |
 | `MOCK_PAYMENT_WEBHOOK_SECRET` | Random, ≥ 32 chars (`openssl rand -hex 32`; `pnpm env:local` generates one) | **Server-only** | Signing/verifying payment webhooks |
 
 All variables are validated with Zod in `lib/env/schema.ts`. A missing or invalid variable fails fast, and the error names the variable without printing its value. Only `NEXT_PUBLIC_*` variables can reach the browser. `lib/env/server.ts` imports `server-only`, so importing it from a Client Component breaks the build.

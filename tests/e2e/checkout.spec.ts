@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { fillAddress } from "./helpers";
+import { fillAddress, orderCustomDesign, signUpFreshCustomer } from "./helpers";
 
 // @supabase — needs the local Supabase stack with seed data.
 
@@ -52,24 +52,11 @@ test.describe("@supabase checkout", () => {
 
   test("a custom design is paid, frozen with its preview, and waits for acceptance", async ({ page }) => {
     test.setTimeout(120_000);
-    await signIn(page, "noah@example.test");
-    await page.goto("/products/smocked-cotton-dress");
-    await page.getByRole("link", { name: "Customize this dress" }).click();
-    await expect(page.getByTestId("price-breakdown")).toBeVisible();
-    await page.getByTestId("region-skirt").getByRole("button", { name: "Lilac" }).click();
-    await page.getByLabel("New text").fill("Order me");
-    await page.getByRole("button", { name: /Add text/ }).click();
-    const designTotal = (await page.getByTestId("design-total").textContent())?.trim() ?? "";
-    await page.getByRole("button", { name: "Add to cart" }).click();
-    await expect(page).toHaveURL(/\/cart$/);
+    await signUpFreshCustomer(page);
+    await orderCustomDesign(page, { text: "Order me" });
 
-    await checkoutToGateway(page);
-    await page.getByRole("button", { name: /^Pay ৳/ }).click();
-
-    await expect(page.getByTestId("order-status")).toHaveText("Paid");
     const items = page.getByTestId("order-items");
     await expect(items).toContainText("Smocked Cotton Dress — your design");
-    await expect(items).toContainText(designTotal);
     await expect(items).toContainText("print file");
     await expect(items.getByRole("img", { name: /Your design for Smocked Cotton Dress/ })).toBeVisible();
     await expect(items.getByTestId("item-progress").locator('[aria-current="step"]')).toHaveText("Awaiting acceptance");

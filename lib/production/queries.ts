@@ -21,7 +21,7 @@ export const QUEUE_TABS = {
 } as const satisfies Record<string, { label: string; statuses: readonly OrderItemStatus[] }>;
 
 export type QueueTab = keyof typeof QUEUE_TABS;
-const TAB_IDS = ["needs_acceptance", "to_make", "qc", "to_ship", "shipped", "all"] as const satisfies readonly QueueTab[];
+export const TAB_IDS = ["needs_acceptance", "to_make", "qc", "to_ship", "shipped", "all"] as const satisfies readonly QueueTab[];
 
 export const queueFiltersSchema = z.object({
   tab: z.enum(TAB_IDS).catch("needs_acceptance"),
