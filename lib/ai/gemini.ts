@@ -28,6 +28,7 @@ const PLAN_SYSTEM = [
   "If `reference` is present, the customer is asking for changes relative to that option.",
   "Keep text short (at most 40 characters) and only add text when the customer asks for words on the dress.",
   "A motif is a single small decorative illustration (for example a flower, a star or a leaf) described in a few plain words, with one allowed color.",
+  "Give at least two of the four variations a motif, unless the customer asks for a plain or undecorated dress.",
 ].join("\n");
 
 const LOGO_SYSTEM = [
@@ -90,7 +91,19 @@ const responseSchema = z.object({
   promptFeedback: z.object({ blockReason: z.string().optional() }).optional(),
 });
 
-export type GeminiOptions = { apiKey: string; model: string; fetch?: FetchLike; temperature?: number };
+export type GeminiOptions = {
+  apiKey: string;
+  model: string;
+  /** Tried in order when a model is busy (429/5xx), unreachable, or retired (404). */
+  fallbackModels?: readonly string[];
+  fetch?: FetchLike;
+  temperature?: number;
+};
+
+/** Free-tier models are often briefly overloaded; another model usually answers straight away. */
+function shouldTryNextModel(error: unknown, signal: AbortSignal): boolean {
+  return error instanceof AiProviderError && !signal.aborted && error.code === "PROVIDER" && (error.retryable || error.status === 404);
+}
 
 export class GeminiPlanner implements PlannerProvider {
   readonly name = "gemini";
@@ -136,7 +149,23 @@ export class GeminiPlanner implements PlannerProvider {
   }
 
   private async generate(system: string, parts: unknown[], schema: JsonSchema, temperature: number, signal: AbortSignal): Promise<unknown> {
-    const response = await providerFetch(this.fetchImpl, "gemini", `${API_BASE}/${encodeURIComponent(this.options.model)}:generateContent`, {
+    const models = [...new Set([this.options.model, ...(this.options.fallbackModels ?? [])])];
+    let lastError: unknown = null;
+    for (const model of models) {
+      try {
+        return await this.generateWith(model, system, parts, schema, temperature, signal);
+      } catch (error) {
+        if (!shouldTryNextModel(error, signal)) {
+          throw error;
+        }
+        lastError = error;
+      }
+    }
+    throw lastError;
+  }
+
+  private async generateWith(model: string, system: string, parts: unknown[], schema: JsonSchema, temperature: number, signal: AbortSignal): Promise<unknown> {
+    const response = await providerFetch(this.fetchImpl, "gemini", `${API_BASE}/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": this.options.apiKey },
       body: JSON.stringify({

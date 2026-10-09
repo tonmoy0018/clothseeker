@@ -35,6 +35,8 @@ export class AiProviderError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly code: "TIMEOUT" | "PROVIDER" | "INVALID_PLAN" = "PROVIDER",
+    /** HTTP status, when the provider answered with an error. */
+    readonly status?: number,
   ) {
     super(message);
   }

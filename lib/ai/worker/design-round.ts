@@ -41,7 +41,8 @@ function motifSeed(seed: string, index: number): number {
 
 /**
  * Provider images often come on a white background; make near-white transparent so only the motif
- * is printed. Also decodes the untrusted bytes, so anything that isn't an image fails here.
+ * is printed, then crop the empty margins. Also decodes the untrusted bytes, so anything that isn't
+ * an image fails here.
  */
 export async function knockOutWhite(input: Buffer): Promise<Buffer> {
   let raw;
@@ -65,7 +66,13 @@ export async function knockOutWhite(input: Buffer): Promise<Buffer> {
       data[i + 3] = Math.min(data[i + 3] ?? 255, Math.round(((245 - lightest) / 20) * 255));
     }
   }
-  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+  const cleaned = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+  // Image models leave wide empty margins; crop to the motif so it fills its box on the dress.
+  try {
+    return await sharp(cleaned).trim({ threshold: 1 }).png().toBuffer();
+  } catch {
+    return cleaned; // nothing left to trim against (e.g. a fully transparent image)
+  }
 }
 
 async function loadAttachments(deps: AiWorkerDeps, keys: readonly string[]): Promise<ProviderImage[]> {
@@ -190,17 +197,31 @@ export async function runDesignRound(deps: AiWorkerDeps, job: ClaimedJob, signal
       let motifKey: string | null = null;
       const motif = option.variation.motif;
       if (motif && constraints.layersAllowed && !findBrandTerm(motif.prompt)) {
-        const bytes = await providers.image.generateMotif({ prompt: motif.prompt, color: motif.color, seed: motifSeed(input.seed, index) }, signal);
-        let image;
+        let bytes: Buffer | null;
         try {
-          image = await processImage(await knockOutWhite(bytes), "aiMotif");
+          bytes = await providers.image.generateMotif({ prompt: motif.prompt, color: motif.color, seed: motifSeed(input.seed, index) }, signal);
         } catch (error) {
-          if (error instanceof ImageValidationError) {
-            throw new AiProviderError("image provider returned an unusable image", true);
+          // A refused motif (e.g. an over-eager safety filter) costs the option its motif, not the
+          // whole round. Transient failures (rate limits, outages, timeouts) still retry the job.
+          if (error instanceof AiProviderError && !error.retryable) {
+            deps.log?.("ai.motif_skipped", { jobId: job.id, option: index, code: error.code });
+            bytes = null;
+          } else {
+            throw error;
           }
-          throw error;
         }
-        motifKey = await put(image.data, image.contentType, image.extension);
+        if (bytes) {
+          let image;
+          try {
+            image = await processImage(await knockOutWhite(bytes), "aiMotif");
+          } catch (error) {
+            if (error instanceof ImageValidationError) {
+              throw new AiProviderError("image provider returned an unusable image", true);
+            }
+            throw error;
+          }
+          motifKey = await put(image.data, image.contentType, image.extension);
+        }
       }
 
       const spec = variationToSpec(base, option.variation, { ...validation, motifKey });

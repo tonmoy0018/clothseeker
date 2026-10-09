@@ -13,6 +13,7 @@ type ProviderEnv = Pick<
   | "IMAGE_PROVIDER"
   | "GEMINI_API_KEY"
   | "GEMINI_MODEL"
+  | "GEMINI_FALLBACK_MODELS"
   | "CLOUDFLARE_ACCOUNT_ID"
   | "CLOUDFLARE_API_TOKEN"
   | "CLOUDFLARE_IMAGE_MODEL"
@@ -29,7 +30,7 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
     if (!env.GEMINI_API_KEY) {
       throw new AiConfigError("GEMINI_API_KEY is required when PLANNER_PROVIDER=gemini");
     }
-    planner = new GeminiPlanner({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
+    planner = new GeminiPlanner({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL, fallbackModels: env.GEMINI_FALLBACK_MODELS });
   } else {
     planner = new FakePlanner(env.AI_FAKE_DELAY_MS);
   }

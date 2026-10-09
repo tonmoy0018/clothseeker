@@ -60,7 +60,7 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `MOCK_COURIER_WEBHOOK_SECRET` | Random, ≥ 32 chars (`pnpm env:local` generates one) | **Server-only** | Signing/verifying courier webhooks |
 | `PLANNER_PROVIDER` | Optional: `fake` (default) or `gemini` | Worker-only | AI design planner ([ai-pipelines.md](ai-pipelines.md)) |
 | `IMAGE_PROVIDER` | Optional: `fake` (default) or `cloudflare` | Worker-only | AI motif images |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | Key required when `PLANNER_PROVIDER=gemini`; model defaults to `gemini-2.5-flash` | **Worker-only secret** | Gemini planner |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | Key required when `PLANNER_PROVIDER=gemini`. Model defaults to `gemini-3.8-flash`; fallbacks (comma-separated) default to `gemini-3.6-flash,gemini-3.5-flash` | **Worker-only secret** | Gemini planner |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_IMAGE_MODEL` | Required when `IMAGE_PROVIDER=cloudflare`; model defaults to FLUX.1 schnell | **Worker-only secret** | Workers AI images |
 | `AI_FAKE_DELAY_MS` | Optional, default 1500 | Worker-only | Latency of the fake providers |
 | `AI_JOB_TIMEOUT_MS` | Optional, default 120000 | Worker-only | Limit for one AI job attempt |

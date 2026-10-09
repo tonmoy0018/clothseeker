@@ -327,6 +327,25 @@ describe("running AI jobs", () => {
     expect(await db.aIJob.findUniqueOrThrow({ where: { id: queued.jobId } })).toMatchObject({ status: "SUCCEEDED", attempts: 2 });
   });
 
+  it("a refused motif costs the option its motif, not the round", async () => {
+    const customer = await createUser();
+    const { spec } = await customizableProduct();
+    const queued = await request(customer, spec);
+    const image = {
+      name: "refusing",
+      generateMotif: async () => {
+        throw new AiProviderError("cloudflare returned HTTP 400", false);
+      },
+    };
+    await processNextJob(deps({ image }));
+    const status = await getJobStatus(db, storage, customer, queued.jobId);
+    if (status.state !== "done") throw new Error(`expected done, got ${status.state}`);
+    const round = await db.aIRound.findUniqueOrThrow({ where: { id: status.round.id } });
+    const options = storedOptionsSchema.parse(round.options);
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.every((o) => o.motifKey === null && !parseDesignSpec(o.spec).layers.some((l) => l.kind === "image"))).toBe(true);
+  });
+
   it("recovers jobs whose worker died", async () => {
     const customer = await createUser();
     const { spec } = await customizableProduct();

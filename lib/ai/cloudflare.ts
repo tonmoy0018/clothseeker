@@ -6,7 +6,8 @@ import type { ImageProvider, MotifRequest } from "./types";
 
 // Cloudflare Workers AI text-to-image (default model: FLUX.1 [schnell], free daily allowance).
 // The motif is asked for on a plain white background; the pipeline knocks the white out so only
-// the motif is printed on the dress.
+// the motif is printed on the dress. Its safety filter sometimes rejects harmless prompts (HTTP 400,
+// "NSFW"); that counts as non-retryable and the round keeps the option without a motif.
 
 export const DEFAULT_CLOUDFLARE_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell";
 
@@ -33,7 +34,8 @@ export class CloudflareImage implements ImageProvider {
     const response = await providerFetch(this.fetchImpl, "cloudflare", url, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiToken}` },
-      body: JSON.stringify({ prompt: motifPrompt(request), seed: request.seed, steps: 4 }),
+      // FLUX.1 schnell on Workers AI rejects unknown inputs (including `seed`), so only prompt + steps.
+      body: JSON.stringify({ prompt: motifPrompt(request), steps: 4 }),
       signal,
     });
     // FLUX answers JSON with a base64 image; some other models stream the image bytes directly.

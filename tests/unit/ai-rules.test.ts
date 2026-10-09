@@ -214,10 +214,22 @@ describe("motif clean-up", () => {
       .composite([{ input: await sharp({ create: { width: 50, height: 50, channels: 3, background: "#aa0000" } }).png().toBuffer(), left: 75, top: 75 }])
       .jpeg()
       .toBuffer();
+    // Margins are cropped away, leaving the motif with a transparent edge where the white was.
+    const framed = await sharp({ create: { width: 200, height: 200, channels: 3, background: "#ffffff" } })
+      .composite([{ input: await sharp({ create: { width: 50, height: 50, channels: 4, background: { r: 170, g: 0, b: 0, alpha: 1 } } }).extend({ top: 4, bottom: 4, left: 4, right: 4, background: "#ffffff" }).png().toBuffer(), left: 71, top: 71 }])
+      .png()
+      .toBuffer();
+    const cropped = await knockOutWhite(framed);
+    const meta = await sharp(cropped).metadata();
+    expect(meta.width).toBeLessThanOrEqual(58);
+    expect(meta.width).toBeGreaterThanOrEqual(50);
     const { data, info } = await sharp(await knockOutWhite(motif)).raw().toBuffer({ resolveWithObject: true });
     expect(info.channels).toBe(4);
-    expect(data[3]).toBe(0);
-    const centre = (100 * 200 + 100) * 4;
+    // JPEG edges leave a few soft pixels around the 50 px block.
+    expect(info.width).toBeGreaterThanOrEqual(50);
+    expect(info.width).toBeLessThanOrEqual(58);
+    expect(data[3]).toBeLessThan(255);
+    const centre = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * 4;
     expect(data[centre + 3]).toBe(255);
     await expect(knockOutWhite(Buffer.from("<svg/>"))).rejects.toThrow(/unreadable/);
   });

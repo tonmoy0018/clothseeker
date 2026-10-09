@@ -19,7 +19,7 @@ export async function providerFetch(fetchImpl: FetchLike, provider: string, url:
     throw new AiProviderError(`${provider} request failed (${error instanceof Error ? error.name : "network"})`, true);
   }
   if (!response.ok) {
-    throw new AiProviderError(`${provider} returned HTTP ${response.status}`, RETRYABLE_STATUS.has(response.status));
+    throw new AiProviderError(`${provider} returned HTTP ${response.status}`, RETRYABLE_STATUS.has(response.status), "PROVIDER", response.status);
   }
   return response;
 }

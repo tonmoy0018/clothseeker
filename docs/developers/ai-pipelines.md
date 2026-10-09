@@ -33,12 +33,25 @@ All provider code lives in `lib/ai/` behind two interfaces (`lib/ai/types.ts`):
 
 ### Switching to the real providers
 
-1. **Gemini:** create a key at [Google AI Studio](https://aistudio.google.com/apikey). In `.env.local` set `PLANNER_PROVIDER=gemini` and `GEMINI_API_KEY=…`. `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
-2. **Cloudflare Workers AI:** in the Cloudflare dashboard, copy the account id and create an API token with the *Workers AI* permission. Set `IMAGE_PROVIDER=cloudflare`, `CLOUDFLARE_ACCOUNT_ID=…` and `CLOUDFLARE_API_TOKEN=…`.
+1. **Gemini:** create a key at [Google AI Studio](https://aistudio.google.com/apikey). In `.env.local` set `PLANNER_PROVIDER=gemini` and `GEMINI_API_KEY=…`.
+2. **Cloudflare Workers AI:** in the Cloudflare dashboard, copy the account id (Account home → *Account details*). Create an API token from the **Workers AI** template (My Profile → API Tokens). Set `IMAGE_PROVIDER=cloudflare`, `CLOUDFLARE_ACCOUNT_ID=…` and `CLOUDFLARE_API_TOKEN=…`.
 3. Restart `pnpm worker`. The `worker.started` log line names the active providers. If a chosen provider is missing its key, the worker refuses to start and names the missing variable.
-4. **Before relying on them:** the adapters are tested only against mocked HTTP (`tests/unit/ai-providers.test.ts`). Run one round by hand, check the four previews, and try a photo with a well-known brand logo.
 
-You can mix providers, e.g. the Gemini planner with fake images.
+You can mix providers, e.g. the Gemini planner with fake images. E2E tests always use the fakes, whatever `.env.local` says.
+
+### What we learned running them live (2026-10-09)
+
+- **Models get retired.** New Gemini keys can no longer use `gemini-2.5-flash` (HTTP 404). The default is now `gemini-3.8-flash`.
+- **Free-tier Gemini is often briefly overloaded** (HTTP 503 "high demand"), sometimes for minutes, on any single model. `GeminiPlanner` therefore tries `GEMINI_FALLBACK_MODELS` in order within the same attempt (on 429/5xx, network errors or 404) before the job-level retry kicks in. A bad request (other 4xx) never falls back.
+- **FLUX.1 schnell on Workers AI accepts only `prompt` and `steps`.** Sending `seed` gives HTTP 400, so motifs from Cloudflare aren't reproducible from a seed.
+- **Cloudflare's safety filter sometimes rejects harmless prompts** (HTTP 400 "NSFW", e.g. "simple botanical flower icon"). A refused motif costs that option its motif, not the whole round (`ai.motif_skipped` in the logs). Rate limits and outages still retry the job.
+- **The planner decides whether to add motifs.** For "delicate florals" it may choose a floral *pattern* instead. The system instruction asks for motifs in at least two of the four variations unless the customer wants a plain dress.
+- **Timing:** a round with 4 motifs took 30–65 s end to end. Each motif takes about 2 s on Cloudflare; the rest is Gemini, including fallbacks when a model is busy.
+- **Images:** FLUX draws the motif small in the middle of a white square. `knockOutWhite` removes the white and crops the empty margin so the motif fills its box.
+
+### Privacy note for the real providers
+
+On the **free tier, Google may use prompts and images to improve its products.** That includes customer photos attached to AI requests. That's acceptable for testing with your own pictures. Before real customers use it, move to a paid tier (which doesn't use data for training) or state it clearly in the privacy policy. Cloudflare Workers AI only receives the planner's short motif description, never customer photos.
 
 ### The fakes
 

@@ -61,11 +61,11 @@ describe("GeminiPlanner", () => {
   it("sends the customer's words as data under a fixed system instruction, with a JSON schema", async () => {
     const plan = { variations: [] };
     const { fetchImpl, calls } = mockFetch(() => geminiReply(plan));
-    const planner = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "gemini-2.5-flash", fetch: fetchImpl });
+    const planner = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "gemini-3.8-flash", fetch: fetchImpl });
 
     expect(await planner.planDesign(request, signal)).toEqual(plan);
     const call = calls[0];
-    expect(call?.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent");
+    expect(call?.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
     expect(new Headers(call?.init.headers).get("x-goog-api-key")).toBe("test-key-0123456789abcdef");
     expect(call?.url).not.toContain("key=");
 
@@ -88,7 +88,7 @@ describe("GeminiPlanner", () => {
 
   it("parses the logo check", async () => {
     const { fetchImpl } = mockFetch(() => geminiReply({ detected: true, brand: "Nike" }));
-    const planner = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "gemini-2.5-flash", fetch: fetchImpl });
+    const planner = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "gemini-3.8-flash", fetch: fetchImpl });
     expect(await planner.detectBrandLogos(request.images, signal)).toEqual({ detected: true, label: "Nike" });
     expect(await planner.detectBrandLogos([], signal)).toEqual({ detected: false });
   });
@@ -122,6 +122,28 @@ describe("GeminiPlanner", () => {
     expect(await providerError(aborted.planDesign(request, controller.signal))).toMatchObject({ retryable: true, code: "TIMEOUT" });
   });
 
+  it("falls back to the next model when one is busy or retired, but not on bad requests", async () => {
+    const statuses: Record<string, number> = { "busy-1": 503, "gone-1": 404, "ok-1": 200, "bad-1": 400 };
+    const urls: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      urls.push(url);
+      const model = /models\/([^:]+):/.exec(url)?.[1] ?? "";
+      const status = statuses[model] ?? 500;
+      return status === 200 ? geminiReply({ variations: [] }) : new Response("{}", { status });
+    };
+    const planner = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "busy-1", fallbackModels: ["gone-1", "ok-1"], fetch: fetchImpl });
+    expect(await planner.planDesign(request, signal)).toEqual({ variations: [] });
+    expect(urls.map((u) => /models\/([^:]+):/.exec(u)?.[1])).toEqual(["busy-1", "gone-1", "ok-1"]);
+
+    urls.length = 0;
+    const strict = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "bad-1", fallbackModels: ["ok-1"], fetch: fetchImpl });
+    expect((await providerError(strict.planDesign(request, signal))).status).toBe(400);
+    expect(urls).toHaveLength(1);
+
+    const allBusy = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "busy-1", fallbackModels: ["busy-2"], fetch: fetchImpl });
+    expect((await providerError(allBusy.planDesign(request, signal))).retryable).toBe(true);
+  });
+
   it("never puts response bodies or keys into error messages", async () => {
     const planner = new GeminiPlanner({
       apiKey: "test-key-0123456789abcdef",
@@ -146,7 +168,9 @@ describe("CloudflareImage", () => {
     const call = calls[0];
     expect(call?.url).toBe(`https://api.cloudflare.com/client/v4/accounts/${options.accountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`);
     expect(new Headers(call?.init.headers).get("authorization")).toBe("Bearer test-token-0123456789");
-    expect(bodyOf(call?.init)).toMatchObject({ seed: 42, prompt: expect.stringContaining("plain pure white background") });
+    const body = bodyOf(call?.init);
+    expect(body).toMatchObject({ steps: 4, prompt: expect.stringContaining("plain pure white background") });
+    expect(body).not.toHaveProperty("seed");
   });
 
   it("accepts raw image responses and maps errors", async () => {
@@ -170,7 +194,8 @@ describe("getAiProviders", () => {
   const env = {
     PLANNER_PROVIDER: "fake" as const,
     IMAGE_PROVIDER: "fake" as const,
-    GEMINI_MODEL: "gemini-2.5-flash",
+    GEMINI_MODEL: "gemini-3.8-flash",
+    GEMINI_FALLBACK_MODELS: ["gemini-3.6-flash"],
     CLOUDFLARE_IMAGE_MODEL: DEFAULT_CLOUDFLARE_IMAGE_MODEL,
     AI_FAKE_DELAY_MS: 0,
   };

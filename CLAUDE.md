@@ -256,6 +256,7 @@ Run everything and fix all errors. Write or update tests for the changed busines
 - Free AI tiers (Gemini, Cloudflare, Hugging Face Spaces) have rate limits, cold starts and occasional downtime. Design for queue delays and graceful failure.
 - The worker runs only while the Mac mini is on. Jobs must survive restarts (stuck-job recovery).
 - Clients poll job status. Realtime subscriptions are optional, for later.
+- Gemini's **free tier may use submitted prompts/images to improve Google's products**. Fine for testing with our own photos; before real customers use AI photo uploads, switch to a paid tier or disclose it in the privacy policy.
 - Test the try-on provider (`ai-scripts/` feasibility script) before building the full Phase 7 UI.
 
 ## Decided
