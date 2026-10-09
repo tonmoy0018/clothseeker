@@ -103,6 +103,9 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
           <span className="text-sm text-muted-foreground" data-testid="result-count">
             {products.length} {products.length === 1 ? "dress" : "dresses"}
           </span>
+          <Link href="/design/start" className="text-sm underline underline-offset-4">
+            Have a dress in mind? Start from a photo or description
+          </Link>
         </div>
         {products.length === 0 ? (
           <div className="flex flex-col items-start gap-2 rounded-xl border p-8">

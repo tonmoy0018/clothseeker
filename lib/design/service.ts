@@ -9,7 +9,7 @@ import { ImageValidationError, processImage } from "@/lib/media/process-image";
 import { renderPreview, storageAssets } from "@/lib/renderer/render";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
-import { buildObjectKey } from "@/lib/storage/object-key";
+import { buildObjectKey, isSafeObjectKey } from "@/lib/storage/object-key";
 import { parseDesignSpec, type DesignSpec } from "@/types/design-spec";
 
 import { normalizeForRender } from "./normalize";
@@ -257,7 +257,14 @@ export async function deleteDesign(db: PrismaClient, storage: StorageAdapter, ac
 }
 
 /** `saved` is false for hidden drafts (designs the AI box created before the customer pressed Save). */
-export type DesignForEdit = { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean };
+export type DesignForEdit = {
+  designId: string;
+  spec: DesignSpec;
+  uploadUrls: Record<string, string>;
+  saved: boolean;
+  /** Signed URL of the dress photo the design was started from, if any. */
+  referencePhotoUrl: string | null;
+};
 
 /** The customer's own design for the editor, or null. Image layers get signed URLs. */
 export async function getDesignForEdit(
@@ -285,8 +292,11 @@ export async function getDesignForEdit(
     return null;
   }
   const keys = spec.layers.flatMap((l) => (l.kind === "image" ? [l.image.assetKey] : []));
-  const urls = await storage.signReadUrls(BUCKETS.designAssets, keys);
-  return { designId: design.id, spec, uploadUrls: Object.fromEntries(urls), saved: design.status !== "DRAFT" };
+  const reference = spec.referencePhotoKey && isSafeObjectKey(spec.referencePhotoKey) ? spec.referencePhotoKey : null;
+  const urls = await storage.signReadUrls(BUCKETS.designAssets, reference ? [...keys, reference] : keys);
+  const referencePhotoUrl = reference ? (urls.get(reference) ?? null) : null;
+  if (reference) urls.delete(reference);
+  return { designId: design.id, spec, uploadUrls: Object.fromEntries(urls), saved: design.status !== "DRAFT", referencePhotoUrl };
 }
 
 export type DesignPriceCheck = { price: DesignPrice; issue: null } | { price: null; issue: string };

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 
@@ -39,7 +40,11 @@ export type DesignEditorProps = {
   basePrices: Partial<Record<Size, number>>;
   /** Signed-in customer's id (for image ownership checks), or null. */
   customerId: string | null;
-  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean } | null;
+  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean; referencePhotoUrl: string | null } | null;
+  /** An AI round already queued for this design (after "start from a description"). */
+  initialAiJobId?: string | null;
+  /** Other good matches from a photo/description start. */
+  alternatives?: { productId: string; name: string }[];
 };
 
 const draftKey = (productId: string) => `cs-design-draft-${productId}`;
@@ -403,6 +408,35 @@ export function DesignEditor(props: DesignEditorProps) {
         )}
         <p className="text-xs text-muted-foreground">Drag items to move them. Use the corner handles to resize or rotate. Items stay inside the dashed areas.</p>
 
+        {(props.initialDesign?.referencePhotoUrl || (props.alternatives && props.alternatives.length > 0)) && (
+          <div className="flex flex-wrap items-start gap-3 rounded-xl border p-3 text-sm" data-testid="start-info">
+            {props.initialDesign?.referencePhotoUrl && (
+              <figure className="flex flex-col gap-1">
+                <span className="relative block h-28 w-20 overflow-hidden rounded-lg bg-muted">
+                  <Image src={props.initialDesign.referencePhotoUrl} alt="Your reference photo" fill unoptimized className="object-cover" />
+                </span>
+                <figcaption className="text-xs text-muted-foreground">Your photo</figcaption>
+              </figure>
+            )}
+            <div className="flex flex-col gap-1">
+              <p>{spec.startedFrom === "photo" ? "We matched your photo to this dress and copied its main colors." : "We matched your description to this dress."}</p>
+              {props.alternatives && props.alternatives.length > 0 && (
+                <p className="text-muted-foreground">
+                  Other good matches:{" "}
+                  {props.alternatives.map((alt, i) => (
+                    <span key={alt.productId}>
+                      {i > 0 && ", "}
+                      <Link href={`/customize/${alt.productId}`} className="underline">
+                        {alt.name}
+                      </Link>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           <Button variant="outline" className="self-start" aria-expanded={showTryOn} onClick={() => setShowTryOn((v) => !v)}>
             {showTryOn ? "Hide try-on" : "See it on me"}
@@ -418,6 +452,7 @@ export function DesignEditor(props: DesignEditorProps) {
 
         {props.aiEnabled ? (
           <AiBox
+            initialJobId={props.initialAiJobId ?? null}
             designId={designId}
             spec={spec}
             signedIn={props.customerId !== null}

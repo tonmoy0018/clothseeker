@@ -177,16 +177,19 @@ export async function runDesignRound(deps: AiWorkerDeps, job: ClaimedJob, signal
           }
         }
         if (bytes) {
-          let image;
+          let image = null;
           try {
             image = await processImage(await knockOutWhite(bytes), "aiMotif");
           } catch (error) {
-            if (error instanceof ImageValidationError) {
-              throw new AiProviderError("image provider returned an unusable image", true);
+            // An unusable picture (unreadable, nearly empty…) costs this option its motif only.
+            if (!(error instanceof ImageValidationError) && !(error instanceof AiProviderError)) {
+              throw error;
             }
-            throw error;
+            deps.log?.("ai.motif_skipped", { jobId: job.id, option: index, code: "UNUSABLE_IMAGE" });
           }
-          motifKey = await put(image.data, image.contentType, image.extension);
+          if (image) {
+            motifKey = await put(image.data, image.contentType, image.extension);
+          }
         }
       }
 

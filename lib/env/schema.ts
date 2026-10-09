@@ -46,7 +46,7 @@ const aiEnvShape = {
   /** Artificial latency of the fake providers, so loading states are visible in development. */
   AI_FAKE_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(1_500),
   /** Hard limit for one attempt at an AI job. */
-  AI_JOB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
+  AI_JOB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(180_000),
   /** Virtual try-on: deterministic fake (default) or free public Hugging Face Spaces. */
   TRYON_PROVIDER: z.enum(["fake", "huggingface"]).default("fake"),
   /** Optional free Hugging Face account token; raises the shared ZeroGPU allowance. */

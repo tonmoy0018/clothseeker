@@ -26,6 +26,8 @@ type Reference = { roundId: string; optionIndex: number };
 type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; running: boolean } | { kind: "error"; message: string };
 
 export type AiBoxProps = {
+  /** A round already queued for this design (e.g. by "start from a description"): shown as loading. */
+  initialJobId?: string | null;
   designId: string | null;
   spec: DesignSpec;
   signedIn: boolean;
@@ -35,12 +37,12 @@ export type AiBoxProps = {
   onSignIn: () => void;
 };
 
-export function AiBox({ designId, spec, signedIn, onDesignId, onPick, onSignIn }: AiBoxProps) {
+export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignId, onPick, onSignIn }: AiBoxProps) {
   const [instruction, setInstruction] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attaching, setAttaching] = useState(false);
   const [reference, setReference] = useState<Reference | null>(null);
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [phase, setPhase] = useState<Phase>(initialJobId ? { kind: "waiting", jobId: initialJobId, running: false } : { kind: "idle" });
   const [round, setRound] = useState<RoundView | null>(null);
   const [history, setHistory] = useState<RoundView[]>([]);
   const [quota, setQuota] = useState<AiQuota | null>(null);

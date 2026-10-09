@@ -226,7 +226,10 @@ docs/developers/
   - A design edit only marks a try-on stale (`isTryOnStale`). Never rerun automatically.
   - The limit is 5 per Dhaka day. `TryOnProvider` defaults to the fake; `huggingface` calls free public Spaces: rough preview, a tiny shared GPU allowance, and photos leave our systems.
 - `PlannerProvider` also checks try-on photos (`checkTryOnPhoto`). Per-job-type timeouts go in `AiWorkerDeps.timeoutsMs`.
+- **Start from a photo/description** (`lib/ai/starts.ts`, worker `dress-match.ts`): the planner may only pick an offered dress (`parseDressMatch`), and its colours, pattern and style are fitted via `matchToSpec` → `variationToSpec`. The result is a DRAFT design with `startedFrom` and `referencePhotoKey`; descriptions also queue a design round (`?job=` makes the AI box poll it).
+- Motif images that are unusable or refused cost only that option's motif, never the round.
 - **Screenshots in docs** must not contain photos of real people we don't have rights to (e.g. research-dataset examples).
+- This repo sits on an iCloud-synced Desktop: Finder can create "… 2.ts" copies (seen in `.next/` and once in `tests/`). Delete them, and never commit them.
 
 ## Mapping the original build guide
 

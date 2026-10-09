@@ -44,6 +44,26 @@ export type BrandLogoCheck = { detected: boolean; label?: string };
 /** Whether a customer photo can be used for try-on (all must be true). */
 export type TryOnPhotoCheck = { onePerson: boolean; facingForward: boolean; goodLight: boolean; bodyVisible: boolean };
 
+/** A live, customizable dress the planner may choose, in its own vocabulary. */
+export type DressCandidate = {
+  productId: string;
+  name: string;
+  category: string;
+  description: string;
+  colors: { name: string; hex: string }[];
+  patterns: PatternId[];
+  styleOptions: Record<StyleGroup, { id: string; label: string }[]>;
+};
+
+export type DressMatchRequest = {
+  /** "photo": the customer's dress photo; "description": their words (untrusted, passed as data). */
+  mode: "photo" | "description";
+  image: ProviderImage | null;
+  description: string | null;
+  candidates: DressCandidate[];
+  seed: string;
+};
+
 export interface PlannerProvider {
   readonly name: string;
   /** Looks for clothing brand logos in customer photos. */
@@ -52,6 +72,8 @@ export interface PlannerProvider {
   planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown>;
   /** Checks a try-on photo: one person, facing forward, good light, body visible. */
   checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck>;
+  /** Picks the closest dress and its main colors. Raw JSON, validated by lib/ai/match.ts. */
+  matchDress(request: DressMatchRequest, signal: AbortSignal): Promise<unknown>;
 }
 
 export type MotifRequest = { prompt: string; color: string; seed: number };

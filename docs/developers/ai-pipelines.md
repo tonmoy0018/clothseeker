@@ -74,11 +74,12 @@ Checked in this order, and nothing before the quota step uses quota:
 
 - **Claiming** is one `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING`. It sets `RUNNING`, increments `attempts`, and stamps `locked_at`/`locked_by`. Any number of workers can run at once (tested with 12 concurrent claims).
 - **Leases.** A job is finished only with `updateMany` guarded by `id + RUNNING + locked_by + attempts`. A worker that lost its lease (timed out, or recovered elsewhere) can't overwrite the outcome, and its round transaction rolls back.
-- **Timeouts.** Each attempt is limited to `AI_JOB_TIMEOUT_MS` (default 120 s). The `AbortSignal` is passed to providers, and the job is released even if a provider ignores it.
+- **Timeouts.** Each attempt is limited to `AI_JOB_TIMEOUT_MS` (default 180 s). The `AbortSignal` is passed to providers, and the job is released even if a provider ignores it.
 - **Retries.** `maxAttempts` is 3 (the first try plus 2 retries). Retryable failures (HTTP 408/429/5xx, network, timeout, unreadable or off-schema planner output, unexpected errors) go back to `QUEUED` with backoff of 10 s and then 40 s. Non-retryable failures (other 4xx, a brand logo, a template that is no longer available) fail immediately.
 - **Stuck jobs.** Each poll requeues `RUNNING` jobs whose lease is older than timeout + 60 s, or fails them once their attempts are used up. Jobs survive the Mac mini restarting.
 - **Failure codes** (`ai_jobs.error_code`) map to customer-safe messages in `lib/ai/errors.ts`. `ai_jobs.error` holds a short internal detail and is never shown.
 - **Logs** contain ids, attempt numbers, durations, counts and codes only. They never contain instructions, prompts, photos or keys.
+- **Unusable motifs.** A motif image that can't be read, or is nearly empty after removing the background, costs that option its motif and is logged as `ai.motif_skipped`; the round still succeeds. Thin motifs are padded to at least 160 px after cropping.
 - **Files.** Motifs and previews go under `design-assets/{customerId}/ai/`. If a round doesn't complete, every file it stored is removed. Motifs of dropped variations are removed even when it succeeds.
 
 ## Prompt-injection and output safety
@@ -102,6 +103,29 @@ Checked in this order, and nothing before the quota step uses quota:
 - One round costs one planner call (plus one logo check when photos are attached) and up to 4 image calls. At 10 rounds per customer per day, plan provider capacity accordingly.
 - Clients poll every 2 s. Realtime updates can come later.
 
+## Start from a dress photo or a description (Phase 7)
+
+`/design/start` (`app/(shop)/design/start/*`), app side `lib/ai/starts.ts`, worker `lib/ai/worker/dress-match.ts`.
+
+```
+photo:        upload (processImage, design-assets/{customer}/references/) ─┐
+description:  brand words · one AI round left today ────────────────────────┤→ ai_jobs (DRESS_MATCH)
+worker: candidates = live dresses with a live template (descriptions: AI-enabled only)
+        photo → brand-logo check (FlaggedItem on a hit)
+        planner.matchDress → parseDressMatch (must be an offered dress, ≤ 2 alternatives)
+        → startingSpec + matchToSpec (colors, pattern, style fitted to the template)
+        → DRAFT design (startedFrom PHOTO/DESCRIPTION, referencePhotoKey)
+        → description: createDesignRoundJob on it (normal quota rules)
+browser: polls → /customize/{product}?design=…[&job=round][&alts=a,b]
+```
+
+- **Untrusted answer.** The planner must choose one of the offered `productId`s, or the attempt is retried and finally fails with `INVALID_PLAN`. Colours snap to the template's allowed colours, a pattern applies to the skirt (or first recolorable region) only if allowed, and style words match option ids or labels.
+- **Reference photo.** Saved on the design (`referencePhotoKey`) and shown beside the canvas. `validateDesignAgainstTemplate` only accepts the customer's own `{customerId}/references/` keys.
+- **Limits and cache.** A dress match counts toward the 30-requests-a-day limit only. A description start also needs one of the day's 10 AI rounds, used by the round it queues. An identical request (same photo or same normalized description) gets the earlier job back while its design still exists.
+- **Live results (2026-10-09, Gemini + Cloudflare):**
+  - A photo of a striped dress gave the tiered midi with a terracotta skirt, ivory stripes, a square neckline and midi length (28 s).
+  - "A romantic floral maxi in lilac for a spring wedding, with long sleeves" picked a matching dress (21 s), then four lilac floral designs with motifs (22 s).
+
 ## The AI box (UI)
 
 `app/(shop)/customize/[productId]/ai-box.tsx`, with server actions in `ai-actions.ts`:
@@ -119,4 +143,6 @@ Checked in this order, and nothing before the quota step uses quota:
 - `tests/unit/ai-rules.test.ts`: hashing, brand words, Dhaka day, plan parsing and fitting, fakes, motif clean-up.
 - `tests/unit/ai-providers.test.ts`: Gemini and Cloudflare adapters against mocked `fetch` (request shape, injection hygiene, error mapping).
 - `tests/e2e/ai.spec.ts` (`@supabase`, worker started by Playwright): generate → 4 loading cards → 4 options → pick (price and colours update, undo/redo) → refine → generate again → save and reload with history; the brand message and no quota use.
+- `tests/integration/starts.test.ts`: photo start (colour, reference photo, valid spec), brand logo → flag, ownership of reference photos, a rogue planner answer → retries → `INVALID_PLAN`, description start → matched dress + queued round, brand words, the daily limit and cache.
+- `tests/e2e/starts.spec.ts` (`@supabase`): photo start opens the design screen with the photo and colour; description start opens the matched dress with four AI ideas; brand words are refused.
 - `tests/integration/ai.test.ts`: validation without quota use, quota (including concurrency), cache, claiming, retries, timeout, stuck recovery, brand-logo flagging, pick, follow-ups, and ownership.

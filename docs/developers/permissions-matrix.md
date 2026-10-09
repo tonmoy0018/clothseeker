@@ -83,6 +83,15 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Call an AI provider | ❌ | ❌ | ❌ | **Worker only**; the app holds no provider keys |
 | Review brand-logo flags | ❌ | ❌ | (Phase 8) | `flagged_items` rows written by the worker |
 
+## Start from a photo or description (Phase 7)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Open `/design/start` | ✅ (sign-in asked on submit) | ✅ | ✅ (can't submit) | page |
+| Upload a dress photo / start a match | ➡️ sign in | ✅ own `references/` photos only; 30 requests/day; a description needs an AI round left | ❌ | `uploadReferencePhoto`, `startDesignFrom` → `assertCustomer` |
+| Poll a start request | ❌ | ✅ own only ("not found" otherwise) | ❌ | `getStartStatus` |
+| Use a reference photo on a design | ❌ | ✅ own key only | ❌ | `validateDesignAgainstTemplate` (`customerReferencePrefix`) |
+
 ## Virtual try-on (Phase 7)
 
 | Action | Anonymous | Customer | Admin | Enforced in |

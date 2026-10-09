@@ -73,7 +73,7 @@ describe("env validation", () => {
 
   it("AI providers default to the fakes and need keys only when switched on", () => {
     const env = parseEnv(workerEnvSchema, validServerEnv, "worker");
-    expect(env).toMatchObject({ PLANNER_PROVIDER: "fake", IMAGE_PROVIDER: "fake", AI_JOB_TIMEOUT_MS: 120_000 });
+    expect(env).toMatchObject({ PLANNER_PROVIDER: "fake", IMAGE_PROVIDER: "fake", AI_JOB_TIMEOUT_MS: 180_000 });
     const error = captureError(() => parseEnv(workerEnvSchema, { ...validServerEnv, PLANNER_PROVIDER: "gemini", IMAGE_PROVIDER: "cloudflare" }, "worker"));
     expect(error).toBeInstanceOf(EnvValidationError);
     if (error instanceof EnvValidationError) {

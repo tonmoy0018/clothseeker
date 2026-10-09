@@ -53,6 +53,7 @@ class SpyPlanner implements PlannerProvider {
 
   detectBrandLogos: PlannerProvider["detectBrandLogos"] = (images, signal) => this.inner.detectBrandLogos(images, signal);
   checkTryOnPhoto: PlannerProvider["checkTryOnPhoto"] = (image, signal) => this.inner.checkTryOnPhoto(image, signal);
+  matchDress: PlannerProvider["matchDress"] = (request, signal) => this.inner.matchDress(request, signal);
 
   async planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown> {
     this.requests.push(request);
@@ -345,6 +346,16 @@ describe("running AI jobs", () => {
     const options = storedOptionsSchema.parse(round.options);
     expect(options.length).toBeGreaterThan(0);
     expect(options.every((o) => o.motifKey === null && !parseDesignSpec(o.spec).layers.some((l) => l.kind === "image"))).toBe(true);
+  });
+
+  it("an unusable motif image costs the option its motif, not the round", async () => {
+    const customer = await createUser();
+    const { spec } = await customizableProduct();
+    const queued = await request(customer, spec);
+    const junk = { name: "junk", generateMotif: async () => Buffer.from("not an image") };
+    await processNextJob(deps({ image: junk }));
+    const status = await getJobStatus(db, storage, customer, queued.jobId);
+    expect(status.state).toBe("done");
   });
 
   it("recovers jobs whose worker died", async () => {

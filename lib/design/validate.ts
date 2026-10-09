@@ -29,6 +29,11 @@ export function customerAiPrefix(customerId: string): string {
   return `${customerId.toLowerCase()}/ai/`;
 }
 
+/** Dress photos a design was started from live under `{customerId}/references/`. */
+export function customerReferencePrefix(customerId: string): string {
+  return `${customerId.toLowerCase()}/references/`;
+}
+
 /** Whether an image layer's file is the customer's own upload or AI motif. */
 export function isCustomerImageKey(key: string, customerId: string): boolean {
   return key.startsWith(customerUploadPrefix(customerId)) || key.startsWith(customerAiPrefix(customerId));
@@ -67,6 +72,9 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
   }
   if (spec.templateId !== ctx.templateId) {
     add("templateId", "This design was made for a different template.");
+  }
+  if (spec.referencePhotoKey && (!ctx.customerId || !spec.referencePhotoKey.startsWith(customerReferencePrefix(ctx.customerId)))) {
+    add("referencePhotoKey", "That reference photo isn't yours.");
   }
   if (!ctx.availableSizes.includes(spec.size)) {
     add("size", `Size ${spec.size} isn't available for this dress.`);

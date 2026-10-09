@@ -8,6 +8,7 @@ import { STYLE_GROUPS } from "@/types/template";
 import { knockOutWhite } from "./image-utils";
 import type {
   BrandLogoCheck,
+  DressMatchRequest,
   ImageProvider,
   MotifRequest,
   PlannerProvider,
@@ -96,6 +97,47 @@ export class FakePlanner implements PlannerProvider {
       facingForward: true,
       goodLight: brightness >= 60,
       bodyVisible: (meta.height ?? 0) >= (meta.width ?? 1),
+    };
+  }
+
+  /**
+   * Photo: the photo's dominant color decides the color, a hash of the photo picks the dress.
+   * Description: the dress sharing the most words with the description; named colors are used.
+   */
+  async matchDress(request: DressMatchRequest, signal: AbortSignal): Promise<unknown> {
+    await delay(this.delayMs, signal);
+    const { candidates } = request;
+    if (candidates.length === 0) {
+      return { productId: null };
+    }
+    let index: number;
+    let primaryColor: string | null = null;
+    if (request.mode === "photo" && request.image) {
+      const { dominant } = await sharp(request.image.data).stats();
+      primaryColor = `#${[dominant.r, dominant.g, dominant.b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+      index = (bytes(request.image.data.toString("base64"))[0] ?? 0) % candidates.length;
+    } else {
+      const words = new Set((request.description ?? "").toLowerCase().match(/[a-z]{3,}/g) ?? []);
+      const score = (c: (typeof candidates)[number]) =>
+        `${c.name} ${c.category} ${c.description}`
+          .toLowerCase()
+          .match(/[a-z]{3,}/g)
+          ?.filter((w) => words.has(w)).length ?? 0;
+      const scores = candidates.map(score);
+      const best = Math.max(...scores);
+      index = best > 0 ? scores.indexOf(best) : (bytes(request.seed)[0] ?? 0) % candidates.length;
+      const text = (request.description ?? "").toLowerCase();
+      primaryColor = candidates[index]?.colors.find((c) => text.includes(c.name.toLowerCase()))?.hex ?? null;
+    }
+    const chosen = candidates[index];
+    const others = candidates.filter((_, i) => i !== index).slice(0, 2);
+    return {
+      productId: chosen?.productId,
+      alternatives: others.map((c) => c.productId),
+      primaryColor,
+      secondaryColor: null,
+      pattern: null,
+      styleOptions: null,
     };
   }
 

@@ -63,7 +63,7 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | Key required when `PLANNER_PROVIDER=gemini`. Model defaults to `gemini-3.8-flash`; fallbacks (comma-separated) default to `gemini-3.6-flash,gemini-3.5-flash` | **Worker-only secret** | Gemini planner |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_IMAGE_MODEL` | Required when `IMAGE_PROVIDER=cloudflare`; model defaults to FLUX.1 schnell | **Worker-only secret** | Workers AI images |
 | `AI_FAKE_DELAY_MS` | Optional, default 1500 | Worker-only | Latency of the fake providers |
-| `AI_JOB_TIMEOUT_MS` | Optional, default 120000 | Worker-only | Limit for one AI job attempt |
+| `AI_JOB_TIMEOUT_MS` | Optional, default 180000 | Worker-only | Limit for one AI job attempt |
 | `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |
 | `TRYON_PROVIDER` | Optional: `fake` (default) or `huggingface` | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
 | `HF_TOKEN` | Optional free Hugging Face token (`hf_…`) | **Worker-only secret** | Raises the shared ZeroGPU allowance |

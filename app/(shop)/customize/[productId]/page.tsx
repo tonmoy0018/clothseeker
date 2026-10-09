@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { z } from "zod";
 
 import { buttonVariants } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: "Design your dress — ClothSeeker" }
 
 export default async function CustomizePage({ params, searchParams }: PageProps<"/customize/[productId]">) {
   const { productId } = await params;
-  const { design } = await searchParams;
+  const { design, job, alts } = await searchParams;
   const db = getPrisma();
   const storage = getStorage();
   const context = await loadDesignContext(db, storage, productId);
@@ -35,6 +36,16 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
   // Only the signed-in customer's own design is ever loaded; anything else starts a fresh design.
   const initialDesign =
     customer && typeof design === "string" ? await getDesignForEdit(db, storage, customer, design, context.template.productId) : null;
+  // After "start from a description": the AI round already queued for this design, and other good matches.
+  const initialAiJobId = initialDesign && typeof job === "string" && z.uuid().safeParse(job).success ? job : null;
+  const altIds = typeof alts === "string" ? alts.split(",").filter((id) => z.uuid().safeParse(id).success).slice(0, 2) : [];
+  const alternatives =
+    initialDesign && altIds.length > 0
+      ? await db.product.findMany({
+          where: { id: { in: altIds }, status: "ACTIVE", template: { isActive: true } },
+          select: { id: true, name: true },
+        })
+      : [];
 
   return (
     <EditorLoader
@@ -49,6 +60,8 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
       basePrices={context.basePrices}
       customerId={customer?.id ?? null}
       initialDesign={initialDesign}
+      initialAiJobId={initialAiJobId}
+      alternatives={alternatives.map((a) => ({ productId: a.id, name: a.name }))}
     />
   );
 }

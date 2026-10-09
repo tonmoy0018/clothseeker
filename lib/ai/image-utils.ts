@@ -33,12 +33,29 @@ export async function knockOutWhite(input: Buffer): Promise<Buffer> {
   }
   const cleaned = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
   // Image models leave wide empty margins; crop to the motif so it fills its box on the dress.
+  let trimmed: Buffer;
   try {
-    return await sharp(cleaned).trim({ threshold: 1 }).png().toBuffer();
+    trimmed = await sharp(cleaned).trim({ threshold: 1 }).png().toBuffer();
   } catch {
     return cleaned; // nothing left to trim against (e.g. a fully transparent image)
   }
+  // A thin motif (a stem, a sprig) can end up very narrow: pad it back to a usable size.
+  const meta = await sharp(trimmed).metadata();
+  const width = meta.width ?? 0;
+  const height = meta.height ?? 0;
+  const padX = Math.max(0, Math.ceil((MIN_MOTIF_EDGE - width) / 2));
+  const padY = Math.max(0, Math.ceil((MIN_MOTIF_EDGE - height) / 2));
+  if (padX === 0 && padY === 0) {
+    return trimmed;
+  }
+  return sharp(trimmed)
+    .extend({ left: padX, right: padX, top: padY, bottom: padY, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
 }
+
+/** Smallest edge a motif keeps after cropping (processImage("aiMotif") needs at least 128 px). */
+export const MIN_MOTIF_EDGE = 160;
 
 /** Width × height of the garment canvas try-on models expect (3:4, like their training data). */
 export const GARMENT_CANVAS = { width: 768, height: 1024 } as const;

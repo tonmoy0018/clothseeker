@@ -19,12 +19,16 @@ export default async function HomePage() {
           Dresses you choose, customize and love — made by ClothSeeker.
         </h1>
         <p className="max-w-xl text-muted-foreground">
-          Buy ready-made in your size and color today. Custom designs, AI-assisted design and virtual try-on are coming
-          soon.
+          Buy ready-made in your size and color, customize a dress by hand or with AI, and see it on you before you order.
         </p>
-        <Link href="/products" className={buttonVariants({ size: "lg" })}>
-          Shop all dresses
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/products" className={buttonVariants({ size: "lg" })}>
+            Shop all dresses
+          </Link>
+          <Link href="/design/start" className={buttonVariants({ size: "lg", variant: "outline" })}>
+            Start from a photo or idea
+          </Link>
+        </div>
       </section>
 
       <section aria-labelledby="categories-heading" className="flex flex-col gap-4">

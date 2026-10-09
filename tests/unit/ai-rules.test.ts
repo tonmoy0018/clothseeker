@@ -10,6 +10,7 @@ import { startOfDhakaDay } from "@/lib/ai/quota";
 import type { PlanRequest } from "@/lib/ai/types";
 import { knockOutWhite } from "@/lib/ai/worker/design-round";
 import { validateDesignAgainstTemplate } from "@/lib/design/validate";
+import { processImage } from "@/lib/media/process-image";
 
 import { CONTEXT, CUSTOMER_ID, TEMPLATE, validSpec } from "../fixtures/design";
 
@@ -219,18 +220,28 @@ describe("motif clean-up", () => {
       .composite([{ input: await sharp({ create: { width: 50, height: 50, channels: 4, background: { r: 170, g: 0, b: 0, alpha: 1 } } }).extend({ top: 4, bottom: 4, left: 4, right: 4, background: "#ffffff" }).png().toBuffer(), left: 71, top: 71 }])
       .png()
       .toBuffer();
-    const cropped = await knockOutWhite(framed);
-    const meta = await sharp(cropped).metadata();
-    expect(meta.width).toBeLessThanOrEqual(58);
-    expect(meta.width).toBeGreaterThanOrEqual(50);
+    // Margins are cropped away; what's left is padded back to the minimum motif size.
+    const cropped = await sharp(await knockOutWhite(framed)).raw().toBuffer({ resolveWithObject: true });
+    expect([cropped.info.width, cropped.info.height]).toEqual([160, 160]);
+    expect(cropped.data[3]).toBe(0);
+    const centre = (80 * 160 + 80) * 4;
+    expect(cropped.data[centre + 3]).toBe(255);
     const { data, info } = await sharp(await knockOutWhite(motif)).raw().toBuffer({ resolveWithObject: true });
     expect(info.channels).toBe(4);
-    // JPEG edges leave a few soft pixels around the 50 px block.
-    expect(info.width).toBeGreaterThanOrEqual(50);
-    expect(info.width).toBeLessThanOrEqual(58);
-    expect(data[3]).toBeLessThan(255);
-    const centre = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * 4;
-    expect(data[centre + 3]).toBe(255);
+    expect(data[3]).toBe(0);
+    expect(data[(Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * 4 + 3]).toBe(255);
     await expect(knockOutWhite(Buffer.from("<svg/>"))).rejects.toThrow(/unreadable/);
+  });
+
+  it("pads thin motifs so they stay usable", async () => {
+    const stem = await sharp({ create: { width: 600, height: 600, channels: 3, background: "#ffffff" } })
+      .composite([{ input: await sharp({ create: { width: 12, height: 300, channels: 3, background: "#2e7d32" } }).png().toBuffer(), left: 294, top: 150 }])
+      .png()
+      .toBuffer();
+    const padded = await knockOutWhite(stem);
+    const meta = await sharp(padded).metadata();
+    expect(meta.width).toBeGreaterThanOrEqual(160);
+    expect(meta.height).toBeGreaterThanOrEqual(160);
+    await expect(processImage(padded, "aiMotif")).resolves.toMatchObject({ contentType: "image/webp" });
   });
 });

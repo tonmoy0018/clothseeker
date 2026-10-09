@@ -8,6 +8,7 @@ import type { AiProviders } from "../types";
 
 import { claimNextJob, leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import { runDesignRound } from "./design-round";
+import { runDressMatch } from "./dress-match";
 import { runTryOn } from "./try-on";
 
 // Runs claimed AI jobs with a hard timeout, retries transient failures with backoff, and recovers
@@ -56,8 +57,7 @@ async function execute(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal)
     case "TRY_ON":
       return runTryOn(deps, job, signal);
     case "DRESS_MATCH":
-      // Arrives in Phase 7b.
-      throw new AiJobRejected("INTERNAL");
+      return runDressMatch(deps, job, signal);
   }
 }
 
