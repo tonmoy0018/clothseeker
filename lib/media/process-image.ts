@@ -12,7 +12,7 @@ export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_INPUT_EDGE = 8000;
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 
-export type ImagePurpose = "productPhoto" | "garment" | "styleReference" | "mask" | "designUpload";
+export type ImagePurpose = "productPhoto" | "garment" | "styleReference" | "mask" | "designUpload" | "aiInput" | "aiMotif";
 
 const RULES: Record<ImagePurpose, { minEdge: number; maxOutputEdge: number; output: "webp" | "mask-png" }> = {
   productPhoto: { minEdge: 600, maxOutputEdge: 2000, output: "webp" },
@@ -22,6 +22,10 @@ const RULES: Record<ImagePurpose, { minEdge: number; maxOutputEdge: number; outp
   mask: { minEdge: 400, maxOutputEdge: 2000, output: "mask-png" },
   // Customer images/logos for design layers. WebP keeps transparency (alpha) from PNG uploads.
   designUpload: { minEdge: 200, maxOutputEdge: 2000, output: "webp" },
+  // Photos attached to an AI design request (inspiration, a logo of their own…).
+  aiInput: { minEdge: 200, maxOutputEdge: 1600, output: "webp" },
+  // Motifs returned by an image provider (untrusted bytes, same checks as uploads).
+  aiMotif: { minEdge: 128, maxOutputEdge: 1024, output: "webp" },
 };
 
 export type ImageErrorCode = "EMPTY" | "TOO_LARGE" | "UNSUPPORTED" | "TOO_SMALL" | "DIMENSIONS_TOO_LARGE";

@@ -1,7 +1,13 @@
+import { randomUUID } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import { hostname } from "node:os";
+
 import { loadEnvConfig } from "@next/env";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { getAiProviders } from "@/lib/ai";
+import { runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import { createPrismaClient } from "@/lib/db/client";
 import { EnvValidationError, parseEnv, workerEnvSchema } from "@/lib/env/schema";
 import { expireStalePendingOrders } from "@/lib/orders/expiry";
@@ -13,8 +19,8 @@ import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
 import { errorName, log } from "./logger";
 
 // Local background worker (runs on the developer's Mac mini).
-// Each poll: expire unpaid orders, refund custom items not accepted within 24 h, retry failed refunds.
-// Job claiming from the `ai_jobs` queue arrives in Phase 6.
+// Each poll: expire unpaid orders, refund custom items not accepted within 24 h, retry failed refunds,
+// then claim and run queued AI jobs (lib/ai/worker). Several workers can run at once safely.
 //
 //   pnpm worker          run until Ctrl+C
 //   pnpm worker:check    connect, verify the database, exit
@@ -34,6 +40,7 @@ async function main(): Promise<number> {
   }
 
   const prisma = createPrismaClient(env.DATABASE_URL);
+  let health: Server | null = null;
   const shutdown = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
@@ -55,8 +62,23 @@ async function main(): Promise<number> {
     });
     const storage = new SupabaseStorageAdapter(() => supabase);
     const payments = new MockPaymentProvider(env.MOCK_PAYMENT_WEBHOOK_SECRET);
+    const providers = getAiProviders(env);
+    const ai: AiWorkerDeps = {
+      db: prisma,
+      storage,
+      providers,
+      workerId: `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`,
+      timeoutMs: env.AI_JOB_TIMEOUT_MS,
+      log: (msg, fields) => log.info(msg, fields),
+    };
+    health = env.WORKER_HEALTH_PORT ? await startHealthServer(env.WORKER_HEALTH_PORT) : null;
 
-    log.info("worker.started", { pollIntervalMs: env.WORKER_POLL_INTERVAL_MS });
+    log.info("worker.started", {
+      pollIntervalMs: env.WORKER_POLL_INTERVAL_MS,
+      planner: providers.planner.name,
+      images: providers.image.name,
+      healthPort: env.WORKER_HEALTH_PORT,
+    });
     while (!shutdown.signal.aborted) {
       // Each sweep is idempotent; one failing must not stop the others or the worker.
       const now = new Date();
@@ -75,17 +97,39 @@ async function main(): Promise<number> {
           log.error(`${name}_failed`, { error: errorName(error) });
         }
       }
-      // Phase 6: claim and process queued AI jobs here.
-      await sleep(env.WORKER_POLL_INTERVAL_MS, shutdown.signal);
+      let aiJobs = 0;
+      try {
+        aiJobs = await runAiJobs(ai);
+      } catch (error) {
+        log.error("ai.poll_failed", { error: errorName(error) });
+      }
+      // Busy queue: poll again straight away instead of sleeping.
+      if (aiJobs === 0) {
+        await sleep(env.WORKER_POLL_INTERVAL_MS, shutdown.signal);
+      }
     }
     return 0;
   } catch (error) {
     log.error("worker.failed", { error: errorName(error) });
     return 1;
   } finally {
+    health?.close();
     await prisma.$disconnect();
     log.info("worker.stopped");
   }
+}
+
+/** Local-only readiness probe (used by Playwright to wait for the worker). */
+function startHealthServer(port: number): Promise<Server> {
+  const server = createServer((req, res) => {
+    const ok = req.method === "GET" && req.url === "/health";
+    res.writeHead(ok ? 200 : 404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok }));
+  });
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve(server));
+  });
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

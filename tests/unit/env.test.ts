@@ -70,4 +70,34 @@ describe("env validation", () => {
       parseEnv(workerEnvSchema, { ...validServerEnv, WORKER_POLL_INTERVAL_MS: "10" }, "worker"),
     ).toThrow(/WORKER_POLL_INTERVAL_MS/);
   });
+
+  it("AI providers default to the fakes and need keys only when switched on", () => {
+    const env = parseEnv(workerEnvSchema, validServerEnv, "worker");
+    expect(env).toMatchObject({ PLANNER_PROVIDER: "fake", IMAGE_PROVIDER: "fake", AI_JOB_TIMEOUT_MS: 120_000 });
+    const error = captureError(() => parseEnv(workerEnvSchema, { ...validServerEnv, PLANNER_PROVIDER: "gemini", IMAGE_PROVIDER: "cloudflare" }, "worker"));
+    expect(error).toBeInstanceOf(EnvValidationError);
+    if (error instanceof EnvValidationError) {
+      expect([...error.invalidKeys].sort()).toEqual(["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "GEMINI_API_KEY"]);
+    }
+    expect(
+      parseEnv(
+        workerEnvSchema,
+        {
+          ...validServerEnv,
+          PLANNER_PROVIDER: "gemini",
+          GEMINI_API_KEY: "test-gemini-key-0123456789",
+          IMAGE_PROVIDER: "cloudflare",
+          CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+          CLOUDFLARE_API_TOKEN: "test-cloudflare-token-0123",
+        },
+        "worker",
+      ).PLANNER_PROVIDER,
+    ).toBe("gemini");
+  });
+
+  it("the app's server env never holds AI provider keys", () => {
+    for (const key of Object.keys(serverEnvSchema.shape)) {
+      expect(key).not.toMatch(/GEMINI|CLOUDFLARE/);
+    }
+  });
 });

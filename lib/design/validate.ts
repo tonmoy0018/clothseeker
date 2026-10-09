@@ -12,7 +12,7 @@ export type DesignContext = {
   templateId: string;
   /** Sizes the product is sold in (active variants). */
   availableSizes: readonly Size[];
-  /** The design's owner; image layers must reference this customer's own uploads. */
+  /** The design's owner; image layers must reference this customer's own uploads or AI motifs. */
   customerId: string | null;
 };
 
@@ -22,6 +22,16 @@ const EDGE_TOLERANCE_CM = 0.05;
 /** Customer uploads live under `{customerId}/uploads/` in the design-assets bucket. */
 export function customerUploadPrefix(customerId: string): string {
   return `${customerId.toLowerCase()}/uploads/`;
+}
+
+/** Motifs made for the customer by the AI design box live under `{customerId}/ai/`. */
+export function customerAiPrefix(customerId: string): string {
+  return `${customerId.toLowerCase()}/ai/`;
+}
+
+/** Whether an image layer's file is the customer's own upload or AI motif. */
+export function isCustomerImageKey(key: string, customerId: string): boolean {
+  return key.startsWith(customerUploadPrefix(customerId)) || key.startsWith(customerAiPrefix(customerId));
 }
 
 /**
@@ -133,7 +143,7 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
       case "image":
         if (!ctx.customerId) {
           add(`${path}.image`, "Sign in to use your own images.");
-        } else if (!layer.image.assetKey.startsWith(customerUploadPrefix(ctx.customerId))) {
+        } else if (!isCustomerImageKey(layer.image.assetKey, ctx.customerId)) {
           add(`${path}.image`, "That image isn't one of your uploads.");
         }
         break;

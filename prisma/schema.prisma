@@ -181,17 +181,25 @@ model AIRound {
   customerId     String   @map("customer_id") @db.Uuid
   instruction    String
   attachmentKeys String[] @default([]) @map("attachment_keys")
-  /// Storage keys of the generated options (4 per round).
+  /// Storage keys of the rendered option previews (design-assets, up to 4 per round).
   optionKeys     String[] @default([]) @map("option_keys")
+  /// The candidate designs, aligned with optionKeys: [{ title, summary, spec, motifKey }] (lib/ai/rounds.ts).
+  options        Json     @default("[]")
   chosenIndex    Int?     @map("chosen_index")
   inputHash      String   @map("input_hash")
+  /// "Generate again" bumps this so the same instruction gets fresh results instead of the cache.
+  generation     Int      @default(0)
+  /// The job that produced this round; a cache hit hands this job back to the client.
+  jobId          String   @unique @map("job_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at")
 
   design   Design @relation(fields: [designId], references: [id], onDelete: Cascade)
   customer User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  job      AIJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([customerId, createdAt])
   @@index([designId, createdAt])
+  @@index([customerId, inputHash])
   @@map("ai_rounds")
 }
 
@@ -215,8 +223,12 @@ model AIJob {
   status      AIJobStatus @default(QUEUED)
   customerId  String      @map("customer_id") @db.Uuid
   payload     Json
+  /// SUCCEEDED design rounds: { roundId }.
   result      Json?
+  /// Internal detail of the last failure (error name/code). Never shown to customers.
   error       String?
+  /// Customer-safe failure reason, see lib/ai/errors.ts.
+  errorCode   String?     @map("error_code")
   attempts    Int         @default(0)
   maxAttempts Int         @default(3) @map("max_attempts")
   inputHash   String      @map("input_hash")
@@ -228,7 +240,8 @@ model AIJob {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  round    AIRound?
 
   @@index([status, runAfter])
   @@index([customerId, createdAt])

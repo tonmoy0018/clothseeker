@@ -58,6 +58,13 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `SEED_DEMO_PASSWORD` | You (default `clothseeker-demo`) | Local only | `pnpm db:seed`, E2E |
 | `PAYMENT_PROVIDER` | `mock` (only option so far) | **Server-only** | Checkout |
 | `MOCK_COURIER_WEBHOOK_SECRET` | Random, ≥ 32 chars (`pnpm env:local` generates one) | **Server-only** | Signing/verifying courier webhooks |
+| `PLANNER_PROVIDER` | Optional: `fake` (default) or `gemini` | Worker-only | AI design planner ([ai-pipelines.md](ai-pipelines.md)) |
+| `IMAGE_PROVIDER` | Optional: `fake` (default) or `cloudflare` | Worker-only | AI motif images |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Key required when `PLANNER_PROVIDER=gemini`; model defaults to `gemini-2.5-flash` | **Worker-only secret** | Gemini planner |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_IMAGE_MODEL` | Required when `IMAGE_PROVIDER=cloudflare`; model defaults to FLUX.1 schnell | **Worker-only secret** | Workers AI images |
+| `AI_FAKE_DELAY_MS` | Optional, default 1500 | Worker-only | Latency of the fake providers |
+| `AI_JOB_TIMEOUT_MS` | Optional, default 120000 | Worker-only | Limit for one AI job attempt |
+| `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |
 | `MOCK_PAYMENT_WEBHOOK_SECRET` | Random, ≥ 32 chars (`openssl rand -hex 32`; `pnpm env:local` generates one) | **Server-only** | Signing/verifying payment webhooks |
 
 All variables are validated with Zod in `lib/env/schema.ts`. A missing or invalid variable fails fast, and the error names the variable without printing its value. Only `NEXT_PUBLIC_*` variables can reach the browser. `lib/env/server.ts` imports `server-only`, so importing it from a Client Component breaks the build.

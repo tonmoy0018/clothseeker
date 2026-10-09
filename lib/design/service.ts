@@ -70,10 +70,10 @@ export async function loadDesignContext(
   return { template, availableSizes, basePrices };
 }
 
-type CheckedDesign = { spec: DesignSpec; price: DesignPrice; context: DesignContext };
+export type CheckedDesign = { spec: DesignSpec; price: DesignPrice; context: DesignContext };
 
 /** Parses, revalidates and prices a spec for a customer against the live template. */
-async function checkDesign(
+export async function checkDesign(
   db: PrismaClient,
   storage: StorageAdapter,
   customerId: string,
@@ -134,8 +134,6 @@ export async function checkSavedDesignForOrder(
   const { spec, price, context } = await checkDesign(db, storage, customerId, design.spec);
   return { designId: design.id, productName: context.template.productName, spec, price, template: context.template };
 }
-
-
 
 export type SavedDesign = { designId: string; price: DesignPrice; previewKey: string };
 

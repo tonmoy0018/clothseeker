@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 5 complete (2026-10-09). Next: Phase 6, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 6a (AI pipeline) complete (2026-10-09). Next: Phase 6b (AI design box UI), already approved. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -206,6 +206,15 @@ docs/developers/
 - **Migrations:** `prisma migrate dev` needs an interactive terminal when a change triggers a warning (e.g. a new unique index). Generate the SQL non-interactively with `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` into a new `prisma/migrations/<timestamp>_<name>/migration.sql`, append RLS for new tables, then `prisma migrate deploy`.
 - **E2E tests that check out** sign up a fresh customer (`signUpFreshCustomer`), because checkout takes the whole cart.
 - In zsh, unquoted variables don't word-split: use `${=VAR}` in shell commands.
+
+## Implementation conventions (established in Phase 6)
+
+- **AI providers** sit behind `PlannerProvider`/`ImageProvider` (`lib/ai/types.ts`). Deterministic fakes are the default everywhere. Gemini and Cloudflare are switched on by worker env vars only, and the app's env never holds AI keys.
+- **Provider output is untrusted.** Always pass it through `parsePlan` + `variationToSpec` (template-valid or dropped), and pass images through `knockOutWhite` + `processImage("aiMotif")`.
+- **Jobs:** the app queues (`createDesignRoundJob`), the worker claims with `FOR UPDATE SKIP LOCKED` (`claimNextJob`), and outcomes are written only under the lease (`leaseWhere`). Retryable errors are `AiProviderError(retryable: true)`; permanent ones are `AiJobRejected(code)`. Customer messages come from `error_code` via `failureMessage`.
+- **Quota/cache:** 10 rounds per Dhaka day, enforced under a per-customer advisory lock. Invalid requests and cache hits never use quota.
+- Image layers may use the customer's own `uploads/` or `ai/` keys (`isCustomerImageKey`). AI request photos live under `ai-inputs/`.
+- Worker logs contain ids, counts, durations and codes only. Never log instructions, prompts or images.
 
 ## Mapping the original build guide
 

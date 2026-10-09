@@ -22,8 +22,8 @@ ClothSeeker is a **single brand**. There are no sellers, stores, store members o
 | | `Variant` | One size and color of a product, with its price and stock | `sku` unique; unique (`productId`, `size`, `colorName`); index (`productId`, `isActive`) |
 | | `CustomizationTemplate` | Customization rules for one product. `config` is versioned JSON, read only through `parseTemplateConfig()` ([`types/template.ts`](../../types/template.ts)). `version` increments on every save (optimistic locking) | `productId` unique (1:1) |
 | Design | `Design` | A customer's design. `spec` is a versioned DesignSpec (Phase 3) | index (`customerId`, `updatedAt`) |
-| | `AIRound` | One AI design round: instruction, attachments, 4 options, chosen index | index (`customerId`, `createdAt`) for the daily quota |
-| | `AIJob` (`ai_jobs`) | The worker queue (Phase 6+) | index (`status`, `runAfter`) for claiming; `inputHash` for caching |
+| | `AIRound` | One AI design round: instruction, attachments, up to 4 options (`options` JSON: title, summary, DesignSpec, motif key; `optionKeys`: previews), chosen index, `generation`, the producing `jobId` (unique) | index (`customerId`, `createdAt`) for the daily quota; (`customerId`, `inputHash`) for the cache |
+| | `AIJob` (`ai_jobs`) | The worker queue: payload, attempts/`maxAttempts`, lease (`lockedAt`/`lockedBy`), `result` (`{ roundId }`), customer-safe `errorCode`. See [ai-pipelines.md](ai-pipelines.md) | index (`status`, `runAfter`) for claiming; `inputHash` for in-flight dedupe |
 | | `TryOnPhoto` | Consented try-on upload. Unsaved photos are deleted after 24 h (Phase 7) | index (`saved`, `createdAt`) for cleanup |
 | | `QuoteRequest` | Special-tailoring quote, answered by the team within 24 h (Phase 7) | index (`status`, `respondBy`) |
 | Commerce | `Cart`, `CartItem` | One cart per customer. A line is `READY_MADE`, `CUSTOM_DESIGN` or `QUOTE` | `Cart.customerId` unique; unique (`cartId`, `variantId`) |
