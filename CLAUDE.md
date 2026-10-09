@@ -148,7 +148,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 6a (AI pipeline) complete (2026-10-09). Next: Phase 6b (AI design box UI), already approved. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 6 complete (2026-10-09). Next: Phase 7, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -215,6 +215,8 @@ docs/developers/
 - **Quota/cache:** 10 rounds per Dhaka day, enforced under a per-customer advisory lock. Invalid requests and cache hits never use quota.
 - Image layers may use the customer's own `uploads/` or `ai/` keys (`isCustomerImageKey`). AI request photos live under `ai-inputs/`.
 - Worker logs contain ids, counts, durations and codes only. Never log instructions, prompts or images.
+- **AI drafts:** the first AI request on an unsaved design creates a hidden DRAFT design. The cache never hands a *saved* design to an editor that has no design open, because Save would overwrite it.
+- **E2E:** Playwright starts the worker locally (health port 3101, fake providers). AI E2E tests sign up fresh customers for a full quota.
 
 ## Mapping the original build guide
 

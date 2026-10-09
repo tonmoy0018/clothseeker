@@ -18,6 +18,7 @@ import { designSpecSchema, type DesignLayer, type DesignSpec } from "@/types/des
 import { STYLE_GROUPS, type StyleGroup, type TemplateConfig } from "@/types/template";
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
+import { AiBox } from "./ai-box";
 import { DesignCanvas, type LayerBox } from "./design-canvas";
 import { composeGarment, decorationDataUrl, loadImage, type ClientFill } from "./recolor";
 
@@ -36,7 +37,7 @@ export type DesignEditorProps = {
   basePrices: Partial<Record<Size, number>>;
   /** Signed-in customer's id (for image ownership checks), or null. */
   customerId: string | null;
-  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string> } | null;
+  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean } | null;
 };
 
 const draftKey = (productId: string) => `cs-design-draft-${productId}`;
@@ -100,6 +101,8 @@ export function DesignEditor(props: DesignEditorProps) {
   const [past, setPast] = useState<DesignSpec[]>([]);
   const [future, setFuture] = useState<DesignSpec[]>([]);
   const [designId, setDesignId] = useState<string | null>(props.initialDesign?.designId ?? null);
+  // A hidden draft made by the AI box isn't "saved" until the customer presses Save.
+  const [isDraft, setIsDraft] = useState(props.initialDesign ? !props.initialDesign.saved : false);
   const [uploadUrls, setUploadUrls] = useState<Record<string, string>>(props.initialDesign?.uploadUrls ?? {});
   const [side, setSide] = useState<"front" | "back">("front");
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -268,6 +271,7 @@ export function DesignEditor(props: DesignEditorProps) {
       return;
     }
     setDesignId(result.designId);
+    setIsDraft(false);
     setDirty(false);
     onOk(result.designId);
   }
@@ -396,12 +400,33 @@ export function DesignEditor(props: DesignEditorProps) {
         )}
         <p className="text-xs text-muted-foreground">Drag items to move them. Use the corner handles to resize or rotate. Items stay inside the dashed areas.</p>
 
-        <div className="rounded-xl border border-dashed p-4" data-testid="ai-box">
-          <p className="font-medium">AI design box</p>
-          <p className="text-sm text-muted-foreground">
-            {props.aiEnabled ? "Describe your dream dress and get four ideas — coming in Phase 6." : "AI design isn't available for this dress."}
-          </p>
-        </div>
+        {props.aiEnabled ? (
+          <AiBox
+            designId={designId}
+            spec={spec}
+            signedIn={props.customerId !== null}
+            onDesignId={(id) => {
+              if (!designId) {
+                setIsDraft(true);
+              }
+              setDesignId(id);
+              // Keep the draft (and its AI rounds) if the page is reloaded.
+              router.replace(`/customize/${props.productId}?design=${id}`, { scroll: false });
+            }}
+            onPick={(picked, imageUrls, label) => {
+              setUploadUrls((u) => ({ ...u, ...imageUrls }));
+              setSelectedLayerId(null);
+              commit(picked);
+              setMessage({ kind: "ok", text: `Applied ${label}. Keep editing it, or press Undo to go back.` });
+            }}
+            onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed p-4" data-testid="ai-box">
+            <p className="font-medium">AI design box</p>
+            <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this dress.</p>
+          </div>
+        )}
       </div>
 
       {/* ── controls column ── */}
@@ -728,7 +753,7 @@ export function DesignEditor(props: DesignEditorProps) {
 
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
-            {pending ? "Saving…" : designId && !dirty ? "Saved" : "Save design"}
+            {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
           </Button>
           <Button onClick={addToCart} disabled={pending || issues.length > 0 || !price}>
             Add to cart

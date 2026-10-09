@@ -72,12 +72,22 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Mark delivered | ❌ | ❌ | ✅ (override) | **Courier** via signed webhook, or admin |
 | See tracking and refunds | ❌ | ✅ own orders | ✅ | `getOrderForCustomer` |
 
+## AI design box (Phase 6)
+
+| Action | Anonymous | Customer | Admin | Enforced in |
+|---|---|---|---|---|
+| Ask for an AI round | ➡️ sign in | ✅ own designs, 10 rounds per Dhaka day | ❌ | `createDesignRoundJob` → `assertCustomer`, quota under an advisory lock |
+| Attach photos to a request | ➡️ sign in | ✅ stored under `{customerId}/ai-inputs/`; only own keys accepted | ❌ | `uploadAiAttachment`, key prefix check |
+| Poll a job, list rounds, pick or refine an option | ❌ | ✅ **own jobs and rounds only** (others look like "not found") | ❌ | `getJobStatus`, `listRounds`, `pickOption` (scoped by `customerId`) |
+| Use an AI motif in a design | ❌ | ✅ own `ai/` keys only | ❌ | `validateDesignAgainstTemplate` (`isCustomerImageKey`) |
+| Call an AI provider | ❌ | ❌ | ❌ | **Worker only**; the app holds no provider keys |
+| Review brand-logo flags | ❌ | ❌ | (Phase 8) | `flagged_items` rows written by the worker |
+
 ## Planned
 
 | Phase | Admin | Customer |
 |---|---|---|
 | 4 | — | — |
-| 6 | AI metrics | AI rounds on their own designs (10/day) |
 | 7 | Answer quote requests | Try-on (with consent), request and accept quotes |
 | 8 | Brand-logo flags, disputes, audit log | Open disputes on their own order items |
 

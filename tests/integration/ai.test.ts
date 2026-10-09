@@ -12,7 +12,7 @@ import { storedOptionsSchema } from "@/lib/ai/rounds";
 import type { AiProviders, PlannerProvider, PlanRequest } from "@/lib/ai/types";
 import { claimNextJob } from "@/lib/ai/worker/claim";
 import { processNextJob, recoverStuckJobs, runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";
-import { listDesigns } from "@/lib/design/service";
+import { listDesigns, saveDesign } from "@/lib/design/service";
 import { validateDesignAgainstTemplate } from "@/lib/design/validate";
 import { BUCKETS } from "@/lib/storage/buckets";
 import type { MemoryStorageAdapter } from "@/lib/storage/memory";
@@ -237,6 +237,22 @@ describe("running AI jobs", () => {
     expect(planner.requests).toHaveLength(2);
     expect(planner.requests[1]?.seed).not.toBe(planner.requests[0]?.seed);
     expect((await listRounds(db, storage, customer, first.designId)).map((r) => r.id)).toHaveLength(2);
+  });
+
+  it("a fresh editor never gets a saved design handed back by the cache", async () => {
+    const customer = await createUser();
+    const { spec } = await customizableProduct();
+    const first = await request(customer, spec);
+    await processNextJob(deps());
+    await saveDesign(db, storage, customer, { designId: first.designId, spec });
+
+    // Same words and design, but no design open: a new draft, not the saved design (which Save would overwrite).
+    const again = await request(customer, spec);
+    expect(again.designId).not.toBe(first.designId);
+    expect(again.cached).toBe(false);
+    expect(await db.design.findUniqueOrThrow({ where: { id: again.designId } })).toMatchObject({ status: "DRAFT" });
+    // With the saved design open, the cache still applies.
+    expect(await request(customer, spec, { designId: first.designId })).toEqual({ jobId: first.jobId, designId: first.designId, cached: true });
   });
 
   it("two workers never claim the same job", async () => {

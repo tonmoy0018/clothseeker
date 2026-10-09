@@ -89,8 +89,21 @@ Checked in this order, and nothing before the quota step uses quota:
 - One round costs one planner call (plus one logo check when photos are attached) and up to 4 image calls. At 10 rounds per customer per day, plan provider capacity accordingly.
 - Clients poll every 2 s. Realtime updates can come later.
 
+## The AI box (UI)
+
+`app/(shop)/customize/[productId]/ai-box.tsx`, with server actions in `ai-actions.ts`:
+
+- **Instruction and examples.** There is a 500-character box and example chips ("Pastel florals on the skirt", "Make it evening-ready in emerald", "Like option 2 but darker"), plus the note "Clothing brand logos can't be used." and "N of 10 AI rounds left today".
+- **Photos.** Up to 3 photos of up to 10 MB each. Each one is downscaled **in the browser** to at most 2000 px (as JPEG) before upload, so requests stay under Vercel's 4.5 MB body limit. The server then re-encodes it (`processImage("aiInput")`).
+- **Generate** queues a job. The box shows four loading cards and polls `getJobStatusAction` every 2 s, stopping when the job finishes or fails, after 10 minutes, or when the page is left. A cache hit says it didn't use a round.
+- **Results.** Each option card has **Pick** and **Refine**. Refine sets "Refers to option N" for the next instruction. Typing "option 2" while results are on screen refers to that option automatically. **Generate again** repeats the last request with fresh results.
+- **Pick** revalidates the option on the server, then replaces the working design as one undoable step. Its colours, pattern, style, text and motif become ordinary editable layers, and the price updates.
+- **Previous rounds** for the design are listed (picked option marked). Clicking one shows its options again.
+- **Drafts.** The first AI request on an unsaved design creates a hidden draft and puts `?design=<id>` in the URL, so a reload keeps the rounds. The Save button keeps saying "Save design" until the customer saves.
+
 ## Tests
 
 - `tests/unit/ai-rules.test.ts`: hashing, brand words, Dhaka day, plan parsing and fitting, fakes, motif clean-up.
 - `tests/unit/ai-providers.test.ts`: Gemini and Cloudflare adapters against mocked `fetch` (request shape, injection hygiene, error mapping).
+- `tests/e2e/ai.spec.ts` (`@supabase`, worker started by Playwright): generate → 4 loading cards → 4 options → pick (price and colours update, undo/redo) → refine → generate again → save and reload with history; the brand message and no quota use.
 - `tests/integration/ai.test.ts`: validation without quota use, quota (including concurrency), cache, claiming, retries, timeout, stuck recovery, brand-logo flagging, pick, follow-ups, and ownership.

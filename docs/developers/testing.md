@@ -4,7 +4,7 @@
 |---|---|---|---|
 | Unit | `pnpm test` | nothing | Pure rules: auth policy, `safeNextPath`, money, catalog filters, template schema, order numbers, mock payments, env and storage keys |
 | Integration | `pnpm test:integration` | Postgres (`TEST_DATABASE_URL`) | Domain services against a real database: cart rules, ownership, checkout idempotency, stock, RLS |
-| E2E (all) | `pnpm test:e2e` | local Supabase + seed | Smoke tests plus the full **Buy now** journey (`@supabase`) |
+| E2E (all) | `pnpm test:e2e` | local Supabase + seed; starts the worker | Smoke tests plus the `@supabase` journeys (buy now, design, checkout, production, AI design box) |
 | E2E (CI subset) | `pnpm test:e2e:ci` | Postgres only | Smoke tests that need no sign-in or seed data |
 
 `pnpm check` runs lint, typecheck, unit tests and the build.
@@ -20,6 +20,8 @@
 
 ## E2E tests
 
+- Locally, Playwright also starts **the worker** (`pnpm worker`) and waits for `GET http://127.0.0.1:3101/health` (`WORKER_HEALTH_PORT`). It forces the fake AI providers (`PLANNER_PROVIDER=fake`, `IMAGE_PROVIDER=fake`, `AI_FAKE_DELAY_MS=800`) whatever `.env.local` says. A worker you already run alongside is harmless, because job claiming is safe for several workers.
+- The AI tests (`tests/e2e/ai.spec.ts`) sign up a fresh customer each, so the daily quota of 10 starts full.
 - `pnpm test:e2e` **builds and starts a production server** (`pnpm build && pnpm start`), or reuses a server already running on :3000. The dev server compiles routes on first visit, which made parallel runs flaky. Set `E2E_DEV=1` to run against `pnpm dev` instead.
 - Production pages render before React hydrates, so tests that click interactive controls right after navigation retry the click until it registers (`expect(...).toPass()`).
 - Test runs clean up after themselves: the design test deletes the design it saved, and the admin test archives its dress.

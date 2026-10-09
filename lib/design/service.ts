@@ -256,7 +256,8 @@ export async function deleteDesign(db: PrismaClient, storage: StorageAdapter, ac
   }
 }
 
-export type DesignForEdit = { designId: string; spec: DesignSpec; uploadUrls: Record<string, string> };
+/** `saved` is false for hidden drafts (designs the AI box created before the customer pressed Save). */
+export type DesignForEdit = { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean };
 
 /** The customer's own design for the editor, or null. Image layers get signed URLs. */
 export async function getDesignForEdit(
@@ -272,7 +273,7 @@ export async function getDesignForEdit(
   }
   const design = await db.design.findFirst({
     where: { id: designId.data, customerId: actor.id, productId },
-    select: { id: true, spec: true },
+    select: { id: true, spec: true, status: true },
   });
   if (!design) {
     return null;
@@ -285,7 +286,7 @@ export async function getDesignForEdit(
   }
   const keys = spec.layers.flatMap((l) => (l.kind === "image" ? [l.image.assetKey] : []));
   const urls = await storage.signReadUrls(BUCKETS.designAssets, keys);
-  return { designId: design.id, spec, uploadUrls: Object.fromEntries(urls) };
+  return { designId: design.id, spec, uploadUrls: Object.fromEntries(urls), saved: design.status !== "DRAFT" };
 }
 
 export type DesignPriceCheck = { price: DesignPrice; issue: null } | { price: null; issue: string };

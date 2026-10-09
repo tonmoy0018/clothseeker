@@ -20,7 +20,7 @@ Status: Phase 5. This document describes the target shape and marks what exists 
 ```
 
 - **One Next.js app** serves both surfaces: the customer shop and the ClothSeeker team's admin tool. ClothSeeker is a single brand, not a marketplace, so there are no sellers or stores. There is no separate backend service: reads happen in Server Components, mutations in server actions and route handlers.
-- **The worker** runs outside the request path, so slow or rate-limited free-tier AI calls never block a user request. The app inserts rows into the Postgres `ai_jobs` table, the worker claims and processes them, and the browser polls job status. There is no Redis.
+- **The worker** runs outside the request path, so slow or rate-limited free-tier AI calls never block a user request. The app inserts rows into the Postgres `ai_jobs` table, the worker claims and processes them, and the browser polls job status. There is no Redis. AI design rounds (Phase 6) are the first job type; see [ai-pipelines.md](ai-pipelines.md).
 - **Supabase** provides Postgres (accessed through Prisma), Auth (session cookies through `@supabase/ssr`) and Storage (private buckets with short-lived signed URLs).
 
 ## Request path

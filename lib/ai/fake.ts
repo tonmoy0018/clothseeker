@@ -117,13 +117,18 @@ export class FakePlanner implements PlannerProvider {
         }),
       );
       const name = primary?.name ?? "Custom";
+      const mainColor = parts.find((p) => p.regionId === mainRegion?.id)?.color;
+      const mainName = palette.find((c) => c.hex === mainColor)?.name ?? name;
+      // Text in the color that stands out most from both garment colors.
+      const contrast = (hex: string) => Math.min(...[primary, secondary].map((c) => Math.abs(luminance(hex) - luminance(c?.hex ?? "#808080"))));
+      const textColor = [...palette].sort((a, b) => contrast(b.hex) - contrast(a.hex))[0]?.hex ?? "#1b1b1b";
       return {
         title: `${name} ${word} ${["classic", "bold", "soft", "statement"][i]}`,
-        summary: `${name} ${mainRegion?.label.toLowerCase() ?? "dress"} with a ${word} motif.`,
+        summary: `${mainName} ${mainRegion?.label.toLowerCase() ?? "dress"} with a ${word} motif.`,
         parts,
         styleOptions,
-        text: quoted && constraints.layersAllowed ? { content: quoted, fontId: constraints.fonts[i % Math.max(constraints.fonts.length, 1)] ?? "inter", color: secondary?.hex ?? "#ffffff" } : null,
-        motif: constraints.layersAllowed ? { prompt: `${word} motif`, color: secondary?.hex ?? "#ffffff" } : null,
+        text: quoted && constraints.layersAllowed ? { content: quoted, fontId: constraints.fonts[i % Math.max(constraints.fonts.length, 1)] ?? "inter", color: textColor } : null,
+        motif: constraints.layersAllowed ? { prompt: `${word} motif`, color: textColor } : null,
       };
     });
     return { variations };

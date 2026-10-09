@@ -122,20 +122,28 @@ export async function createDesignRoundJob(
     generation,
   });
 
+  // Without a design of their own, a request may only be attached to one of the customer's hidden
+  // drafts — never to a saved design, which the editor would then overwrite on Save.
+  const reusableDesign = async (candidate: string): Promise<string | null> =>
+    designId ?? ((await db.design.count({ where: { id: candidate, customerId: actor.id, status: "DRAFT" } })) === 1 ? candidate : null);
+
   // Same request as before: hand back the earlier result. No provider call, no quota.
   const cached = await db.aIRound.findFirst({ where: { customerId: actor.id, inputHash }, orderBy: { createdAt: "desc" }, select: { jobId: true, designId: true } });
-  if (cached) {
-    return { jobId: cached.jobId, designId: designId ?? cached.designId, cached: true };
+  const cachedDesign = cached ? await reusableDesign(cached.designId) : null;
+  if (cached && cachedDesign) {
+    return { jobId: cached.jobId, designId: cachedDesign, cached: true };
   }
 
   return db.$transaction(async (tx) => {
     // One submission at a time per customer, so concurrent requests can't both slip under the quota.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${actor.id}`}, 0))`;
 
+    // An identical request still in progress (e.g. a double-click) gets that job back.
     const inFlight = await tx.aIJob.findFirst({ where: { customerId: actor.id, inputHash, status: { in: [...ACTIVE] } }, select: { id: true, payload: true } });
     const inFlightPayload = designRoundPayloadSchema.safeParse(inFlight?.payload);
-    if (inFlight && inFlightPayload.success) {
-      return { jobId: inFlight.id, designId: designId ?? inFlightPayload.data.designId, cached: true };
+    const inFlightDesign = inFlight && inFlightPayload.success ? await reusableDesign(inFlightPayload.data.designId) : null;
+    if (inFlight && inFlightDesign) {
+      return { jobId: inFlight.id, designId: inFlightDesign, cached: true };
     }
 
     const since = startOfDhakaDay(now);
