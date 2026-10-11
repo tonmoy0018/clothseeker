@@ -42,6 +42,8 @@ For a faster, production-like run use `pnpm build && pnpm start` instead of `pnp
 
 The password comes from `SEED_DEMO_PASSWORD` in `.env.local`. The seed refuses to run against a non-local database.
 
+**Dress photos are AI-generated samples** (Cloudflare FLUX.1 schnell, ghost-mannequin style, no people). They live in `prisma/seed-photos/<slug>.jpg`, and the seed uploads one to each dress that has no photo yet, so photos the team uploads in `/admin` are never overwritten. Replace them with real product photos before showing the shop to customers. To regenerate them (needs the Cloudflare keys in `.env.local`): `pnpm tsx ai-scripts/generate-dress-photos.ts [--force]`.
+
 Local Supabase uses ports **55420–55429** (API 55421, Postgres 55422, Studio http://127.0.0.1:55423, Mailpit 55424). They're offset from the Supabase defaults so this project can run alongside other local Supabase projects.
 
 ## Commands

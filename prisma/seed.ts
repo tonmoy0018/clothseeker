@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { loadEnvConfig } from "@next/env";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -5,10 +9,12 @@ import { z } from "zod";
 import { createPrismaClient, type PrismaClient } from "@/lib/db/client";
 import type { Role } from "@/lib/generated/prisma/enums";
 import { serverEnvSchema, parseEnv } from "@/lib/env/schema";
+import { storeProductImage } from "@/lib/admin/media";
 import { majorToMinor } from "@/lib/money";
 import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/catalog/default-template";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { buildObjectKey } from "@/lib/storage/object-key";
+import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
 import { parseTemplateConfig, templateConfigSchema, type TemplateConfig } from "@/types/template";
 
 import { renderGarment, renderMask, SEED_REGIONS } from "./seed-garments";
@@ -18,6 +24,9 @@ import {
   seedStock,
   sizeSurchargeTaka,
 } from "./seed-data";
+
+/** AI-generated sample catalog photos, one per seeded dress (see ai-scripts/generate-dress-photos.ts). */
+const SEED_PHOTOS_DIR = path.join(process.cwd(), "prisma", "seed-photos");
 
 // Idempotent demo seed: 1 admin, 3 customers, 5 categories, 15 dresses (+1 draft), 5 templates.
 // Run with `pnpm db:seed`. Refuses non-local databases unless `--allow-remote` is passed.
@@ -118,6 +127,8 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
   }
 
   let variantCount = 0;
+  let photoCount = 0;
+  const storage = new SupabaseStorageAdapter(() => supabase);
   for (const [productIndex, p] of SEED_PRODUCTS.entries()) {
     const category = await db.category.findUniqueOrThrow({ where: { slug: p.category }, select: { id: true } });
     const product = await db.product.upsert({
@@ -130,8 +141,16 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
         status: p.status ?? "ACTIVE",
       },
       update: { name: p.name, description: p.description, categoryId: category.id, status: p.status ?? "ACTIVE" },
-      select: { id: true },
+      select: { id: true, imageKeys: true },
     });
+    // AI-generated sample catalog photo (prisma/seed-photos, ai-scripts/generate-dress-photos.ts),
+    // only for dresses without photos, so photos uploaded by the team are never replaced.
+    const samplePhoto = path.join(SEED_PHOTOS_DIR, `${p.slug}.jpg`);
+    if (product.imageKeys.length === 0 && existsSync(samplePhoto)) {
+      const key = await storeProductImage(storage, product.id, await readFile(samplePhoto), "productPhoto", "photos");
+      await db.product.update({ where: { id: product.id }, data: { imageKeys: [key] } });
+      photoCount += 1;
+    }
 
     for (const [sizeIndex, size] of p.sizes.entries()) {
       for (const [colorIndex, color] of p.colors.entries()) {
@@ -164,6 +183,7 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
     products: SEED_PRODUCTS.length,
     variants: variantCount,
     templates: SEED_PRODUCTS.filter((p) => p.customizable).length,
+    photosAdded: photoCount,
   });
 }
 

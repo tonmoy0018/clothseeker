@@ -169,7 +169,7 @@ docs/developers/
 - **Ownership:** when another user's record is targeted, scope the query by owner id and answer "not found", never "forbidden".
 - **Auth:** the role always comes from the `users` table (`getCurrentUser`). Pages use `requireUser`/`requireAdmin` from `lib/auth/guards.ts`. Every admin page and action calls `requireAdmin()`; the layout alone is not a guard.
 - **Tests:** unit tests in `tests/unit`. Integration tests in `tests/integration`, which use the `clothseeker_test` database (the name must end in `_test`) and the `resetDatabaseBeforeEach()`, `createUser()` and `createProduct()` helpers. E2E journeys that need sign-in are tagged `@supabase` and are excluded in CI.
-- **Seed:** `prisma/seed.ts` is idempotent and refuses remote databases. The demo password is `SEED_DEMO_PASSWORD`.
+- **Seed:** `prisma/seed.ts` is idempotent and refuses remote databases. The demo password is `SEED_DEMO_PASSWORD`. Sample dress photos (AI-generated, `prisma/seed-photos/<slug>.jpg`, made by `ai-scripts/generate-dress-photos.ts`) are uploaded only to dresses with no photo.
 - The `CustomizationTemplate.config` schema is `types/template.ts`.
 
 ## Implementation conventions (established in Phase 2)
