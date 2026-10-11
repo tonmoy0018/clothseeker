@@ -23,11 +23,15 @@ pnpm install                 # also generates the Prisma client
 pnpm db:start                # start local Supabase in Docker (first run downloads images)
 pnpm env:local               # write .env.local from the running stack
 pnpm db:check                # verify env, Postgres and storage buckets
-pnpm db:migrate              # apply Prisma migrations
+pnpm db:deploy               # apply the database migrations
 pnpm db:seed                 # demo accounts + 15 dresses (safe to re-run)
 pnpm dev                     # app at http://localhost:3000
 pnpm worker                  # background worker, in a second terminal
 ```
+
+**AI features work without any keys:** by default they use built-in stand-ins (simple, deterministic designs). To use the real services, add your own keys to `.env.local` as described in [docs/developers/ai-pipelines.md](docs/developers/ai-pipelines.md). Keys are personal; never commit them. Customer emails land in the local test inbox at http://127.0.0.1:55424.
+
+For a faster, production-like run use `pnpm build && pnpm start` instead of `pnpm dev`.
 
 ### Demo accounts (local only)
 
