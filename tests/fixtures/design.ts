@@ -2,7 +2,7 @@ import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/catalog/default-template";
 import type { DesignContext } from "@/lib/design/validate";
 import { MemoryStorageAdapter } from "@/lib/storage/memory";
 import { BUCKETS } from "@/lib/storage/buckets";
-import { renderGarment, renderMask } from "@/prisma/seed-garments";
+import { renderGarment, renderMask, type GarmentStyle } from "@/prisma/seed-garments";
 import type { DesignSpec } from "@/types/design-spec";
 import { templateConfigSchema, type TemplateConfig } from "@/types/template";
 
@@ -83,14 +83,17 @@ export const CONTEXT: DesignContext = {
   customerId: CUSTOMER_ID,
 };
 
+/** The style drawn on TEMPLATE's garment images (the same as validSpec's style options). */
+export const FIXTURE_STYLE: GarmentStyle = { neckline: "square", sleeveLength: "short", dressLength: "midi" };
+
 /** In-memory storage holding the garment images and masks used by TEMPLATE. */
 export async function storageWithTemplateAssets(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter();
-  await storage.put(BUCKETS.productMedia, KEYS.front, await renderGarment("front"), "image/webp");
-  await storage.put(BUCKETS.productMedia, KEYS.back, await renderGarment("back"), "image/webp");
-  await storage.put(BUCKETS.productMedia, KEYS.strapsFront, await renderMask("front", "straps"), "image/png");
-  await storage.put(BUCKETS.productMedia, KEYS.bodiceFront, await renderMask("front", "bodice"), "image/png");
-  await storage.put(BUCKETS.productMedia, KEYS.skirtFront, await renderMask("front", "skirt"), "image/png");
-  await storage.put(BUCKETS.productMedia, KEYS.skirtBack, await renderMask("back", "skirt"), "image/png");
+  await storage.put(BUCKETS.productMedia, KEYS.front, await renderGarment("front", FIXTURE_STYLE), "image/webp");
+  await storage.put(BUCKETS.productMedia, KEYS.back, await renderGarment("back", FIXTURE_STYLE), "image/webp");
+  await storage.put(BUCKETS.productMedia, KEYS.strapsFront, await renderMask("front", FIXTURE_STYLE, "straps"), "image/png");
+  await storage.put(BUCKETS.productMedia, KEYS.bodiceFront, await renderMask("front", FIXTURE_STYLE, "bodice"), "image/png");
+  await storage.put(BUCKETS.productMedia, KEYS.skirtFront, await renderMask("front", FIXTURE_STYLE, "skirt"), "image/png");
+  await storage.put(BUCKETS.productMedia, KEYS.skirtBack, await renderMask("back", FIXTURE_STYLE, "skirt"), "image/png");
   return storage;
 }

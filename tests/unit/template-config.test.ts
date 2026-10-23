@@ -27,9 +27,10 @@ describe("template config", () => {
     expect(templateConfigSchema.safeParse(DEFAULT_TEMPLATE_CONFIG).success).toBe(true);
   });
 
-  it("upgrades v1 configs all the way to v3 with default rects, fonts, add-ons and empty masks", () => {
+  it("upgrades v1 configs all the way to v4 with default rects, fonts, add-ons and empty masks", () => {
     const upgraded = parseTemplateConfig(v1);
-    expect(upgraded.schemaVersion).toBe(3);
+    expect(upgraded.schemaVersion).toBe(4);
+    expect(upgraded.styleVariants).toEqual([]);
     expect(upgraded.regions[0]?.masks).toEqual({});
     expect(upgraded.allowedDecorations).toEqual([...DECORATION_IDS]);
     expect(upgraded.garmentImages).toEqual({});
@@ -42,17 +43,29 @@ describe("template config", () => {
   });
 
   it("rejects unknown versions and configs without a version", () => {
-    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 4 })).toThrow(TemplateConfigError);
+    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 5 })).toThrow(TemplateConfigError);
     expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 0 })).toThrow(TemplateConfigError);
     expect(() => parseTemplateConfig({ regions: [] })).toThrow(TemplateConfigError);
   });
 
   it("upgrades v2 configs by adding masks and decorations", () => {
-    const { allowedDecorations: _d, ...v2 } = DEFAULT_TEMPLATE_CONFIG;
+    const { allowedDecorations: _d, styleVariants: _s, ...v2 } = DEFAULT_TEMPLATE_CONFIG;
     const raw = { ...v2, schemaVersion: 2, regions: v2.regions.map(({ masks: _m, ...r }) => r) };
     const upgraded = parseTemplateConfig(raw);
-    expect(upgraded.schemaVersion).toBe(3);
+    expect(upgraded.schemaVersion).toBe(4);
     expect(upgraded.regions.every((r) => JSON.stringify(r.masks) === "{}")).toBe(true);
+  });
+
+  it("upgrades v3 configs by adding an empty list of style pictures", () => {
+    const { styleVariants: _s, ...v3 } = DEFAULT_TEMPLATE_CONFIG;
+    const upgraded = parseTemplateConfig({ ...v3, schemaVersion: 3 });
+    expect(upgraded).toEqual({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 4, styleVariants: [] });
+  });
+
+  it("lists every style-picture key once among the template's images", () => {
+    const variant = { side: "front" as const, match: { neckline: "round" }, image: KEY, masks: { bodice: KEY, skirt: KEY } };
+    const config = templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, garmentImages: { front: KEY }, styleVariants: [variant, { ...variant, side: "back" }] });
+    expect(templateImageKeys(config)).toEqual([KEY]);
   });
 
   it("requires a mask for every recolorable region before going live", () => {

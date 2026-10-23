@@ -65,6 +65,24 @@ describe("templates", () => {
     expect(audit.metadata).toMatchObject({ fromVersion: 1, toVersion: 2 });
   });
 
+  it("keeps style pictures through saves, and deletes their files once they're removed", async () => {
+    const { admin, product, storage } = await setup();
+    const loaded = await getTemplateForEdit(db, storage, admin, product.id);
+    if (!loaded) throw new Error("template missing");
+    const image = await uploadTemplateImage(db, storage, admin, { productId: product.id, slot: "front" }, await garment());
+    const mask = await uploadTemplateImage(db, storage, admin, { productId: product.id, slot: "mask:front:bodice" }, await garment());
+    const variant = { side: "front" as const, match: { neckline: "round" }, image: image.key, masks: { bodice: mask.key } };
+
+    await saveTemplate(db, storage, admin, { productId: product.id, expectedVersion: 1, config: { ...loaded.config, styleVariants: [variant] } });
+    const reloaded = await getTemplateForEdit(db, storage, admin, product.id);
+    expect(reloaded?.config.styleVariants).toEqual([variant]);
+    expect(Object.keys(reloaded?.imageUrls ?? {})).toEqual(expect.arrayContaining([image.key, mask.key]));
+
+    await saveTemplate(db, storage, admin, { productId: product.id, expectedVersion: 2, config: { ...loaded.config, styleVariants: [] } });
+    expect(await storage.get(BUCKETS.productMedia, image.key)).toBeNull();
+    expect(await storage.get(BUCKETS.productMedia, mask.key)).toBeNull();
+  });
+
   it("rejects image keys that belong to another product", async () => {
     const { admin, product, storage } = await setup();
     const loaded = await getTemplateForEdit(db, storage, admin, product.id);
@@ -166,6 +184,6 @@ describe("templates", () => {
       },
     });
     const loaded = await getTemplateForEdit(db, storage, admin, product.id);
-    expect(loaded?.config.schemaVersion).toBe(3);
+    expect(loaded?.config.schemaVersion).toBe(4);
   });
 });

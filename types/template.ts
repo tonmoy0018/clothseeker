@@ -11,7 +11,7 @@ import { isSafeObjectKey } from "@/lib/storage/object-key";
 // `parseTemplateConfig()`, which upgrades older versions to the current one.
 // To change the shape: add a new version schema, an upgrade step, and bump TEMPLATE_CONFIG_VERSION.
 
-export const TEMPLATE_CONFIG_VERSION = 3;
+export const TEMPLATE_CONFIG_VERSION = 4;
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "Use lowercase letters, numbers and hyphens");
 const label = z.string().trim().min(1, "Required").max(40);
@@ -46,9 +46,11 @@ export const templateConfigV1Schema = z.object({
   allowedColors: z.array(z.object({ name: z.string().min(1).max(30), hex: hexColor })).min(1).max(40),
 });
 
-// ─── v3 (current) ─────────────────────────────────────────────────────────────
+// ─── v4 (current) ─────────────────────────────────────────────────────────────
 // v2 → v3: regions gained `masks` (where each region is on the garment image) and the
 // template gained `allowedDecorations`.
+// v3 → v4: optional `styleVariants`, garment pictures (+ masks) for particular style choices, so the
+// preview changes shape when the customer picks a neckline, sleeve or length.
 
 export const templateRegionSchema = z.object({
   id,
@@ -85,9 +87,24 @@ export type StyleGroup = (typeof STYLE_GROUPS)[number];
 
 const styleOptionList = z.array(styleOptionSchema).min(1, "Add at least one option").max(8);
 
+/**
+ * A garment picture for some style choices. Groups left out of `match` match any option, so a back
+ * view can ignore the neckline. The most specific matching variant wins (see lib/design/garment-variant.ts);
+ * with none, the template's own `garmentImages` and region masks are used.
+ */
+export const styleVariantSchema = z.object({
+  side: z.enum(["front", "back"]),
+  match: z.object({ neckline: id.optional(), sleeveLength: id.optional(), dressLength: id.optional() }),
+  image: storageKey,
+  /** Region masks aligned with `image`, by region id. A region without one isn't on this picture. */
+  masks: z.record(id, storageKey),
+});
+
+export const MAX_STYLE_VARIANTS = 256;
+
 export const templateConfigSchema = z
   .object({
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(4),
     garmentImages: z.object({ front: storageKey.optional(), back: storageKey.optional() }),
     regions: z.array(templateRegionSchema).min(1, "Add at least one region").max(12),
     placementAreas: z.array(placementAreaSchema).max(8),
@@ -109,6 +126,7 @@ export const templateConfigSchema = z
       patternMinor: priceMinor,
       decorationMinor: priceMinor,
     }),
+    styleVariants: z.array(styleVariantSchema).max(MAX_STYLE_VARIANTS),
   })
   .superRefine((config, ctx) => {
     const reportDuplicates = (values: string[], path: (string | number)[], what: string) => {
@@ -135,6 +153,7 @@ export type TemplateConfig = z.infer<typeof templateConfigSchema>;
 export type PlacementArea = z.infer<typeof placementAreaSchema>;
 export type TemplateRegion = z.infer<typeof templateRegionSchema>;
 export type StyleOption = z.infer<typeof styleOptionSchema>;
+export type StyleVariant = z.infer<typeof styleVariantSchema>;
 
 export const DEFAULT_ADD_ONS: TemplateConfig["addOns"] = {
   textMinor: 15_000,
@@ -186,6 +205,13 @@ function upgradeV2(v2: z.infer<typeof templateConfigV2Shape>): unknown {
   };
 }
 
+/** v3 → v4: no style pictures yet. */
+const templateConfigV3Shape = z.looseObject({ schemaVersion: z.literal(3) });
+
+function upgradeV3(v3: z.infer<typeof templateConfigV3Shape>): unknown {
+  return { ...v3, schemaVersion: 4, styleVariants: [] };
+}
+
 export class TemplateConfigError extends Error {
   override readonly name = "TemplateConfigError";
 }
@@ -207,10 +233,13 @@ export function parseTemplateConfig(raw: unknown): TemplateConfig {
   if (v <= 2) {
     candidate = upgradeV2(templateConfigV2Shape.parse(candidate));
   }
+  if (v <= 3) {
+    candidate = upgradeV3(templateConfigV3Shape.parse(candidate));
+  }
   return templateConfigSchema.parse(candidate);
 }
 
-/** Every storage key referenced by a config (garment images, region masks, style reference images). */
+/** Every storage key referenced by a config (garment images, region masks, style reference images, style pictures). */
 export function templateImageKeys(config: TemplateConfig): string[] {
   const keys = [config.garmentImages.front, config.garmentImages.back];
   for (const region of config.regions) {
@@ -221,5 +250,9 @@ export function templateImageKeys(config: TemplateConfig): string[] {
       keys.push(option.referenceImageKey);
     }
   }
-  return keys.filter((k): k is string => typeof k === "string");
+  for (const variant of config.styleVariants) {
+    keys.push(variant.image, ...Object.values(variant.masks));
+  }
+  // Variants share pictures (e.g. one skirt mask for every neckline), so list each key once.
+  return [...new Set(keys.filter((k): k is string => typeof k === "string"))];
 }

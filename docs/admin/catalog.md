@@ -27,7 +27,7 @@ Either way it disappears from the shop immediately. Customers who already ordere
 ## Let customers design a dress (templates)
 
 1. On the dress page, click **Enable customization**, then **Edit template**.
-2. **Garment images:** upload a plain **front** and **back** image of the dress (at least 800×800 px).
+2. **Garment images:** upload a plain **front** and **back** image of the dress (at least 800×800 px). The demo dresses also have **style pictures**: a drawing for every neckline, sleeve and length, so the customer's preview changes shape as they choose. Style pictures replace the garment images whenever they match the customer's choices, so if you upload your own garment images for one of these dresses, press **Remove style pictures**.
 3. **Placement areas:** these are where customers may add text, images and decorations.
    - Select an area, then drag on the garment to draw it, or drag inside it to move it.
    - Enter its real printable **Width (cm)** and **Height (cm)**.

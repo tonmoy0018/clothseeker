@@ -74,4 +74,5 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
   allowedFonts: ["inter", "playfair-display", "dancing-script", "montserrat"],
   allowedDecorations: [...DECORATION_IDS],
   addOns: DEFAULT_ADD_ONS,
+  styleVariants: [],
 };

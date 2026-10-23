@@ -4,6 +4,8 @@ import type { PatternId } from "@/lib/catalog/patterns";
 import type { DesignSpec } from "@/types/design-spec";
 import type { TemplateConfig } from "@/types/template";
 
+import { garmentPicture } from "./garment-variant";
+
 // DesignSpec + template → an explicit, ordered, rounded render plan.
 // This is the ONLY input to the renderers: same plan ⇒ same pixels. Keeping it pure makes
 // determinism and "what will be printed" testable without rendering anything.
@@ -84,27 +86,31 @@ export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): 
     layers: spec.layers.filter((l) => l.areaId === area.id).map(toOp),
   }));
 
-  const sidePlan = (side: Side): SidePlan => ({
-    side,
-    garmentKey: template.garmentImages[side] ?? null,
-    // Template region order is the paint order, independent of how the spec's object was built.
-    fills: template.regions.flatMap((region) => {
-      const part = spec.parts[region.id];
-      const maskKey = region.masks[side];
-      if (!part || !maskKey || !region.recolorable) {
-        return [];
-      }
-      return [
-        {
-          regionId: region.id,
-          maskKey,
-          color: part.color.toLowerCase(),
-          pattern: part.pattern ? { id: part.pattern.id, color: part.pattern.color.toLowerCase() } : null,
-        },
-      ];
-    }),
-    areas: areaPlans.filter((a) => a.side === side),
-  });
+  const sidePlan = (side: Side): SidePlan => {
+    // The picture for the chosen neckline/sleeve/length, if the template has one.
+    const picture = garmentPicture(template, side, spec.styleOptions);
+    return {
+      side,
+      garmentKey: picture.garmentKey,
+      // Template region order is the paint order, independent of how the spec's object was built.
+      fills: template.regions.flatMap((region) => {
+        const part = spec.parts[region.id];
+        const maskKey = picture.maskFor(region.id);
+        if (!part || !maskKey || !region.recolorable) {
+          return [];
+        }
+        return [
+          {
+            regionId: region.id,
+            maskKey,
+            color: part.color.toLowerCase(),
+            pattern: part.pattern ? { id: part.pattern.id, color: part.pattern.color.toLowerCase() } : null,
+          },
+        ];
+      }),
+      areas: areaPlans.filter((a) => a.side === side),
+    };
+  };
 
   return {
     front: sidePlan("front"),

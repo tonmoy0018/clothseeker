@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { DECORATIONS, decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
 import { FONTS, fontUrl, type FontId } from "@/lib/catalog/fonts";
 import { PATTERNS, type PatternId } from "@/lib/catalog/patterns";
+import { garmentPicture } from "@/lib/design/garment-variant";
 import { priceDesign, type DesignPrice } from "@/lib/design/pricing";
 import { validateDesignAgainstTemplate, type DesignIssue } from "@/lib/design/validate";
 import type { Size } from "@/lib/generated/prisma/enums";
@@ -150,21 +151,28 @@ export function DesignEditor(props: DesignEditorProps) {
   }, [dirty]);
 
   // ── recolored garment per side ─────────────────────────────────────────────
+  // The garment picture for the chosen neckline/sleeve/length (same choice as the server renderer).
+  const { neckline, sleeveLength, dressLength } = spec.styleOptions;
+  const pictures = useMemo(() => {
+    const choice = { neckline, sleeveLength, dressLength };
+    return { front: garmentPicture(config, "front", choice), back: garmentPicture(config, "back", choice) };
+  }, [config, neckline, sleeveLength, dressLength]);
+
   const fillsBySide = useMemo(() => {
     const fills = (s: "front" | "back"): ClientFill[] =>
       config.regions.flatMap((region) => {
         const part = spec.parts[region.id];
-        const maskKey = region.masks[s];
+        const maskKey = pictures[s].maskFor(region.id);
         const maskUrl = maskKey ? props.imageUrls[maskKey] : undefined;
         return part && maskUrl && region.recolorable ? [{ maskUrl, color: part.color, pattern: part.pattern ?? null }] : [];
       });
     return { front: fills("front"), back: fills("back") };
-  }, [config.regions, spec.parts, props.imageUrls]);
+  }, [config.regions, pictures, spec.parts, props.imageUrls]);
 
   useEffect(() => {
     let cancelled = false;
     for (const s of ["front", "back"] as const) {
-      const key = config.garmentImages[s];
+      const key = pictures[s].garmentKey;
       const url = key ? props.imageUrls[key] : undefined;
       if (!url) {
         continue;
@@ -180,7 +188,7 @@ export function DesignEditor(props: DesignEditorProps) {
     return () => {
       cancelled = true;
     };
-  }, [fillsBySide, config.garmentImages, props.imageUrls]);
+  }, [fillsBySide, pictures, props.imageUrls]);
 
   // ── editing helpers ────────────────────────────────────────────────────────
   function commit(next: DesignSpec | ((current: DesignSpec) => DesignSpec)) {

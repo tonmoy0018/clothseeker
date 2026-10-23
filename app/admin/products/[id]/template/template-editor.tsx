@@ -194,6 +194,17 @@ export function TemplateEditor(props: TemplateEditorProps) {
             );
           })}
         </div>
+        {config.styleVariants.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm" data-testid="style-pictures">
+            <p className="max-w-prose text-muted-foreground">
+              This dress also has {config.styleVariants.length} style pictures, so the customer&apos;s preview changes shape with the neckline, sleeves and
+              length. They replace the images above whenever they match the customer&apos;s choices. If you upload your own garment images, remove them.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => update((c) => ({ ...c, styleVariants: [] }))}>
+              Remove style pictures
+            </Button>
+          </div>
+        )}
       </Section>
 
       <Section title="Placement areas" description="Where customers may put text, images and decorations. Draw the area on the garment and enter its real printable size.">

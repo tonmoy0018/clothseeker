@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { garmentPicture } from "@/lib/design/garment-variant";
 import { normalizeForRender } from "@/lib/design/normalize";
 import { checkDesign, DesignError } from "@/lib/design/service";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
@@ -48,7 +49,8 @@ async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPa
       throw new AiJobRejected("INTERNAL");
     }
     const config = checked.context.template.config;
-    const maskKeys = config.regions.flatMap((r) => (r.masks.front ? [r.masks.front] : []));
+    const picture = garmentPicture(config, "front", checked.spec.styleOptions);
+    const maskKeys = config.regions.flatMap((r) => picture.maskFor(r.id) ?? []);
     const flat = await renderFlatGarment(normalizeForRender(checked.spec, config), storageAssets(storage), maskKeys, GARMENT_RENDER_WIDTH);
     return prepareGarment(flat);
   }

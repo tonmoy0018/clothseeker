@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -15,9 +16,9 @@ import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/catalog/default-template";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { buildObjectKey } from "@/lib/storage/object-key";
 import { SupabaseStorageAdapter } from "@/lib/storage/supabase-core";
-import { parseTemplateConfig, templateConfigSchema, type TemplateConfig } from "@/types/template";
+import { parseTemplateConfig, templateConfigSchema, templateImageKeys, type TemplateConfig } from "@/types/template";
 
-import { renderGarment, renderMask, SEED_REGIONS } from "./seed-garments";
+import { renderGarment, renderMask, SEED_REGIONS, SEED_SKIRT_AREA, SEED_STYLE_IDS, seedStyles, type SeedRegion } from "./seed-garments";
 import {
   SEED_CATEGORIES,
   SEED_PRODUCTS,
@@ -92,28 +93,70 @@ async function uploadSeedImage(supabase: SupabaseClient, productId: string, data
 }
 
 /**
- * Seeded templates: default rules with Straps/Bodice/Skirt regions and generated masks.
- * Keeps already-uploaded garment images and masks so re-seeding doesn't duplicate files.
+ * Seeded templates: default rules with Sleeves & straps / Bodice / Skirt regions, plus a drawn garment
+ * picture (and masks) for every neckline × sleeve × length, so the preview changes with the style.
+ * A template that already has style pictures keeps all its images, so re-seeding doesn't duplicate
+ * files. One without them (seeded before the pictures existed) gets the full set, and its old
+ * images are returned in `replaced` for deletion.
  */
-async function templateConfigFor(db: PrismaClient, supabase: SupabaseClient, productId: string): Promise<TemplateConfig> {
+async function templateConfigFor(
+  db: PrismaClient,
+  supabase: SupabaseClient,
+  productId: string,
+): Promise<{ config: TemplateConfig; drawn: boolean; replaced: string[] }> {
   const existing = await db.customizationTemplate.findUnique({ where: { productId }, select: { config: true } });
   const current = existing ? parseTemplateConfig(existing.config) : null;
+  const placementAreas = DEFAULT_TEMPLATE_CONFIG.placementAreas.map((area) => (area.id === "front-skirt" ? { ...area, ...SEED_SKIRT_AREA } : area));
+  const base = { ...DEFAULT_TEMPLATE_CONFIG, placementAreas };
 
-  const garmentImages: TemplateConfig["garmentImages"] = { ...current?.garmentImages };
-  for (const side of ["front", "back"] as const) {
-    garmentImages[side] ??= await uploadSeedImage(supabase, productId, await renderGarment(side), "webp");
+  if (current && current.styleVariants.length > 0) {
+    const config = templateConfigSchema.parse({ ...base, garmentImages: current.garmentImages, regions: current.regions, styleVariants: current.styleVariants });
+    return { config, drawn: false, replaced: [] };
   }
 
-  const regions: TemplateConfig["regions"] = [];
-  for (const { id, label } of SEED_REGIONS) {
-    const masks = { ...current?.regions.find((r) => r.id === id)?.masks };
-    for (const side of ["front", "back"] as const) {
-      masks[side] ??= await uploadSeedImage(supabase, productId, await renderMask(side, id), "png");
+  // Identical pictures (e.g. the skirt mask for every neckline) are uploaded once.
+  const uploaded = new Map<string, string>();
+  async function upload(data: Buffer, extension: "webp" | "png"): Promise<string> {
+    const hash = createHash("sha256").update(data).digest("hex");
+    let key = uploaded.get(hash);
+    if (!key) {
+      key = await uploadSeedImage(supabase, productId, data, extension);
+      uploaded.set(hash, key);
     }
-    regions.push({ id, label, recolorable: true, masks });
+    return key;
   }
 
-  return templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, garmentImages, regions });
+  const styleVariants: TemplateConfig["styleVariants"] = [];
+  for (const style of seedStyles()) {
+    for (const side of ["front", "back"] as const) {
+      // The back looks the same for every neckline: one picture per sleeve × length.
+      if (side === "back" && style.neckline !== SEED_STYLE_IDS.neckline[0]) {
+        continue;
+      }
+      const masks: Record<string, string> = {};
+      for (const { id } of SEED_REGIONS) {
+        masks[id] = await upload(await renderMask(side, style, id), "png");
+      }
+      const match = side === "front" ? style : { sleeveLength: style.sleeveLength, dressLength: style.dressLength };
+      styleVariants.push({ side, match, image: await upload(await renderGarment(side, style), "webp"), masks });
+    }
+  }
+
+  // The template's own images are the first options' picture (also shown in the admin editor).
+  const first = { neckline: SEED_STYLE_IDS.neckline[0], sleeveLength: SEED_STYLE_IDS.sleeveLength[0], dressLength: SEED_STYLE_IDS.dressLength[0] };
+  const garmentImages: TemplateConfig["garmentImages"] = {};
+  const regions: TemplateConfig["regions"] = SEED_REGIONS.map(({ id, label }) => ({ id, label, recolorable: true, masks: {} }));
+  for (const side of ["front", "back"] as const) {
+    garmentImages[side] = await upload(await renderGarment(side, first), "webp");
+    for (const region of regions) {
+      region.masks[side] = await upload(await renderMask(side, first, region.id as SeedRegion), "png");
+    }
+  }
+
+  const config = templateConfigSchema.parse({ ...base, garmentImages, regions, styleVariants });
+  const kept = new Set(templateImageKeys(config));
+  const replaced = current ? templateImageKeys(current).filter((key) => !kept.has(key)) : [];
+  return { config, drawn: true, replaced };
 }
 
 async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<void> {
@@ -128,6 +171,7 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
 
   let variantCount = 0;
   let photoCount = 0;
+  let templatesDrawn = 0;
   const storage = new SupabaseStorageAdapter(() => supabase);
   for (const [productIndex, p] of SEED_PRODUCTS.entries()) {
     const category = await db.category.findUniqueOrThrow({ where: { slug: p.category }, select: { id: true } });
@@ -170,12 +214,19 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
     }
 
     if (p.customizable) {
-      const config = await templateConfigFor(db, supabase, product.id);
+      const { config, drawn, replaced } = await templateConfigFor(db, supabase, product.id);
       await db.customizationTemplate.upsert({
         where: { productId: product.id },
         create: { productId: product.id, version: 1, config, aiEnabled: true, isActive: true },
-        update: { config, aiEnabled: true, isActive: true },
+        // New pictures are a new template version, so an open admin editor can't overwrite them.
+        update: { config, aiEnabled: true, isActive: true, ...(drawn ? { version: { increment: 1 } } : {}) },
       });
+      if (replaced.length > 0) {
+        await storage.remove(BUCKETS.productMedia, replaced);
+      }
+      if (drawn) {
+        templatesDrawn += 1;
+      }
     }
   }
   log("seed.catalog", {
@@ -184,6 +235,7 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
     variants: variantCount,
     templates: SEED_PRODUCTS.filter((p) => p.customizable).length,
     photosAdded: photoCount,
+    templatesDrawn,
   });
 }
 

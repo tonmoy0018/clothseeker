@@ -54,8 +54,11 @@ describe("renderPreview", () => {
     const strap = await pixel(preview, 510, 150);
     expect(Math.abs(strap.r - strap.g)).toBeLessThan(6);
     expect(strap.r).toBeGreaterThan(200);
-    // Outside the dress: white background.
-    expect(await pixel(preview, 20, 20)).toMatchObject({ r: 255, g: 255, b: 255 });
+    // Outside the dress: the plain background.
+    const background = await pixel(preview, 20, 20);
+    for (const [channel, value] of [[background.r, 0xf3], [background.g, 0xf2], [background.b, 0xef]] as const) {
+      expect(Math.abs(channel - value)).toBeLessThanOrEqual(2); // WebP rounding
+    }
   });
 
   it("renders the back with its own masks", async () => {
