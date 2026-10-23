@@ -27,11 +27,12 @@ describe("template config", () => {
     expect(templateConfigSchema.safeParse(DEFAULT_TEMPLATE_CONFIG).success).toBe(true);
   });
 
-  it("upgrades v1 configs all the way to v5 with default rects, fonts, add-ons and empty masks", () => {
+  it("upgrades v1 configs all the way to v6 with default rects, fonts, add-ons and empty masks", () => {
     const upgraded = parseTemplateConfig(v1);
-    expect(upgraded.schemaVersion).toBe(5);
+    expect(upgraded.schemaVersion).toBe(6);
     expect(upgraded.styleVariants).toEqual([]);
     expect(upgraded.recolor).toBe("multiply");
+    expect(upgraded.garmentType).toBe("dress");
     expect(upgraded.regions[0]?.masks).toEqual({});
     expect(upgraded.allowedDecorations).toEqual([...DECORATION_IDS]);
     expect(upgraded.garmentImages).toEqual({});
@@ -44,31 +45,50 @@ describe("template config", () => {
   });
 
   it("rejects unknown versions and configs without a version", () => {
-    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 6 })).toThrow(TemplateConfigError);
+    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 7 })).toThrow(TemplateConfigError);
     expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 0 })).toThrow(TemplateConfigError);
     expect(() => parseTemplateConfig({ regions: [] })).toThrow(TemplateConfigError);
   });
 
   it("upgrades v2 configs by adding masks and decorations", () => {
-    const { allowedDecorations: _d, styleVariants: _s, recolor: _r, ...v2 } = DEFAULT_TEMPLATE_CONFIG;
+    const { allowedDecorations: _d, styleVariants: _s, recolor: _r, garmentType: _g, ...v2 } = DEFAULT_TEMPLATE_CONFIG;
     const raw = { ...v2, schemaVersion: 2, regions: v2.regions.map(({ masks: _m, ...r }) => r) };
     const upgraded = parseTemplateConfig(raw);
-    expect(upgraded.schemaVersion).toBe(5);
+    expect(upgraded.schemaVersion).toBe(6);
     expect(upgraded.regions.every((r) => JSON.stringify(r.masks) === "{}")).toBe(true);
   });
 
   it("upgrades v3 configs by adding an empty list of style pictures", () => {
-    const { styleVariants: _s, recolor: _r, ...v3 } = DEFAULT_TEMPLATE_CONFIG;
+    const { styleVariants: _s, recolor: _r, garmentType: _g, ...v3 } = DEFAULT_TEMPLATE_CONFIG;
     const upgraded = parseTemplateConfig({ ...v3, schemaVersion: 3 });
-    expect(upgraded).toEqual({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 5, styleVariants: [], recolor: "multiply" });
+    expect(upgraded).toEqual({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 6, styleVariants: [], recolor: "multiply" });
   });
 
   it("upgrades v4 configs to multiply recolouring, and accepts photo templates with a starting style", () => {
-    const { recolor: _r, ...v4 } = DEFAULT_TEMPLATE_CONFIG;
+    const { recolor: _r, garmentType: _g, ...v4 } = DEFAULT_TEMPLATE_CONFIG;
     expect(parseTemplateConfig({ ...v4, schemaVersion: 4 }).recolor).toBe("multiply");
     const photo = { ...DEFAULT_TEMPLATE_CONFIG, recolor: "shade", defaultStyle: { neckline: "v-neck", sleeveLength: "short", dressLength: "midi" } };
     expect(parseTemplateConfig(photo)).toEqual(photo);
     expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, recolor: "paint" })).toThrow();
+  });
+
+  it("upgrades v5 configs to dresses, and gives each garment type exactly its own style groups", () => {
+    const { garmentType: _g, ...v5 } = DEFAULT_TEMPLATE_CONFIG;
+    expect(parseTemplateConfig({ ...v5, schemaVersion: 5 }).garmentType).toBe("dress");
+
+    const option = (id: string) => ({ id, label: id, addOnPriceMinor: 0 });
+    const shirt = {
+      ...DEFAULT_TEMPLATE_CONFIG,
+      garmentType: "shirt",
+      styleOptions: { collar: [option("classic"), option("mandarin")], sleeveLength: [option("short"), option("long")], fit: [option("slim"), option("regular")] },
+    };
+    expect(parseTemplateConfig(shirt).garmentType).toBe("shirt");
+    // A shirt has no neckline or dress length, and needs a fit.
+    const { fit: _fit, ...noFit } = shirt.styleOptions;
+    const wrong = templateConfigSchema.safeParse({ ...shirt, styleOptions: { ...noFit, neckline: [option("round")] } });
+    expect(wrong.success).toBe(false);
+    const messages = wrong.success ? [] : wrong.error.issues.map((i) => i.message);
+    expect(messages).toEqual(expect.arrayContaining(["Add the fit options", "A shirt has no neckline options"]));
   });
 
   it("lets a region's mask live only on style pictures", () => {

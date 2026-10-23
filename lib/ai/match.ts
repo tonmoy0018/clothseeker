@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import type { DesignContext } from "@/lib/design/validate";
 import type { DesignSpec } from "@/types/design-spec";
-import { STYLE_GROUPS, type StyleGroup, type TemplateConfig } from "@/types/template";
+import { STYLE_GROUP_IDS, type StyleGroup } from "@/lib/catalog/garment-types";
+import { styleOptionsFor, templateStyleGroups, type TemplateConfig } from "@/types/template";
 
 import { variationToSpec, type PlanVariation } from "./plan";
 import type { DressCandidate } from "./types";
@@ -24,7 +25,7 @@ export const dressMatchSchema = z.object({
   primaryColor: hex.nullish(),
   secondaryColor: hex.nullish(),
   pattern: word.nullish(),
-  styleOptions: z.object({ neckline: word.nullish(), sleeveLength: word.nullish(), dressLength: word.nullish() }).partial().nullish(),
+  styleOptions: z.partialRecord(z.enum(STYLE_GROUP_IDS), word.nullish()).nullish(),
 });
 
 export type DressMatch = z.infer<typeof dressMatchSchema> & { alternatives: string[] };
@@ -57,7 +58,7 @@ function mainRegion(template: TemplateConfig): string | null {
 function styleOption(template: TemplateConfig, group: StyleGroup, wanted: string | null | undefined): string | null {
   if (!wanted) return null;
   const w = wanted.toLowerCase().replace(/[\s_]+/g, "-");
-  return template.styleOptions[group].find((o) => o.id === w || o.label.toLowerCase().replace(/\s+/g, "-") === w)?.id ?? null;
+  return styleOptionsFor(template, group).find((o) => o.id === w || o.label.toLowerCase().replace(/\s+/g, "-") === w)?.id ?? null;
 }
 
 /** A fresh design for the matched dress (first available size, first options), before fitting. */
@@ -67,14 +68,14 @@ export function startingSpec(
   startedFrom: "photo" | "description",
   referencePhotoKey: string | null,
 ): DesignSpec {
-  const first = (group: StyleGroup) => template.config.styleOptions[group][0]?.id ?? "";
+  const groups = templateStyleGroups(template.config);
   return {
     version: 1,
     productId: template.productId,
     templateId: template.templateId,
     templateVersion: template.version,
     size,
-    styleOptions: { neckline: first("neckline"), sleeveLength: first("sleeveLength"), dressLength: first("dressLength") },
+    styleOptions: Object.fromEntries(groups.map((g) => [g, styleOptionsFor(template.config, g)[0]?.id ?? ""])),
     parts: {},
     layers: [],
     startedFrom,
@@ -97,7 +98,7 @@ export function matchToSpec(base: DesignSpec, match: DressMatch, ctx: DesignCont
       });
     }
   }
-  const styleOptions = Object.fromEntries(STYLE_GROUPS.map((g) => [g, styleOption(template, g, match.styleOptions?.[g])]));
+  const styleOptions = Object.fromEntries(templateStyleGroups(template).map((g) => [g, styleOption(template, g, match.styleOptions?.[g])]));
   const variation: PlanVariation = { title: "Your match", summary: "", parts, styleOptions, text: null, motif: null };
   // variationToSpec only falls back to fewer AI layers; with no layers it returns null only if the
   // base itself is invalid, which startingSpec never is.

@@ -121,11 +121,13 @@ async function main() {
     const midiRatio = realRatio / LENGTH_FACTOR[photoStyle.dressLength];
 
     const jobs: { side: "front" | "back"; style: Style }[] = [];
-    for (const neckline of options.neckline.map((o) => o.id)) {
-      for (const sleeveLength of options.sleeveLength.map((o) => o.id)) {
-        for (const dressLength of options.dressLength.map((o) => o.id) as Length[]) {
+    const ids = (group: "neckline" | "sleeveLength" | "dressLength") => (options[group] ?? []).map((o) => o.id);
+    const lengths = ids("dressLength").filter((id): id is Length => id in LENGTH_FACTOR);
+    for (const neckline of ids("neckline")) {
+      for (const sleeveLength of ids("sleeveLength")) {
+        for (const dressLength of lengths) {
           jobs.push({ side: "front", style: { neckline, sleeveLength, dressLength } });
-          if (neckline === options.neckline[0]?.id) jobs.push({ side: "back", style: { neckline, sleeveLength, dressLength } });
+          if (neckline === ids("neckline")[0]) jobs.push({ side: "back", style: { neckline, sleeveLength, dressLength } });
         }
       }
     }

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { STYLE_GROUP_IDS } from "@/lib/catalog/garment-types";
+
 import { assertAdmin, type Actor } from "@/lib/auth/policy";
 import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/catalog/default-template";
 import type { PrismaClient } from "@/lib/db/client";
@@ -7,7 +9,6 @@ import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
 import {
   parseTemplateConfig,
-  STYLE_GROUPS,
   templateConfigSchema,
   templateImageKeys,
   type TemplateConfig,
@@ -215,7 +216,7 @@ export async function setTemplateState(db: PrismaClient, actor: Actor, rawInput:
 
 const slotSchema = z.union([
   z.enum(["front", "back"]),
-  z.string().regex(new RegExp(`^style:(${STYLE_GROUPS.join("|")}):[a-z0-9][a-z0-9-]{0,39}$`)),
+  z.string().regex(new RegExp(`^style:(${STYLE_GROUP_IDS.join("|")}):[a-z0-9][a-z0-9-]{0,39}$`)),
   z.string().regex(/^mask:(front|back):[a-z0-9][a-z0-9-]{0,39}$/),
 ]);
 

@@ -3,7 +3,8 @@ import { z } from "zod";
 import { PATTERN_IDS, type PatternId } from "@/lib/catalog/patterns";
 import { validateDesignAgainstTemplate, type DesignContext } from "@/lib/design/validate";
 import { designSpecSchema, MAX_LAYERS_PER_AREA, MAX_LAYERS_TOTAL, type DesignLayer, type DesignSpec } from "@/types/design-spec";
-import { STYLE_GROUPS, type PlacementArea, type TemplateConfig } from "@/types/template";
+import { STYLE_GROUP_IDS } from "@/lib/catalog/garment-types";
+import { styleOptionsFor, templateStyleGroups, type PlacementArea, type TemplateConfig } from "@/types/template";
 
 import { findBrandTerm } from "./brands";
 import type { PlanConstraints, PlanSummary } from "./types";
@@ -33,9 +34,7 @@ export const planVariationSchema = z.object({
     .max(12)
     .optional()
     .default([]),
-  styleOptions: z
-    .object({ neckline: shortId.nullish(), sleeveLength: shortId.nullish(), dressLength: shortId.nullish() })
-    .nullish(),
+  styleOptions: z.partialRecord(z.enum(STYLE_GROUP_IDS), shortId.nullish()).nullish(),
   text: z.object({ content: clip(60), fontId: shortId, color: hex }).nullish(),
   motif: z.object({ prompt: clip(200).pipe(z.string().min(3)), color: hex }).nullish(),
 });
@@ -49,15 +48,12 @@ export type PlanVariation = z.infer<typeof planVariationSchema>;
 export function planConstraints(template: TemplateConfig, dressName: string): PlanConstraints {
   return {
     dressName,
+    garmentType: template.garmentType,
     regions: template.regions.filter((r) => r.recolorable).map((r) => ({ id: r.id, label: r.label })),
     colors: template.allowedColors.map((c) => ({ name: c.name, hex: c.hex.toLowerCase() })),
     patterns: [...template.allowedPatterns],
     fonts: [...template.allowedFonts],
-    styleOptions: {
-      neckline: template.styleOptions.neckline.map((o) => ({ id: o.id, label: o.label })),
-      sleeveLength: template.styleOptions.sleeveLength.map((o) => ({ id: o.id, label: o.label })),
-      dressLength: template.styleOptions.dressLength.map((o) => ({ id: o.id, label: o.label })),
-    },
+    styleOptions: Object.fromEntries(templateStyleGroups(template).map((g) => [g, styleOptionsFor(template, g).map((o) => ({ id: o.id, label: o.label }))])),
     layersAllowed: template.placementAreas.length > 0,
   };
 }
@@ -143,9 +139,9 @@ export function variationToSpec(base: DesignSpec, variation: PlanVariation, ctx:
   }
 
   const styleOptions = { ...base.styleOptions };
-  for (const group of STYLE_GROUPS) {
+  for (const group of templateStyleGroups(template)) {
     const wanted = variation.styleOptions?.[group];
-    if (wanted && template.styleOptions[group].some((o) => o.id === wanted)) {
+    if (wanted && styleOptionsFor(template, group).some((o) => o.id === wanted)) {
       styleOptions[group] = wanted;
     }
   }

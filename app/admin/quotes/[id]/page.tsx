@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+
+import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
@@ -68,7 +70,10 @@ export default async function AdminQuotePage({ params }: PageProps<"/admin/quote
             <section className="flex flex-col gap-1 text-sm">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase">Design</h2>
               <p>
-                Neckline {spec.styleOptions.neckline} · sleeves {spec.styleOptions.sleeveLength} · length {spec.styleOptions.dressLength}
+                {STYLE_GROUP_IDS.flatMap((group) => {
+                  const option = spec.styleOptions[group];
+                  return option ? [`${STYLE_GROUP_LABEL[group]} ${option}`] : [];
+                }).join(" · ")}
               </p>
               <p>
                 {Object.entries(spec.parts)

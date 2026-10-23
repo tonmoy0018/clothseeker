@@ -10,7 +10,7 @@ Schema: [`types/design-spec.ts`](../../types/design-spec.ts) (Zod; TypeScript ty
 |---|---|
 | `productId`, `templateId`, `templateVersion` | The dress and the template version the design was made with |
 | `size` | One of the sizes the dress is sold in |
-| `styleOptions` | `{ neckline, sleeveLength, dressLength }`: option ids from the template |
+| `styleOptions` | The chosen option id for each style group of the template's garment type (e.g. `{ neckline, sleeveLength, dressLength }` for a dress, `{ collar, sleeveLength, fit }` for a shirt). Validated against the live template: every group present, no others |
 | `parts` | `{ [regionId]: { color, pattern?: { id, color } } }`: colors and patterns per recolorable region. Regions not listed keep the garment's own look |
 | `layers` | Ordered bottom-to-top; each sits inside one placement area (see below) |
 | `startedFrom` | `shop`, `photo` or `description` (photo/description starts arrive in Phase 7) |

@@ -1,6 +1,6 @@
 import type { FontId } from "@/lib/catalog/fonts";
 import type { PatternId } from "@/lib/catalog/patterns";
-import type { StyleGroup } from "@/types/template";
+import type { GarmentType, StyleGroup } from "@/lib/catalog/garment-types";
 
 // Provider interfaces. Only the worker calls providers; the app only queues jobs (lib/ai/jobs.ts).
 // Implementations: fake.ts (default, deterministic), gemini.ts (planner), cloudflare.ts (images),
@@ -11,11 +11,13 @@ export type ProviderImage = { data: Buffer; mimeType: "image/webp" | "image/png"
 /** What the template allows, in the vocabulary the planner must answer in. */
 export type PlanConstraints = {
   dressName: string;
+  /** What kind of garment it is: decides which style groups exist and how prompts describe it. */
+  garmentType: GarmentType;
   regions: { id: string; label: string }[];
   colors: { name: string; hex: string }[];
   patterns: PatternId[];
   fonts: FontId[];
-  styleOptions: Record<StyleGroup, { id: string; label: string }[]>;
+  styleOptions: Partial<Record<StyleGroup, { id: string; label: string }[]>>;
   /** False when the template has no placement area, so text and motifs can't be placed. */
   layersAllowed: boolean;
 };
@@ -23,7 +25,7 @@ export type PlanConstraints = {
 /** A design described in the planner's vocabulary (colors, patterns and style choices). */
 export type PlanSummary = {
   parts: { regionId: string; color: string; pattern: { id: string; color: string } | null }[];
-  styleOptions: Record<StyleGroup, string>;
+  styleOptions: Partial<Record<StyleGroup, string>>;
   text: string | null;
 };
 
@@ -50,9 +52,10 @@ export type DressCandidate = {
   name: string;
   category: string;
   description: string;
+  garmentType: GarmentType;
   colors: { name: string; hex: string }[];
   patterns: PatternId[];
-  styleOptions: Record<StyleGroup, { id: string; label: string }[]>;
+  styleOptions: Partial<Record<StyleGroup, { id: string; label: string }[]>>;
 };
 
 export type DressMatchRequest = {

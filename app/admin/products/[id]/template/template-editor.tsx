@@ -12,16 +12,11 @@ import { PATTERNS } from "@/lib/catalog/patterns";
 import { MINOR_PER_MAJOR } from "@/lib/money";
 import { uniqueSlug } from "@/lib/text/slug";
 import { cn } from "@/lib/utils";
-import { STYLE_GROUPS, type StyleGroup, type TemplateConfig } from "@/types/template";
+import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL, type StyleGroup } from "@/lib/catalog/garment-types";
+import { styleOptionsFor, templateStyleGroups, type StyleOption, type TemplateConfig } from "@/types/template";
 
 import { saveTemplateAction, setTemplateStateAction, uploadTemplateImageAction } from "./actions";
 import { PlacementCanvas, type Rect } from "./placement-canvas";
-
-const GROUP_LABEL: Record<StyleGroup, string> = {
-  neckline: "Neckline",
-  sleeveLength: "Sleeve length",
-  dressLength: "Dress length",
-};
 
 const ADD_ON_LABEL: Record<keyof TemplateConfig["addOns"], string> = {
   textMinor: "Text layer",
@@ -358,10 +353,10 @@ export function TemplateEditor(props: TemplateEditorProps) {
 
       <Section title="Style options" description="One choice per group. Add-on prices are added to the base price. A reference image helps customers see the option.">
         <div className="grid gap-6 lg:grid-cols-3">
-          {STYLE_GROUPS.map((group) => (
+          {templateStyleGroups(config).map((group) => (
             <div key={group} className="flex flex-col gap-3">
-              <h3 className="text-sm font-semibold">{GROUP_LABEL[group]}</h3>
-              {config.styleOptions[group].map((option, index) => {
+              <h3 className="text-sm font-semibold">{STYLE_GROUP_LABEL[group]}</h3>
+              {styleOptionsFor(config, group).map((option, index) => {
                 const refUrl = option.referenceImageKey ? imageUrls[option.referenceImageKey] : undefined;
                 return (
                   <div key={option.id} className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
@@ -385,14 +380,14 @@ export function TemplateEditor(props: TemplateEditorProps) {
                           }
                         }}
                       />
-                      <Button size="xs" variant="ghost" className="ml-auto" disabled={config.styleOptions[group].length <= 1} onClick={() => update((c) => ({ ...c, styleOptions: { ...c.styleOptions, [group]: c.styleOptions[group].filter((_, i) => i !== index) } }))}>
+                      <Button size="xs" variant="ghost" className="ml-auto" disabled={styleOptionsFor(config, group).length <= 1} onClick={() => update((c) => ({ ...c, styleOptions: { ...c.styleOptions, [group]: styleOptionsFor(c, group).filter((_, i) => i !== index) } }))}>
                         Remove
                       </Button>
                     </div>
                   </div>
                 );
               })}
-              {config.styleOptions[group].length < 8 && (
+              {styleOptionsFor(config, group).length < 8 && (
                 <AddByName
                   placeholder="New option"
                   buttonLabel="Add"
@@ -401,7 +396,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
                       ...c,
                       styleOptions: {
                         ...c.styleOptions,
-                        [group]: [...c.styleOptions[group], { id: uniqueSlug(name, c.styleOptions[group].map((o) => o.id)), label: name, addOnPriceMinor: 0 }],
+                        [group]: [...styleOptionsFor(c, group), { id: uniqueSlug(name, styleOptionsFor(c, group).map((o) => o.id)), label: name, addOnPriceMinor: 0 }],
                       },
                     }))
                   }
@@ -488,11 +483,11 @@ function withOption(
   config: TemplateConfig,
   group: StyleGroup,
   index: number,
-  patch: Partial<TemplateConfig["styleOptions"][StyleGroup][number]>,
+  patch: Partial<StyleOption>,
 ): TemplateConfig {
   return {
     ...config,
-    styleOptions: { ...config.styleOptions, [group]: config.styleOptions[group].map((o, i) => (i === index ? { ...o, ...patch } : o)) },
+    styleOptions: { ...config.styleOptions, [group]: styleOptionsFor(config, group).map((o, i) => (i === index ? { ...o, ...patch } : o)) },
   };
 }
 
@@ -507,8 +502,8 @@ function humanPath(path: string, config: TemplateConfig): string {
     return `Region “${config.regions[Number(index)]?.label ?? index}”`;
   }
   if (section === "styleOptions" && index !== undefined) {
-    const group = STYLE_GROUPS.find((g) => g === index);
-    return `${group ? GROUP_LABEL[group] : index} options`;
+    const group = STYLE_GROUP_IDS.find((g) => g === index);
+    return `${group ? STYLE_GROUP_LABEL[group] : index} options`;
   }
   return section ?? path;
 }

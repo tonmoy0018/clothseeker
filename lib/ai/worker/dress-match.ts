@@ -1,3 +1,4 @@
+import { styleOptionsFor, templateStyleGroups } from "@/types/template";
 import { loadDesignContext, type DesignContext } from "@/lib/design/service";
 import { BUCKETS } from "@/lib/storage/buckets";
 
@@ -37,11 +38,8 @@ async function loadCandidates(deps: AiWorkerDeps, aiOnly: boolean): Promise<{ ca
       description: product.description.slice(0, 200),
       colors: config.allowedColors.map((c) => ({ name: c.name, hex: c.hex.toLowerCase() })),
       patterns: [...config.allowedPatterns],
-      styleOptions: {
-        neckline: config.styleOptions.neckline.map((o) => ({ id: o.id, label: o.label })),
-        sleeveLength: config.styleOptions.sleeveLength.map((o) => ({ id: o.id, label: o.label })),
-        dressLength: config.styleOptions.dressLength.map((o) => ({ id: o.id, label: o.label })),
-      },
+      garmentType: config.garmentType,
+      styleOptions: Object.fromEntries(templateStyleGroups(config).map((g) => [g, styleOptionsFor(config, g).map((o) => ({ id: o.id, label: o.label }))])),
     });
   }
   return { candidates, contexts };

@@ -170,7 +170,7 @@ docs/developers/
 - **Auth:** the role always comes from the `users` table (`getCurrentUser`). Pages use `requireUser`/`requireAdmin` from `lib/auth/guards.ts`. Every admin page and action calls `requireAdmin()`; the layout alone is not a guard.
 - **Tests:** unit tests in `tests/unit`. Integration tests in `tests/integration`, which use the `clothseeker_test` database (the name must end in `_test`) and the `resetDatabaseBeforeEach()`, `createUser()` and `createProduct()` helpers. E2E journeys that need sign-in are tagged `@supabase` and are excluded in CI.
 - **Seed:** `prisma/seed.ts` is idempotent and refuses remote databases. The demo password is `SEED_DEMO_PASSWORD`. Sample dress photos (AI-generated, `prisma/seed-photos/<slug>.jpg`, made by `ai-scripts/generate-dress-photos.ts`) are uploaded only to dresses with no photo. Customizable seed dresses get photo templates (`recolor: "shade"`): their catalogue photo plus AI style pictures (`prisma/style-photos/`, `ai-scripts/generate-style-photos.ts`), cut out and lined up by `lib/garment-photo/`; see docs/developers/rendering.md.
-- The `CustomizationTemplate.config` schema is `types/template.ts`.
+- The `CustomizationTemplate.config` schema is `types/template.ts`. Each template has a `garmentType` (`lib/catalog/garment-types.ts`: dress, shirt, panjabi) whose style groups decide its style options; never hard-code neckline/sleeves/length, use `templateStyleGroups()` / `styleOptionsFor()` and `STYLE_GROUP_LABEL`.
 
 ## Implementation conventions (established in Phase 2)
 

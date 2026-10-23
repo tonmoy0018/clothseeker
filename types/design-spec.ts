@@ -2,11 +2,12 @@ import { z } from "zod";
 
 import { DECORATION_IDS } from "@/lib/catalog/decorations";
 import { FONT_IDS } from "@/lib/catalog/fonts";
+import { STYLE_GROUP_IDS } from "@/lib/catalog/garment-types";
 import { PATTERN_IDS } from "@/lib/catalog/patterns";
 import { Size } from "@/lib/generated/prisma/enums";
 import { isSafeObjectKey } from "@/lib/storage/object-key";
 
-// DesignSpec: everything needed to price, render and produce a customer's custom dress.
+// DesignSpec: everything needed to price, render and produce a customer's custom garment.
 //
 // Stored as JSON in Design.spec and snapshotted onto OrderItem.designSpec. Never trusted from the
 // client: the server re-parses it AND revalidates it against the live template
@@ -73,7 +74,8 @@ export const designSpecSchema = z.object({
   templateId: z.uuid(),
   templateVersion: z.number().int().positive(),
   size: z.enum(Size),
-  styleOptions: z.object({ neckline: id, sleeveLength: id, dressLength: id }),
+  /** The chosen option for each of the template's style groups (validated against the template). */
+  styleOptions: z.partialRecord(z.enum(STYLE_GROUP_IDS), id),
   /** Per recolorable region: a color, optionally with a pattern drawn in a second color. */
   parts: z.record(id, z.object({ color: hex, pattern: z.object({ id: z.enum(PATTERN_IDS), color: hex }).optional() })),
   layers: z.array(designLayerSchema).max(MAX_LAYERS_TOTAL, `A design can have at most ${MAX_LAYERS_TOTAL} layers`),

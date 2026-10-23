@@ -1,4 +1,4 @@
-import type { StyleGroup } from "@/types/template";
+import type { StyleGroup } from "@/lib/catalog/garment-types";
 
 // Line drawings for style options (neckline, sleeves, length), shown on the design screen's picture
 // tiles. Pure data: SVG path strings in a 48×48 box, drawn as strokes. Templates can name their options
@@ -60,6 +60,41 @@ const LENGTHS: Record<string, StyleIcon> = {
   maxi: { paths: [dress(45, 13)], dashed: KNEE },
 };
 
+// ─── collars: the top of a shirt or panjabi ──────────────────────────────────
+
+const yoke = "M 8 16 L 17 11 L 31 11 L 40 16 L 40 44 L 8 44 Z";
+const placket = "M 24 20 L 24 44";
+const COLLARS: Record<string, StyleIcon> = {
+  // Point collar: a band with two pointed wings.
+  classic: { paths: [yoke, "M 17 11 L 24 20 L 31 11", "M 17 11 L 15 22 L 24 20", "M 31 11 L 33 22 L 24 20", placket] },
+  "button-down": {
+    paths: [yoke, "M 17 11 L 24 20 L 31 11", "M 17 11 L 16 21 L 24 20", "M 31 11 L 32 21 L 24 20", placket, "M 15.8 19.2 A 0.8 0.8 0 1 0 17.4 19.2 A 0.8 0.8 0 1 0 15.8 19.2", "M 30.6 19.2 A 0.8 0.8 0 1 0 32.2 19.2 A 0.8 0.8 0 1 0 30.6 19.2"],
+  },
+  // A short standing band (mandarin / Chinese collar), also the classic panjabi collar.
+  mandarin: { paths: [yoke, "M 17 11 L 17 7 Q 24 5 31 7 L 31 11", "M 17 11 Q 24 14 31 11", placket] },
+  round: { paths: [yoke, "M 17 11 C 18 18 30 18 31 11", "M 24 16 L 24 30"] },
+  "v-placket": { paths: [yoke, "M 17 11 L 24 24 L 31 11", "M 24 24 L 24 34"] },
+};
+
+// ─── fit: a shirt's outline ──────────────────────────────────────────────────
+
+const shirtFit = (waist: number, hem: number): string =>
+  `M 15 8 L 33 8 L 38 12 L 38 ${24 - waist / 4} Q ${24 + waist} 28 ${24 + hem} 44 L ${24 - hem} 44 Q ${24 - waist} 28 10 ${24 - waist / 4} L 10 12 Z`;
+const FITS: Record<string, StyleIcon> = {
+  slim: { paths: [shirtFit(9, 10)] },
+  regular: { paths: [shirtFit(12, 13)] },
+  relaxed: { paths: [shirtFit(15, 16)] },
+};
+
+// ─── length of a panjabi or kurta, with a dashed knee line for scale ──────────
+
+const tunic = (hem: number): string => `M 17 4 L 31 4 L 36 8 L 36 ${hem} L 12 ${hem} L 12 8 Z`;
+const GARMENT_LENGTHS: Record<string, StyleIcon> = {
+  hip: { paths: [tunic(26), "M 24 6 L 24 14"], dashed: KNEE },
+  knee: { paths: [tunic(34), "M 24 6 L 24 14"], dashed: KNEE },
+  long: { paths: [tunic(42), "M 24 6 L 24 14"], dashed: KNEE },
+};
+
 // ─── matching option ids to drawings ──────────────────────────────────────────
 
 const KEYWORDS: Record<StyleGroup, readonly [RegExp, string][]> = {
@@ -88,15 +123,42 @@ const KEYWORDS: Record<StyleGroup, readonly [RegExp, string][]> = {
     [/midi|tea|calf/, "midi"],
     [/maxi|long|floor|ankle|gown/, "maxi"],
   ],
+  collar: [
+    [/button/, "button-down"],
+    [/mandarin|band|chinese|stand|nehru/, "mandarin"],
+    [/v-?placket|^v\b|v-?neck/, "v-placket"],
+    [/round|crew/, "round"],
+    [/classic|point|spread|cutaway|kent/, "classic"],
+  ],
+  fit: [
+    [/slim|tailored|fitted/, "slim"],
+    [/relaxed|loose|oversize|boxy/, "relaxed"],
+    [/regular|classic|straight/, "regular"],
+  ],
+  length: [
+    [/hip|short/, "hip"],
+    [/knee/, "knee"],
+    [/long|ankle|full|calf/, "long"],
+  ],
 };
 
-const DRAWINGS: Record<StyleGroup, Record<string, StyleIcon>> = { neckline: NECKLINES, sleeveLength: SLEEVES, dressLength: LENGTHS };
+const DRAWINGS: Record<StyleGroup, Record<string, StyleIcon>> = {
+  neckline: NECKLINES,
+  sleeveLength: SLEEVES,
+  dressLength: LENGTHS,
+  collar: COLLARS,
+  fit: FITS,
+  length: GARMENT_LENGTHS,
+};
 
 /** The general drawing for a group, used on its heading and for options without their own. */
 export const GROUP_ICON: Record<StyleGroup, StyleIcon> = {
   neckline: { paths: [bodice("C 19 19 29 19 30 8")] },
   sleeveLength: SLEEVES.short ?? { paths: [] },
   dressLength: { paths: [dress(39, 12)] },
+  collar: COLLARS.classic ?? { paths: [] },
+  fit: FITS.regular ?? { paths: [] },
+  length: GARMENT_LENGTHS.knee ?? { paths: [] },
 };
 
 export function styleIcon(group: StyleGroup, optionId: string): StyleIcon {

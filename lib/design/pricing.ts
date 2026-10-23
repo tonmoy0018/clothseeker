@@ -1,5 +1,6 @@
 import type { DesignSpec } from "@/types/design-spec";
-import { STYLE_GROUPS, type StyleGroup, type TemplateConfig } from "@/types/template";
+import { GARMENT_TYPES, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
+import { styleOptionsFor, templateStyleGroups, type TemplateConfig } from "@/types/template";
 
 // Price of a custom design from the template's rules. Pure: the browser uses it for the live
 // price, and the server recomputes it from trusted data at every save, add-to-cart and checkout.
@@ -7,12 +8,6 @@ import { STYLE_GROUPS, type StyleGroup, type TemplateConfig } from "@/types/temp
 
 export type PriceLine = { label: string; amountMinor: number };
 export type DesignPrice = { lines: PriceLine[]; totalMinor: number };
-
-const GROUP_LABEL: Record<StyleGroup, string> = {
-  neckline: "Neckline",
-  sleeveLength: "Sleeves",
-  dressLength: "Length",
-};
 
 /** Base price for a size: the cheapest active ready-made variant in that size. */
 export function basePriceForSize(
@@ -31,15 +26,15 @@ function countLine(label: string, count: number, unitMinor: number): PriceLine |
 }
 
 export function priceDesign(spec: DesignSpec, template: TemplateConfig, basePriceMinor: number): DesignPrice {
-  const lines: PriceLine[] = [{ label: `Dress, size ${spec.size}`, amountMinor: basePriceMinor }];
+  const lines: PriceLine[] = [{ label: `${GARMENT_TYPES[template.garmentType].label}, size ${spec.size}`, amountMinor: basePriceMinor }];
 
-  for (const group of STYLE_GROUPS) {
-    const option = template.styleOptions[group].find((o) => o.id === spec.styleOptions[group]);
+  for (const group of templateStyleGroups(template)) {
+    const option = styleOptionsFor(template, group).find((o) => o.id === spec.styleOptions[group]);
     if (!option) {
       throw new Error(`Unknown ${group} option`);
     }
     if (option.addOnPriceMinor > 0) {
-      lines.push({ label: `${GROUP_LABEL[group]}: ${option.label}`, amountMinor: option.addOnPriceMinor });
+      lines.push({ label: `${STYLE_GROUP_LABEL[group]}: ${option.label}`, amountMinor: option.addOnPriceMinor });
     }
   }
 

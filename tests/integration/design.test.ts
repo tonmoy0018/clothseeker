@@ -95,7 +95,7 @@ describe("saveDesign", () => {
       where: { id: template.id },
       data: {
         version: 8,
-        config: { ...TEMPLATE, styleOptions: { ...TEMPLATE.styleOptions, neckline: TEMPLATE.styleOptions.neckline.filter((o) => o.id !== "square") } },
+        config: { ...TEMPLATE, styleOptions: { ...TEMPLATE.styleOptions, neckline: (TEMPLATE.styleOptions.neckline ?? []).filter((o) => o.id !== "square") } },
       },
     });
     await expectDesignError(addDesignToCart(db, storage, customer, saved.designId), "INVALID");

@@ -1,5 +1,6 @@
 import sharp from "sharp";
 
+import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
 import { DECORATIONS } from "@/lib/catalog/decorations";
 import { FONTS } from "@/lib/catalog/fonts";
 import { PATTERNS } from "@/lib/catalog/patterns";
@@ -8,12 +9,10 @@ import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { isSafeObjectKey } from "@/lib/storage/object-key";
 import { designSpecSchema } from "@/types/design-spec";
-import { parseTemplateConfig, STYLE_GROUPS, type TemplateConfig } from "@/types/template";
+import { parseTemplateConfig, styleOptionsFor, templateStyleGroups, type TemplateConfig } from "@/types/template";
 
 import type { SpecSheetData } from "./pdf/spec-sheet";
 import type { AdminOrder } from "./queries";
-
-const GROUP_LABEL = { neckline: "Neckline", sleeveLength: "Sleeves", dressLength: "Length" } as const;
 
 /** Readable "Emerald (#1f6f50)" for a hex, using the template's colour names when available. */
 function colourName(hex: string, template: TemplateConfig | null): string {
@@ -85,9 +84,10 @@ export async function specSheetData(
         ? `${PATTERNS.find((p) => p.id === part.pattern?.id)?.label ?? part.pattern.id} in ${colourName(part.pattern.color, template)}`
         : null,
     })),
-    styleOptions: STYLE_GROUPS.map((group) => ({
-      group: GROUP_LABEL[group],
-      option: template?.styleOptions[group].find((o) => o.id === spec.data.styleOptions[group])?.label ?? spec.data.styleOptions[group],
+    // The template's groups when it's still readable, else whatever the design recorded.
+    styleOptions: (template ? templateStyleGroups(template) : STYLE_GROUP_IDS.filter((g) => spec.data.styleOptions[g] !== undefined)).map((group) => ({
+      group: STYLE_GROUP_LABEL[group],
+      option: (template ? styleOptionsFor(template, group) : []).find((o) => o.id === spec.data.styleOptions[group])?.label ?? spec.data.styleOptions[group] ?? "",
     })),
     layers: spec.data.layers.map((layer) => ({
       area: areaLabel(layer.areaId),

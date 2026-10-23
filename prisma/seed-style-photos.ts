@@ -48,9 +48,9 @@ function parseName(file: string, options: typeof DEFAULT_TEMPLATE_CONFIG.styleOp
   const side = name.startsWith("front-") ? "front" : "back";
   const rest = name.slice(side.length + 1);
   // Option ids may contain hyphens ("v-neck"), so match known ids from the end.
-  const dressLength = options.dressLength.map((o) => o.id).find((id) => rest.endsWith(`-${id}`)) ?? "";
+  const dressLength = (options.dressLength ?? []).map((o) => o.id).find((id) => rest.endsWith(`-${id}`)) ?? "";
   const beforeLength = rest.slice(0, rest.length - dressLength.length - 1);
-  const sleeveLength = options.sleeveLength.map((o) => o.id).find((id) => beforeLength === id || beforeLength.endsWith(`-${id}`)) ?? "";
+  const sleeveLength = (options.sleeveLength ?? []).map((o) => o.id).find((id) => beforeLength === id || beforeLength.endsWith(`-${id}`)) ?? "";
   const neckline = side === "front" ? beforeLength.slice(0, beforeLength.length - sleeveLength.length - 1) : undefined;
   return { side, neckline, sleeveLength, dressLength };
 }

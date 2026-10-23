@@ -46,6 +46,7 @@ export default defineConfig({
               WORKER_POLL_INTERVAL_MS: "500",
               PLANNER_PROVIDER: "fake",
               IMAGE_PROVIDER: "fake",
+              TRYON_PROVIDER: "fake",
               AI_FAKE_DELAY_MS: "800",
             },
           },

@@ -15,7 +15,7 @@ import type { Size } from "@/lib/generated/prisma/enums";
 import { formatBDT } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { designSpecSchema, type DesignLayer, type DesignSpec } from "@/types/design-spec";
-import type { PlacementArea, TemplateConfig } from "@/types/template";
+import { styleOptionsFor, templateStyleGroups, type PlacementArea, type TemplateConfig } from "@/types/template";
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
 import { TryOnPanel } from "../../try-on-panel";
@@ -86,11 +86,7 @@ function defaultSpec(p: DesignEditorProps): DesignSpec {
     templateVersion: p.templateVersion,
     size: p.availableSizes[0] ?? "M",
     // The template's starting style (e.g. what the dress's photo shows), else each group's first option.
-    styleOptions: p.config.defaultStyle ?? {
-      neckline: p.config.styleOptions.neckline[0]?.id ?? "",
-      sleeveLength: p.config.styleOptions.sleeveLength[0]?.id ?? "",
-      dressLength: p.config.styleOptions.dressLength[0]?.id ?? "",
-    },
+    styleOptions: p.config.defaultStyle ?? Object.fromEntries(templateStyleGroups(p.config).map((g) => [g, styleOptionsFor(p.config, g)[0]?.id ?? ""])),
     parts: {},
     layers: [],
     startedFrom: "shop",
@@ -161,12 +157,13 @@ export function DesignEditor(props: DesignEditorProps) {
   }, [dirty]);
 
   // ── recolored garment per side ─────────────────────────────────────────────
-  // The garment picture for the chosen neckline/sleeve/length (same choice as the server renderer).
-  const { neckline, sleeveLength, dressLength } = spec.styleOptions;
-  const pictures = useMemo(() => {
-    const choice = { neckline, sleeveLength, dressLength };
-    return { front: garmentPicture(config, "front", choice), back: garmentPicture(config, "back", choice) };
-  }, [config, neckline, sleeveLength, dressLength]);
+  // The garment picture for the chosen style (same choice as the server renderer). Edits other than
+  // style changes keep the same styleOptions object, so the pictures aren't recomposed for them.
+  const styleOptions = spec.styleOptions;
+  const pictures = useMemo(
+    () => ({ front: garmentPicture(config, "front", styleOptions), back: garmentPicture(config, "back", styleOptions) }),
+    [config, styleOptions],
+  );
 
   const fillsBySide = useMemo(() => {
     const fills = (s: "front" | "back"): ClientFill[] =>

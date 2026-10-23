@@ -1,6 +1,7 @@
+import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import type { Size } from "@/lib/generated/prisma/enums";
 import { MAX_LAYERS_PER_AREA, type DesignLayer, type DesignSpec } from "@/types/design-spec";
-import { STYLE_GROUPS, type PlacementArea, type TemplateConfig } from "@/types/template";
+import { styleOptionsFor, templateStyleGroups, type PlacementArea, type TemplateConfig } from "@/types/template";
 
 // Business rules a DesignSpec must satisfy against the CURRENT template. Pure, so the browser can
 // show the same messages, but only the server's result counts.
@@ -66,9 +67,10 @@ export function layerFitsArea(layer: Pick<DesignLayer, "x" | "y" | "w" | "h" | "
 export function validateDesignAgainstTemplate(spec: DesignSpec, template: TemplateConfig, ctx: DesignContext): DesignIssue[] {
   const issues: DesignIssue[] = [];
   const add = (path: string, message: string) => issues.push({ path, message });
+  const noun = GARMENT_TYPES[template.garmentType].noun;
 
   if (spec.productId !== ctx.productId) {
-    add("productId", "This design belongs to a different dress.");
+    add("productId", `This design belongs to a different ${noun}.`);
   }
   if (spec.templateId !== ctx.templateId) {
     add("templateId", "This design was made for a different template.");
@@ -77,12 +79,18 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
     add("referencePhotoKey", "That reference photo isn't yours.");
   }
   if (!ctx.availableSizes.includes(spec.size)) {
-    add("size", `Size ${spec.size} isn't available for this dress.`);
+    add("size", `Size ${spec.size} isn't available for this ${noun}.`);
   }
 
-  for (const group of STYLE_GROUPS) {
-    if (!template.styleOptions[group].some((o) => o.id === spec.styleOptions[group])) {
+  const groups = templateStyleGroups(template);
+  for (const group of groups) {
+    if (!styleOptionsFor(template, group).some((o) => o.id === spec.styleOptions[group])) {
       add(`styleOptions.${group}`, "That style option is no longer available.");
+    }
+  }
+  for (const group of Object.keys(spec.styleOptions)) {
+    if (!groups.some((g) => g === group)) {
+      add(`styleOptions.${group}`, `A ${noun} has no ${group} option.`);
     }
   }
 
@@ -91,18 +99,18 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
   for (const [regionId, part] of Object.entries(spec.parts)) {
     const path = `parts.${regionId}`;
     if (!recolorable.has(regionId)) {
-      add(path, "That part of the dress can't be recolored.");
+      add(path, `That part of the ${noun} can't be recolored.`);
       continue;
     }
     if (!allowedColors.has(part.color)) {
-      add(`${path}.color`, "That color isn't available for this dress.");
+      add(`${path}.color`, `That color isn't available for this ${noun}.`);
     }
     if (part.pattern) {
       if (!template.allowedPatterns.includes(part.pattern.id)) {
-        add(`${path}.pattern`, "That pattern isn't available for this dress.");
+        add(`${path}.pattern`, `That pattern isn't available for this ${noun}.`);
       }
       if (!allowedColors.has(part.pattern.color)) {
-        add(`${path}.pattern.color`, "That pattern color isn't available for this dress.");
+        add(`${path}.pattern.color`, `That pattern color isn't available for this ${noun}.`);
       }
     }
   }
@@ -119,7 +127,7 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
 
     const area = areas.get(layer.areaId);
     if (!area) {
-      add(`${path}.areaId`, "That placement area doesn't exist on this dress.");
+      add(`${path}.areaId`, `That placement area doesn't exist on this ${noun}.`);
       return;
     }
     const count = (perArea.get(area.id) ?? 0) + 1;
@@ -134,18 +142,18 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
     switch (layer.kind) {
       case "text":
         if (!template.allowedFonts.includes(layer.text.fontId)) {
-          add(`${path}.text.fontId`, "That font isn't available for this dress.");
+          add(`${path}.text.fontId`, `That font isn't available for this ${noun}.`);
         }
         if (!allowedColors.has(layer.text.color)) {
-          add(`${path}.text.color`, "That text color isn't available for this dress.");
+          add(`${path}.text.color`, `That text color isn't available for this ${noun}.`);
         }
         break;
       case "decoration":
         if (!template.allowedDecorations.includes(layer.decoration.id)) {
-          add(`${path}.decoration.id`, "That decoration isn't available for this dress.");
+          add(`${path}.decoration.id`, `That decoration isn't available for this ${noun}.`);
         }
         if (!allowedColors.has(layer.decoration.color)) {
-          add(`${path}.decoration.color`, "That decoration color isn't available for this dress.");
+          add(`${path}.decoration.color`, `That decoration color isn't available for this ${noun}.`);
         }
         break;
       case "image":

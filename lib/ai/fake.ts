@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 
 import { PATTERNS } from "@/lib/catalog/patterns";
-import { STYLE_GROUPS } from "@/types/template";
+import { GARMENT_TYPES, styleGroupsOf } from "@/lib/catalog/garment-types";
 
 import { knockOutWhite } from "./image-utils";
 import type {
@@ -179,9 +179,9 @@ export class FakePlanner implements PlannerProvider {
         };
       });
       const styleOptions = Object.fromEntries(
-        STYLE_GROUPS.map((group) => {
-          const options = constraints.styleOptions[group];
-          return [group, i === 0 ? start.styleOptions[group] : (options[at(i * 3 + 17) % options.length]?.id ?? start.styleOptions[group])];
+        styleGroupsOf(constraints.garmentType).map((group) => {
+          const options = constraints.styleOptions[group] ?? [];
+          return [group, i === 0 ? start.styleOptions[group] : (options[at(i * 3 + 17) % Math.max(options.length, 1)]?.id ?? start.styleOptions[group])];
         }),
       );
       const name = primary?.name ?? "Custom";
@@ -192,7 +192,7 @@ export class FakePlanner implements PlannerProvider {
       const textColor = [...palette].sort((a, b) => contrast(b.hex) - contrast(a.hex))[0]?.hex ?? "#1b1b1b";
       return {
         title: `${name} ${word} ${["classic", "bold", "soft", "statement"][i]}`,
-        summary: `${mainName} ${mainRegion?.label.toLowerCase() ?? "dress"} with a ${word} motif.`,
+        summary: `${mainName} ${mainRegion?.label.toLowerCase() ?? GARMENT_TYPES[constraints.garmentType].noun} with a ${word} motif.`,
         parts,
         styleOptions,
         text: quoted && constraints.layersAllowed ? { content: quoted, fontId: constraints.fonts[i % Math.max(constraints.fonts.length, 1)] ?? "inter", color: textColor } : null,

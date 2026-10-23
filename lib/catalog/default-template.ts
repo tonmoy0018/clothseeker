@@ -6,6 +6,7 @@ import { DEFAULT_ADD_ONS, TEMPLATE_CONFIG_VERSION, type TemplateConfig } from "@
 
 export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
   schemaVersion: TEMPLATE_CONFIG_VERSION,
+  garmentType: "dress",
   garmentImages: {},
   regions: [
     { id: "bodice", label: "Bodice", recolorable: true, masks: {} },
