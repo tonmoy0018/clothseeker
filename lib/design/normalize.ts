@@ -54,6 +54,8 @@ export type SidePlan = {
 };
 
 export type RenderPlan = {
+  /** How region colours go onto the garment picture (lib/design/shade.ts for "shade"). */
+  recolor: TemplateConfig["recolor"];
   front: SidePlan;
   back: SidePlan;
   /** Areas that have at least one layer, i.e. the print files to produce. */
@@ -113,6 +115,7 @@ export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): 
   };
 
   return {
+    recolor: template.recolor,
     front: sidePlan("front"),
     back: sidePlan("back"),
     printAreas: areaPlans.filter((a) => a.layers.length > 0),

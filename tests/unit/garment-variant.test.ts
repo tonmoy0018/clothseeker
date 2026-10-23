@@ -41,8 +41,20 @@ describe("style pictures", () => {
     expect(plan.front.garmentKey).toBe(k("e1"));
     // Regions take this picture's masks; one the picture doesn't have (straps) isn't painted.
     expect(Object.fromEntries(plan.front.fills.map((f) => [f.regionId, f.maskKey]))).toEqual({ bodice: k("e2"), skirt: k("e3") });
-    // A different style falls back to the template's own picture.
-    const other = normalizeForRender({ ...spec, styleOptions: { ...spec.styleOptions, neckline: "round" } }, withVariants([exact]));
-    expect(other.front.garmentKey).toBe(KEYS.front);
+    // The back has no style picture: the template's own back image.
+    expect(plan.back.garmentKey).toBe(KEYS.back);
+  });
+
+  it("uses the closest picture while a set is incomplete, preferring the right length, then sleeves", () => {
+    const shortMidi = { side: "front" as const, match: { neckline: "round", sleeveLength: "short", dressLength: "midi" }, image: k("f1"), masks: {} };
+    const longMaxi = { side: "front" as const, match: { neckline: "round", sleeveLength: "long", dressLength: "maxi" }, image: k("f2"), masks: {} };
+    const config = withVariants([shortMidi, longMaxi]);
+    const exact = garmentPicture(config, "front", { neckline: "round", sleeveLength: "short", dressLength: "midi" });
+    expect([exact.garmentKey, exact.exact]).toEqual([k("f1"), true]);
+    // V-neck, short, maxi: no exact picture; the maxi one is closer than the midi one.
+    const close = garmentPicture(config, "front", { neckline: "v-neck", sleeveLength: "short", dressLength: "maxi" });
+    expect([close.garmentKey, close.exact]).toEqual([k("f2"), false]);
+    // Templates without style pictures always show their own images, which count as exact.
+    expect(garmentPicture(TEMPLATE, "front", choice).exact).toBe(true);
   });
 });

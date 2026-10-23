@@ -44,6 +44,8 @@ The password comes from `SEED_DEMO_PASSWORD` in `.env.local`. The seed refuses t
 
 **Dress photos are AI-generated samples** (Cloudflare FLUX.1 schnell, ghost-mannequin style, no people). They live in `prisma/seed-photos/<slug>.jpg`, and the seed uploads one to each dress that has no photo yet, so photos the team uploads in `/admin` are never overwritten. Replace them with real product photos before showing the shop to customers. To regenerate them (needs the Cloudflare keys in `.env.local`): `pnpm tsx ai-scripts/generate-dress-photos.ts [--force]`.
 
+**The design screen shows these photos too.** Each customizable dress is designed on its own photo, recoloured part by part (sleeves, bodice, skirt) with the photo's light and shadow. Other necklines, sleeves and lengths use AI style pictures of the same dress from `prisma/style-photos/<slug>/`, made by `pnpm tsx ai-scripts/generate-style-photos.ts` (checks each picture's sleeves and length and redraws wrong ones; `--recheck` re-tests saved ones). Cloudflare's free tier allows about 150 pictures a day, so a full set (about 34 per dress) takes a few days: run the script again each day, then `pnpm db:seed`. Until a style's picture exists, the preview shows the closest one and says so. After changing how pictures are processed, rebuild them with `pnpm exec tsx prisma/seed.ts --redraw-templates`.
+
 Local Supabase uses ports **55420–55429** (API 55421, Postgres 55422, Studio http://127.0.0.1:55423, Mailpit 55424). They're offset from the Supabase defaults so this project can run alongside other local Supabase projects.
 
 ## Commands

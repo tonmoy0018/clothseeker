@@ -85,7 +85,8 @@ function defaultSpec(p: DesignEditorProps): DesignSpec {
     templateId: p.templateId,
     templateVersion: p.templateVersion,
     size: p.availableSizes[0] ?? "M",
-    styleOptions: {
+    // The template's starting style (e.g. what the dress's photo shows), else each group's first option.
+    styleOptions: p.config.defaultStyle ?? {
       neckline: p.config.styleOptions.neckline[0]?.id ?? "",
       sleeveLength: p.config.styleOptions.sleeveLength[0]?.id ?? "",
       dressLength: p.config.styleOptions.dressLength[0]?.id ?? "",
@@ -186,7 +187,7 @@ export function DesignEditor(props: DesignEditorProps) {
       if (!url) {
         continue;
       }
-      void composeGarment(url, fillsBySide[s], 900)
+      void composeGarment(url, fillsBySide[s], 900, config.recolor)
         .then((canvas) => {
           if (!cancelled) {
             setGarments((g) => ({ ...g, [s]: canvas }));
@@ -197,7 +198,7 @@ export function DesignEditor(props: DesignEditorProps) {
     return () => {
       cancelled = true;
     };
-  }, [fillsBySide, pictures, props.imageUrls]);
+  }, [fillsBySide, pictures, props.imageUrls, config.recolor]);
 
   // ── editing helpers ────────────────────────────────────────────────────────
   function commit(next: DesignSpec | ((current: DesignSpec) => DesignSpec)) {
@@ -443,11 +444,16 @@ export function DesignEditor(props: DesignEditorProps) {
             </RailButton>
           </div>
           <div className="absolute right-3 bottom-3 flex flex-col gap-2" role="group" aria-label="Garment side">
-            {(["front", "back"] as const).map((s) => (
+            {(["front", "back"] as const).filter((s) => pictures[s].garmentKey !== null).map((s) => (
               <SideThumb key={s} label={s === "front" ? "Front" : "Back"} garment={garments[s]} selected={side === s} onClick={() => showSide(s)} />
             ))}
           </div>
         </div>
+        {!pictures[side].exact && (
+          <p className="text-xs text-muted-foreground" data-testid="closest-picture">
+            We don&apos;t have a picture of this exact style yet, so the preview shows the closest one. Your dress is made in the style you chose.
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">Drag items to move them. Use the corner handles to resize or rotate. Items stay inside the dashed areas.</p>
 
         {showTryOn && (

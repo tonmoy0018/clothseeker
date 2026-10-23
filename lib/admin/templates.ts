@@ -95,7 +95,8 @@ export function activationProblems(config: TemplateConfig): string[] {
   if (!config.regions.some((r) => r.recolorable)) {
     problems.push("Make at least one region recolorable.");
   }
-  const unmasked = config.regions.filter((r) => r.recolorable && !r.masks.front && !r.masks.back);
+  // A region may appear only on some style pictures (e.g. sleeves, when the main photo is sleeveless).
+  const unmasked = config.regions.filter((r) => r.recolorable && !r.masks.front && !r.masks.back && !config.styleVariants.some((v) => v.masks[r.id]));
   if (unmasked.length > 0) {
     problems.push(`Upload a mask for: ${unmasked.map((r) => r.label).join(", ")}.`);
   }

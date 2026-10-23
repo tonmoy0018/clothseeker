@@ -54,7 +54,7 @@ Supabase's REST API is never used for data: every table has RLS enabled with no 
 | `lib/ai/` | `PlannerProvider`, `ImageProvider`, `TryOnProvider` interfaces and implementations | Phase 6–7 |
 | `lib/renderer/` | Render plan → preview PNG, flat garment, 300 DPI print files (sharp + opentype.js outlines); see [rendering.md](rendering.md) | Phase 3 |
 | `lib/design/` | DesignSpec validation, pricing, normalization (pure), and the customer design service (save, cart, uploads) | Phase 3 |
-| `types/` | Shared Zod schemas: `template.ts` (v4), `design-spec.ts` (v1); see [design-spec.md](design-spec.md) | Phase 1+ |
+| `types/` | Shared Zod schemas: `template.ts` (v5), `design-spec.ts` (v1); see [design-spec.md](design-spec.md) | Phase 1+ |
 | `worker/` | Job loop, structured logging | Phase 0 (idle loop), Phase 6 (jobs) |
 | `prisma/` | Schema, migrations (incl. RLS lockdown), idempotent seed | Phase 1 |
 | `supabase/` | Local stack config, buckets; RLS and storage policies later | Phase 0 |

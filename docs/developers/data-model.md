@@ -62,9 +62,10 @@ Quote states (`REQUESTED`, `QUOTED`, `DECLINED`, `ACCEPTED`, `EXPIRED`, `WITHDRA
 | 1 (Phase 1 seed) | regions, placement areas in cm, style options, colors |
 | 2 | adds `garmentImages` (front/back keys); a `rect` (0–1 fractions) on each placement area; `referenceImageKey` on style options; `allowedPatterns` / `allowedFonts` (ids from `lib/catalog/patterns.ts` / `fonts.ts`); `addOns` prices |
 | 3 | adds `masks` (front/back keys) on each region and `allowedDecorations`; a recolorable region needs a mask to go live |
-| 4 (current) | adds `styleVariants`: garment pictures for particular style choices (`side`, `match` on neckline / sleeve length / dress length, `image`, `masks` by region id). The most specific match wins; with none, `garmentImages` and the region masks are used ([`lib/design/garment-variant.ts`](../../lib/design/garment-variant.ts)) |
+| 4 | adds `styleVariants`: garment pictures for particular style choices (`side`, `match` on neckline / sleeve length / dress length, `image`, `masks` by region id). The most specific match wins; without one, the closest style picture (length counts most, then sleeves), then `garmentImages` and the region masks ([`lib/design/garment-variant.ts`](../../lib/design/garment-variant.ts)) |
+| 5 (current) | adds `recolor` (`multiply` for light drawings, `shade` for photos of any colour) and an optional `defaultStyle` that new designs start with |
 
-`parseTemplateConfig()` upgrades v1 → v2 → v3 → v4 when a row is read, so no data migration is needed. Saving always writes the current version. Image keys in a template must start with the product's own id.
+`parseTemplateConfig()` upgrades v1 → … → v5 when a row is read, so no data migration is needed. Saving always writes the current version. Image keys in a template must start with the product's own id.
 
 ## Audit log
 

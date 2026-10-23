@@ -3,6 +3,7 @@ import sharp, { type OverlayOptions, type Sharp } from "sharp";
 import { decorationSvg } from "@/lib/catalog/decorations";
 import { patternSvg } from "@/lib/catalog/patterns";
 import type { AreaPlan, LayerOp, RenderPlan, Side, SidePlan } from "@/lib/design/normalize";
+import { luminance, shadeChannel, shadeFactor, shadeRange } from "@/lib/design/shade";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
 
@@ -11,8 +12,9 @@ import { textToOutline } from "./text-outline";
 
 // Server-side renderer. Input is always a normalized RenderPlan (lib/design/normalize.ts).
 //
-// Region recolor: color (or pattern) image whose alpha = the region mask, composited onto the
-// garment with `multiply`, so the garment's own shading and folds show through the new color.
+// Region recolor: color (or pattern) image whose alpha = the region mask, composited onto the garment.
+// "multiply" (light drawings): the garment's own shading and folds show through the new color.
+// "shade" (photos of any colour): the new colour is lit by the photo's own light and shadow (lib/design/shade.ts).
 // Output PNGs are deterministic for the same plan + assets (no timestamps or random metadata).
 
 export const PREVIEW_WIDTH = 1200;
@@ -178,24 +180,35 @@ async function rawRgb(image: Sharp): Promise<Buffer> {
   return image.flatten({ background: "#ffffff" }).removeAlpha().raw().toBuffer();
 }
 
-async function regionOverlays(plan: SidePlan, garment: Garment, assets: Assets): Promise<OverlayOptions[]> {
+async function regionOverlays(plan: SidePlan, garment: Garment, assets: Assets, recolor: RenderPlan["recolor"]): Promise<OverlayOptions[]> {
   const { width, height } = garment;
   const overlays: OverlayOptions[] = [];
+  const garmentRgb = recolor === "shade" && plan.fills.length > 0 ? await rawRgb(sharp(garment.data)) : null;
   for (const fill of plan.fills) {
     const mask = await maskRaw(fill.maskKey, width, height, assets);
-    const paint = fill.pattern
+    const paintImage = fill.pattern
       ? sharp(Buffer.from(patternSvg(fill.pattern.id, fill.pattern.color, fill.color, width, height, width / 16))).resize(width, height, { fit: "fill" })
       : sharp({ create: { width, height, channels: 3, background: fill.color } });
-    const colored = await rgbaFrom(await rawRgb(paint), mask, width, height);
-    overlays.push({ input: colored, blend: "multiply" });
+    const paint = await rawRgb(paintImage);
+    if (garmentRgb) {
+      const range = shadeRange(garmentRgb, 3, mask, 1);
+      for (let p = 0; p < width * height; p += 1) {
+        const i = p * 3;
+        const factor = shadeFactor(luminance(garmentRgb[i] ?? 0, garmentRgb[i + 1] ?? 0, garmentRgb[i + 2] ?? 0), range);
+        for (let k = 0; k < 3; k += 1) paint[i + k] = shadeChannel(paint[i + k] ?? 0, factor);
+      }
+      overlays.push({ input: await rgbaFrom(paint, mask, width, height) });
+    } else {
+      overlays.push({ input: await rgbaFrom(paint, mask, width, height), blend: "multiply" });
+    }
   }
   return overlays;
 }
 
 /** Garment with region colors/patterns and the layers of every area on that side. */
-async function composeSide(plan: SidePlan, assets: Assets, width: number): Promise<Garment> {
+async function composeSide(plan: SidePlan, assets: Assets, width: number, recolor: RenderPlan["recolor"]): Promise<Garment> {
   const garment = await loadGarment(plan, assets, width);
-  const overlays = await regionOverlays(plan, garment, assets);
+  const overlays = await regionOverlays(plan, garment, assets, recolor);
   for (const area of plan.areas) {
     const areaW = area.rect.w * garment.width;
     const areaH = area.rect.h * garment.height;
@@ -211,7 +224,7 @@ async function composeSide(plan: SidePlan, assets: Assets, width: number): Promi
 
 /** 1. Preview PNG of one side, PREVIEW_WIDTH px wide. */
 export async function renderPreview(plan: RenderPlan, side: Side, assets: Assets, width = PREVIEW_WIDTH): Promise<Buffer> {
-  return (await composeSide(plan[side], assets, width)).data;
+  return (await composeSide(plan[side], assets, width, plan.recolor)).data;
 }
 
 /** 2. Flat front garment on a transparent background (for virtual try-on). Cut out by the union of region masks. */
@@ -219,7 +232,7 @@ export async function renderFlatGarment(plan: RenderPlan, assets: Assets, maskKe
   if (maskKeys.length === 0) {
     throw new RenderError("The template has no region masks to cut the garment out with");
   }
-  const composed = await composeSide(plan.front, assets, width);
+  const composed = await composeSide(plan.front, assets, width, plan.recolor);
   const { width: w, height: h } = composed;
   // Union of masks = per-pixel maximum.
   let union: Buffer | null = null;

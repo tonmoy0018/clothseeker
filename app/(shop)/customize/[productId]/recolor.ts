@@ -1,9 +1,11 @@
 "use client";
 
 import { patternSvg, type PatternId } from "@/lib/catalog/patterns";
+import { luminance, shadeChannel, shadeFactor, shadeRange } from "@/lib/design/shade";
 
 // Browser version of the server's region recolor (lib/renderer/render.ts): the region's color or
-// pattern gets the mask as alpha and is multiplied onto the garment, so shading shows through.
+// pattern gets the mask as alpha and goes onto the garment: multiplied for drawings, or lit by the
+// photo's own light and shadow for photos ("shade", lib/design/shade.ts).
 // The server render is the source of truth; this is the live preview.
 
 export type ClientFill = { maskUrl: string; color: string; pattern: { id: PatternId; color: string } | null };
@@ -41,7 +43,7 @@ function context2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 }
 
 /** Garment image with region colors applied, as a canvas `width` px wide. */
-export async function composeGarment(garmentUrl: string, fills: readonly ClientFill[], width: number): Promise<HTMLCanvasElement> {
+export async function composeGarment(garmentUrl: string, fills: readonly ClientFill[], width: number, recolor: "multiply" | "shade" = "multiply"): Promise<HTMLCanvasElement> {
   const garment = await loadImage(garmentUrl);
   const height = Math.round((width * garment.naturalHeight) / garment.naturalWidth);
   const canvas = document.createElement("canvas");
@@ -49,6 +51,8 @@ export async function composeGarment(garmentUrl: string, fills: readonly ClientF
   canvas.height = height;
   const ctx = context2d(canvas);
   ctx.drawImage(garment, 0, 0, width, height);
+  // The unpainted photo, read once: every region is shaded from the original light and shadow.
+  const original = recolor === "shade" && fills.length > 0 ? ctx.getImageData(0, 0, width, height).data : null;
 
   for (const fill of fills) {
     const mask = await loadImage(fill.maskUrl);
@@ -73,12 +77,17 @@ export async function composeGarment(garmentUrl: string, fills: readonly ClientF
       paintCtx.fillRect(0, 0, width, height);
     }
     const painted = paintCtx.getImageData(0, 0, width, height);
+    const range = original ? shadeRange(original, 4, maskPixels, 4) : null;
     for (let i = 0; i < painted.data.length; i += 4) {
+      if (original && range) {
+        const factor = shadeFactor(luminance(original[i] ?? 0, original[i + 1] ?? 0, original[i + 2] ?? 0), range);
+        for (let k = 0; k < 3; k += 1) painted.data[i + k] = shadeChannel(painted.data[i + k] ?? 0, factor);
+      }
       painted.data[i + 3] = maskPixels[i] ?? 0; // mask luminance → alpha
     }
     paintCtx.putImageData(painted, 0, 0);
 
-    ctx.globalCompositeOperation = "multiply";
+    ctx.globalCompositeOperation = original ? "source-over" : "multiply";
     ctx.drawImage(paint, 0, 0);
     ctx.globalCompositeOperation = "source-over";
   }

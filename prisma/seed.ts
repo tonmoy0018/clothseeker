@@ -24,10 +24,14 @@ import {
   SEED_PRODUCTS,
   seedStock,
   sizeSurchargeTaka,
+  type SeedProduct,
 } from "./seed-data";
+import { fitPrintAreas, PHOTO_REGIONS, photoPictures, styleFiles, type PhotoRegion } from "./seed-style-photos";
 
 /** AI-generated sample catalog photos, one per seeded dress (see ai-scripts/generate-dress-photos.ts). */
 const SEED_PHOTOS_DIR = path.join(process.cwd(), "prisma", "seed-photos");
+/** `pnpm db:seed -- --redraw-templates` rebuilds every seeded template's pictures (after changing how they're made). */
+const REDRAW = process.argv.includes("--redraw-templates");
 
 // Idempotent demo seed: 1 admin, 3 customers, 5 categories, 15 dresses (+1 draft), 5 templates.
 // Run with `pnpm db:seed`. Refuses non-local databases unless `--allow-remote` is passed.
@@ -92,31 +96,10 @@ async function uploadSeedImage(supabase: SupabaseClient, productId: string, data
   return key;
 }
 
-/**
- * Seeded templates: default rules with Sleeves & straps / Bodice / Skirt regions, plus a drawn garment
- * picture (and masks) for every neckline × sleeve × length, so the preview changes with the style.
- * A template that already has style pictures keeps all its images, so re-seeding doesn't duplicate
- * files. One without them (seeded before the pictures existed) gets the full set, and its old
- * images are returned in `replaced` for deletion.
- */
-async function templateConfigFor(
-  db: PrismaClient,
-  supabase: SupabaseClient,
-  productId: string,
-): Promise<{ config: TemplateConfig; drawn: boolean; replaced: string[] }> {
-  const existing = await db.customizationTemplate.findUnique({ where: { productId }, select: { config: true } });
-  const current = existing ? parseTemplateConfig(existing.config) : null;
-  const placementAreas = DEFAULT_TEMPLATE_CONFIG.placementAreas.map((area) => (area.id === "front-skirt" ? { ...area, ...SEED_SKIRT_AREA } : area));
-  const base = { ...DEFAULT_TEMPLATE_CONFIG, placementAreas };
-
-  if (current && current.styleVariants.length > 0) {
-    const config = templateConfigSchema.parse({ ...base, garmentImages: current.garmentImages, regions: current.regions, styleVariants: current.styleVariants });
-    return { config, drawn: false, replaced: [] };
-  }
-
-  // Identical pictures (e.g. the skirt mask for every neckline) are uploaded once.
+/** Uploads seed images for one product, uploading identical images (e.g. a shared mask) once. */
+function uploader(supabase: SupabaseClient, productId: string) {
   const uploaded = new Map<string, string>();
-  async function upload(data: Buffer, extension: "webp" | "png"): Promise<string> {
+  return async (data: Buffer, extension: "webp" | "png"): Promise<string> => {
     const hash = createHash("sha256").update(data).digest("hex");
     let key = uploaded.get(hash);
     if (!key) {
@@ -124,8 +107,103 @@ async function templateConfigFor(
       uploaded.set(hash, key);
     }
     return key;
+  };
+}
+
+type TemplateBuild = { config: TemplateConfig; drawn: boolean; replaced: string[] };
+
+/**
+ * Seeded templates, with a garment picture (and masks) for every neckline × sleeve × length so the
+ * preview changes with the style:
+ * - dresses with a `photoStyle` get photo templates: their catalogue photo plus whatever AI style
+ *   pictures exist in prisma/style-photos/<slug> (missing styles show the closest picture), recoloured
+ *   with the photo's own light and shadow ("shade");
+ * - any others get drawn garments (prisma/seed-garments.ts).
+ * A template that already has the right kind and number of pictures keeps all its images, so re-seeding
+ * doesn't duplicate files. Otherwise the pictures are (re)built and the old images are returned in
+ * `replaced` for deletion.
+ */
+async function templateConfigFor(db: PrismaClient, supabase: SupabaseClient, product: SeedProduct, productId: string): Promise<TemplateBuild> {
+  const existing = await db.customizationTemplate.findUnique({ where: { productId }, select: { config: true } });
+  const current = existing ? parseTemplateConfig(existing.config) : null;
+  const photoStyle = product.photoStyle;
+  const photoFiles = photoStyle ? await styleFiles(product.slug) : [];
+
+  if (photoStyle) {
+    // The catalogue photo is one more picture than the style files.
+    if (!REDRAW && current && current.recolor === "shade" && current.styleVariants.length === photoFiles.length + 1) {
+      return { config: templateConfigSchema.parse({ ...DEFAULT_TEMPLATE_CONFIG, ...pick(current), defaultStyle: photoStyle, recolor: "shade" }), drawn: false, replaced: [] };
+    }
+    return withReplaced(current, await photoTemplate(supabase, product, photoStyle, productId));
   }
 
+  const placementAreas = DEFAULT_TEMPLATE_CONFIG.placementAreas.map((area) => (area.id === "front-skirt" ? { ...area, ...SEED_SKIRT_AREA } : area));
+  const base = { ...DEFAULT_TEMPLATE_CONFIG, placementAreas };
+  if (!REDRAW && current && current.recolor === "multiply" && current.styleVariants.length > 0) {
+    const config = templateConfigSchema.parse({ ...base, garmentImages: current.garmentImages, regions: current.regions, styleVariants: current.styleVariants });
+    return { config, drawn: false, replaced: [] };
+  }
+  return withReplaced(current, await drawnTemplate(supabase, base, productId));
+}
+
+/** The picture-related fields of an existing template, kept when re-seeding. */
+function pick(config: TemplateConfig) {
+  return { garmentImages: config.garmentImages, regions: config.regions, styleVariants: config.styleVariants, placementAreas: config.placementAreas };
+}
+
+function withReplaced(current: TemplateConfig | null, config: TemplateConfig): TemplateBuild {
+  const kept = new Set(templateImageKeys(config));
+  const replaced = current ? templateImageKeys(current).filter((key) => !kept.has(key)) : [];
+  return { config, drawn: true, replaced };
+}
+
+async function photoTemplate(
+  supabase: SupabaseClient,
+  product: SeedProduct,
+  photoStyle: NonNullable<SeedProduct["photoStyle"]>,
+  productId: string,
+): Promise<TemplateConfig> {
+  const upload = uploader(supabase, productId);
+  const pictures = await photoPictures({ ...product, photoStyle });
+  const styleVariants: TemplateConfig["styleVariants"] = [];
+  const keys: Partial<Record<PhotoRegion, string>>[] = [];
+  for (const p of pictures) {
+    const masks: Partial<Record<PhotoRegion, string>> = {};
+    for (const { id } of PHOTO_REGIONS) {
+      const mask = p.masks[id];
+      if (mask) masks[id] = await upload(mask, "png");
+    }
+    keys.push(masks);
+    styleVariants.push({ side: p.side, match: p.match, image: await upload(p.image, "webp"), masks });
+  }
+
+  // The template's own images: the catalogue photo, and the back view in the same sleeves and length.
+  const backIndex = Math.max(
+    0,
+    styleVariants.findIndex((v) => v.side === "back" && v.match.sleeveLength === photoStyle.sleeveLength && v.match.dressLength === photoStyle.dressLength),
+  );
+  const front = styleVariants[0];
+  const back = styleVariants[backIndex]?.side === "back" ? styleVariants[backIndex] : styleVariants.find((v) => v.side === "back");
+  const regions: TemplateConfig["regions"] = PHOTO_REGIONS.map(({ id, label }) => ({
+    id,
+    label,
+    recolorable: true,
+    masks: { front: front?.masks[id], back: back?.masks[id] },
+  }));
+
+  return templateConfigSchema.parse({
+    ...DEFAULT_TEMPLATE_CONFIG,
+    placementAreas: fitPrintAreas(pictures),
+    garmentImages: { front: front?.image, back: back?.image },
+    regions,
+    styleVariants,
+    recolor: "shade",
+    defaultStyle: photoStyle,
+  });
+}
+
+async function drawnTemplate(supabase: SupabaseClient, base: TemplateConfig, productId: string): Promise<TemplateConfig> {
+  const upload = uploader(supabase, productId);
   const styleVariants: TemplateConfig["styleVariants"] = [];
   for (const style of seedStyles()) {
     for (const side of ["front", "back"] as const) {
@@ -152,11 +230,7 @@ async function templateConfigFor(
       region.masks[side] = await upload(await renderMask(side, first, region.id as SeedRegion), "png");
     }
   }
-
-  const config = templateConfigSchema.parse({ ...base, garmentImages, regions, styleVariants });
-  const kept = new Set(templateImageKeys(config));
-  const replaced = current ? templateImageKeys(current).filter((key) => !kept.has(key)) : [];
-  return { config, drawn: true, replaced };
+  return templateConfigSchema.parse({ ...base, garmentImages, regions, styleVariants });
 }
 
 async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<void> {
@@ -214,7 +288,7 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
     }
 
     if (p.customizable) {
-      const { config, drawn, replaced } = await templateConfigFor(db, supabase, product.id);
+      const { config, drawn, replaced } = await templateConfigFor(db, supabase, p, product.id);
       await db.customizationTemplate.upsert({
         where: { productId: product.id },
         create: { productId: product.id, version: 1, config, aiEnabled: true, isActive: true },

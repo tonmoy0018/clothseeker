@@ -68,6 +68,22 @@ describe("renderPreview", () => {
     expect(skirt.r).toBeGreaterThan(skirt.g + 30);
   });
 
+  it("recolours photos with their own light and shade: even dark fabric takes a pale colour", async () => {
+    // A dark navy "photo" garment with the same masks.
+    const storage = await storageWithTemplateAssets();
+    const navyKey = KEYS.front.replace("aaaaaaaa", "99999999");
+    const navy = await sharp({ create: { width: 1200, height: 1560, channels: 3, background: "#1f2a44" } }).webp().toBuffer();
+    await storage.put(BUCKETS.productMedia, navyKey, navy, "image/webp");
+    const photo = { ...TEMPLATE, garmentImages: { ...TEMPLATE.garmentImages, front: navyKey } };
+    const pink = validSpec({ parts: { bodice: { color: "#e8a0b4" } } });
+    const shaded = await renderPreview(normalizeForRender(pink, { ...photo, recolor: "shade" }), "front", storageAssets(storage));
+    const multiplied = await renderPreview(normalizeForRender(pink, photo), "front", storageAssets(storage));
+    const [a, b] = [await pixel(shaded, 480, 580), await pixel(multiplied, 480, 580)];
+    expect(a.r).toBeGreaterThan(180); // pale pink, lit by the photo
+    expect(a.r).toBeGreaterThan(a.g);
+    expect(b.r).toBeLessThan(60); // multiplying can't lighten navy
+  });
+
   it("is deterministic: identical bytes for the same design", async () => {
     const plan = normalizeForRender(validSpec(), TEMPLATE);
     const [a, b] = await Promise.all([renderPreview(plan, "front", assets), renderPreview(plan, "front", assets)]);

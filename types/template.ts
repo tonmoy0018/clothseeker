@@ -11,7 +11,7 @@ import { isSafeObjectKey } from "@/lib/storage/object-key";
 // `parseTemplateConfig()`, which upgrades older versions to the current one.
 // To change the shape: add a new version schema, an upgrade step, and bump TEMPLATE_CONFIG_VERSION.
 
-export const TEMPLATE_CONFIG_VERSION = 4;
+export const TEMPLATE_CONFIG_VERSION = 5;
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "Use lowercase letters, numbers and hyphens");
 const label = z.string().trim().min(1, "Required").max(40);
@@ -46,11 +46,13 @@ export const templateConfigV1Schema = z.object({
   allowedColors: z.array(z.object({ name: z.string().min(1).max(30), hex: hexColor })).min(1).max(40),
 });
 
-// ─── v4 (current) ─────────────────────────────────────────────────────────────
+// ─── v5 (current) ─────────────────────────────────────────────────────────────
 // v2 → v3: regions gained `masks` (where each region is on the garment image) and the
 // template gained `allowedDecorations`.
 // v3 → v4: optional `styleVariants`, garment pictures (+ masks) for particular style choices, so the
 // preview changes shape when the customer picks a neckline, sleeve or length.
+// v4 → v5: `recolor` (how colours go onto the garment pictures: "multiply" for light drawings,
+// "shade" for photos of any colour; see lib/design/shade.ts) and an optional `defaultStyle`.
 
 export const templateRegionSchema = z.object({
   id,
@@ -104,7 +106,7 @@ export const MAX_STYLE_VARIANTS = 256;
 
 export const templateConfigSchema = z
   .object({
-    schemaVersion: z.literal(4),
+    schemaVersion: z.literal(5),
     garmentImages: z.object({ front: storageKey.optional(), back: storageKey.optional() }),
     regions: z.array(templateRegionSchema).min(1, "Add at least one region").max(12),
     placementAreas: z.array(placementAreaSchema).max(8),
@@ -127,6 +129,9 @@ export const templateConfigSchema = z
       decorationMinor: priceMinor,
     }),
     styleVariants: z.array(styleVariantSchema).max(MAX_STYLE_VARIANTS),
+    recolor: z.enum(["multiply", "shade"]),
+    /** Style a new design starts with (e.g. the one the dress's photo shows). Defaults to each group's first option. */
+    defaultStyle: z.object({ neckline: id, sleeveLength: id, dressLength: id }).optional(),
   })
   .superRefine((config, ctx) => {
     const reportDuplicates = (values: string[], path: (string | number)[], what: string) => {
@@ -212,6 +217,13 @@ function upgradeV3(v3: z.infer<typeof templateConfigV3Shape>): unknown {
   return { ...v3, schemaVersion: 4, styleVariants: [] };
 }
 
+/** v4 → v5: existing templates recolour by multiplying. */
+const templateConfigV4Shape = z.looseObject({ schemaVersion: z.literal(4) });
+
+function upgradeV4(v4: z.infer<typeof templateConfigV4Shape>): unknown {
+  return { ...v4, schemaVersion: 5, recolor: "multiply" };
+}
+
 export class TemplateConfigError extends Error {
   override readonly name = "TemplateConfigError";
 }
@@ -235,6 +247,9 @@ export function parseTemplateConfig(raw: unknown): TemplateConfig {
   }
   if (v <= 3) {
     candidate = upgradeV3(templateConfigV3Shape.parse(candidate));
+  }
+  if (v <= 4) {
+    candidate = upgradeV4(templateConfigV4Shape.parse(candidate));
   }
   return templateConfigSchema.parse(candidate);
 }

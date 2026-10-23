@@ -184,6 +184,6 @@ describe("templates", () => {
       },
     });
     const loaded = await getTemplateForEdit(db, storage, admin, product.id);
-    expect(loaded?.config.schemaVersion).toBe(4);
+    expect(loaded?.config.schemaVersion).toBe(5);
   });
 });

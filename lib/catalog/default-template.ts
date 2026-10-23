@@ -75,4 +75,5 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
   allowedDecorations: [...DECORATION_IDS],
   addOns: DEFAULT_ADD_ONS,
   styleVariants: [],
+  recolor: "multiply",
 };

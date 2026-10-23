@@ -21,6 +21,12 @@ export type SeedProduct = {
   sizes: readonly Size[];
   priceTaka: number;
   customizable: boolean;
+  /**
+   * Customizable dresses: the style its catalogue photo shows (ids from the default template). The
+   * design screen shows that photo for this style and AI style pictures for the others
+   * (prisma/style-photos, made by ai-scripts/generate-style-photos.ts).
+   */
+  photoStyle?: { neckline: string; sleeveLength: string; dressLength: "mini" | "midi" | "maxi" };
   status?: "ACTIVE" | "DRAFT";
 };
 
@@ -72,6 +78,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     sizes: XS_XL,
     priceTaka: 3200,
     customizable: true,
+    photoStyle: { neckline: "v-neck", sleeveLength: "short", dressLength: "midi" },
   },
   {
     slug: "everyday-shirt-dress",
@@ -92,6 +99,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     sizes: XS_L,
     priceTaka: 2850,
     customizable: true,
+    photoStyle: { neckline: "square", sleeveLength: "sleeveless", dressLength: "midi" },
   },
   {
     slug: "satin-slip-dress",
@@ -122,6 +130,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     sizes: ["XS", "S", "M"],
     priceTaka: 3950,
     customizable: true,
+    photoStyle: { neckline: "v-neck", sleeveLength: "short", dressLength: "mini" },
   },
   {
     slug: "pleated-maxi-gown",
@@ -142,6 +151,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     sizes: XS_XL,
     priceTaka: 6200,
     customizable: true,
+    photoStyle: { neckline: "round", sleeveLength: "sleeveless", dressLength: "midi" },
   },
   {
     slug: "off-shoulder-evening-dress",
@@ -182,6 +192,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     sizes: XS_XL,
     priceTaka: 2250,
     customizable: true,
+    photoStyle: { neckline: "square", sleeveLength: "short", dressLength: "midi" },
   },
   {
     slug: "embroidered-kurti-dress",
