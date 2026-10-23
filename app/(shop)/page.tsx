@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ProductCard } from "@/components/shop/product-card";
 import { buttonVariants } from "@/components/ui/button";
+import { AUDIENCE_IDS, AUDIENCES } from "@/lib/catalog/garment-types";
 import { signCatalogImages } from "@/lib/catalog/images";
 import { getPrisma } from "@/lib/db";
 import { getFilterOptions, listProducts } from "@/lib/shop/catalog";
@@ -16,15 +17,17 @@ export default async function HomePage() {
       <section className="flex flex-col items-start gap-4 rounded-2xl bg-muted px-6 py-12 sm:px-10">
         <p className="text-sm font-medium text-muted-foreground">ClothSeeker</p>
         <h1 className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">
-          Dresses you choose, customize and love — made by ClothSeeker.
+          Clothes you choose, customize and love — made by ClothSeeker.
         </h1>
         <p className="max-w-xl text-muted-foreground">
-          Buy ready-made in your size and color, customize a dress by hand or with AI, and see it on you before you order.
+          Women&apos;s dresses and men&apos;s shirts and panjabis. Buy ready-made in your size and color, customize by hand or with AI, and see it on you before you order.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Link href="/products" className={buttonVariants({ size: "lg" })}>
-            Shop all dresses
-          </Link>
+          {AUDIENCE_IDS.map((audience, i) => (
+            <Link key={audience} href={`/products?for=${audience}`} className={buttonVariants({ size: "lg", variant: i === 0 ? "default" : "secondary" })}>
+              Shop {AUDIENCES[audience].label.toLowerCase()}
+            </Link>
+          ))}
           <Link href="/design/start" className={buttonVariants({ size: "lg", variant: "outline" })}>
             Start from a photo or idea
           </Link>

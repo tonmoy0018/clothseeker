@@ -255,10 +255,11 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
         slug: p.slug,
         name: p.name,
         description: p.description,
+        garmentType: p.garmentType ?? "dress",
         categoryId: category.id,
         status: p.status ?? "ACTIVE",
       },
-      update: { name: p.name, description: p.description, categoryId: category.id, status: p.status ?? "ACTIVE" },
+      update: { name: p.name, description: p.description, garmentType: p.garmentType ?? "dress", categoryId: category.id, status: p.status ?? "ACTIVE" },
       select: { id: true, imageKeys: true },
     });
     // AI-generated sample catalog photo (prisma/seed-photos, ai-scripts/generate-dress-photos.ts),

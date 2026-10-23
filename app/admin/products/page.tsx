@@ -32,7 +32,7 @@ export default async function AdminProductsPage({ searchParams }: PageProps<"/ad
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Products</h1>
         <Link href="/admin/products/new" className={buttonVariants()}>
-          New dress
+          New item
         </Link>
       </div>
 
@@ -58,13 +58,13 @@ export default async function AdminProductsPage({ searchParams }: PageProps<"/ad
       </form>
 
       {products.length === 0 ? (
-        <p className="rounded-xl border p-8 text-muted-foreground">No dresses match. Try clearing the filters.</p>
+        <p className="rounded-xl border p-8 text-muted-foreground">Nothing matches. Try clearing the filters.</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left text-muted-foreground">
               <tr>
-                <th className="p-3 font-medium">Dress</th>
+                <th className="p-3 font-medium">Item</th>
                 <th className="p-3 font-medium">Status</th>
                 <th className="p-3 font-medium">Category</th>
                 <th className="p-3 text-right font-medium">Sizes/colors</th>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { GARMENT_TYPE_IDS, GARMENT_TYPES, STYLE_GROUP_LABEL, styleGroupsOf } from "@/lib/catalog/garment-types";
+import { sizeChartFor } from "@/lib/catalog/size-chart";
 import { priceDesign } from "@/lib/design/pricing";
 import { validateDesignAgainstTemplate } from "@/lib/design/validate";
 import { templateConfigSchema } from "@/types/template";
@@ -45,5 +46,14 @@ describe("garment types", () => {
     const issues = validateDesignAgainstTemplate(validSpec(), SHIRT, CONTEXT);
     expect(issues.map((i) => i.path)).toEqual(expect.arrayContaining(["styleOptions.collar", "styleOptions.fit", "styleOptions.neckline", "styleOptions.dressLength"]));
     expect(issues.find((i) => i.path === "styleOptions.neckline")?.message).toBe("A shirt has no neckline option.");
+  });
+});
+
+describe("size charts", () => {
+  it("men's clothing uses chest, waist and neck; dresses bust, waist and hip", () => {
+    expect(sizeChartFor("dress").columns).toEqual(["Bust", "Waist", "Hip"]);
+    expect(sizeChartFor("shirt").columns).toEqual(["Chest", "Waist", "Neck"]);
+    expect(sizeChartFor("panjabi")).toBe(sizeChartFor("shirt"));
+    for (const row of sizeChartFor("shirt").rows) expect(row.cm).toHaveLength(3);
   });
 });

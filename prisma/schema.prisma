@@ -76,12 +76,21 @@ model Category {
   @@map("categories")
 }
 
+/// Lower-case values match the ids in lib/catalog/garment-types.ts.
+enum GarmentType {
+  dress
+  shirt
+  panjabi
+}
+
 model Product {
   id          String        @id @default(uuid()) @db.Uuid
   slug        String        @unique
   name        String
   description String
   categoryId  String        @map("category_id") @db.Uuid
+  /// What kind of garment it is (lib/catalog/garment-types.ts): decides its style options and wording.
+  garmentType GarmentType   @default(dress) @map("garment_type")
   status      ProductStatus @default(DRAFT)
   /// Storage keys in the product-media bucket (uploads arrive in Phase 2).
   imageKeys   String[]      @default([]) @map("image_keys")
@@ -96,6 +105,7 @@ model Product {
   tryOns   TryOnResult[]
 
   @@index([status, categoryId])
+  @@index([status, garmentType])
   @@map("products")
 }
 

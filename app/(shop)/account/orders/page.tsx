@@ -24,7 +24,7 @@ export default async function OrdersPage() {
         <div className="flex flex-col items-start gap-3 rounded-xl border p-8">
           <p className="font-medium">You haven&apos;t placed any orders yet.</p>
           <Link href="/products" className={buttonVariants()}>
-            Browse dresses
+            Browse the shop
           </Link>
         </div>
       ) : (

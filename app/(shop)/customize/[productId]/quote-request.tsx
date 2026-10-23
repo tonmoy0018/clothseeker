@@ -38,7 +38,7 @@ export function QuoteRequest({ designId, saved, onSignIn }: { designId: string |
     <section className="flex flex-col gap-2 rounded-xl border p-4" data-testid="quote-request">
       <h2 className="font-medium">Need special tailoring?</h2>
       <p className="text-sm text-muted-foreground">
-        If the dress in your photo needs changes our templates can&apos;t make, describe them and the ClothSeeker team will reply with a price within 24 hours.
+        If the garment in your photo needs changes our templates can&apos;t make, describe them and the ClothSeeker team will reply with a price within 24 hours.
       </p>
       {!designId || !saved ? (
         <p className="text-sm">Save your design first, then request a quote.</p>

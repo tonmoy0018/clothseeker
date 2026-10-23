@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FONTS, fontUrl } from "@/lib/catalog/fonts";
+import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import { garmentPicture } from "@/lib/design/garment-variant";
 import { priceDesign, type DesignPrice } from "@/lib/design/pricing";
 import { validateDesignAgainstTemplate, type DesignIssue } from "@/lib/design/validate";
@@ -190,7 +191,7 @@ export function DesignEditor(props: DesignEditorProps) {
             setGarments((g) => ({ ...g, [s]: canvas }));
           }
         })
-        .catch(() => setMessage({ kind: "error", text: "The dress image couldn't load. Refresh the page to try again." }));
+        .catch(() => setMessage({ kind: "error", text: "The garment image couldn't load. Refresh the page to try again." }));
     }
     return () => {
       cancelled = true;
@@ -367,6 +368,7 @@ export function DesignEditor(props: DesignEditorProps) {
   const [tab, setTab] = useState<TabId>(props.initialAiJobId ? "ai" : "fabric");
   const [showPrice, setShowPrice] = useState(false);
   const firstFont = config.allowedFonts[0] ?? null;
+  const garment = GARMENT_TYPES[config.garmentType];
 
   /** Regions the customer can colour on this dress (with a mask on some picture). */
   const colorableRegions = useMemo(
@@ -454,7 +456,7 @@ export function DesignEditor(props: DesignEditorProps) {
         <p className="text-xs text-muted-foreground">Drag items to move them. Use the corner handles to resize or rotate. Items stay inside the dashed areas.</p>
 
         {showTryOn && (
-          <TryOnPanel source={{ kind: "design", spec, designId }} signedIn={props.customerId !== null} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+          <TryOnPanel source={{ kind: "design", spec, designId }} signedIn={props.customerId !== null} noun={garment.noun} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
         )}
 
         {(props.initialDesign?.referencePhotoUrl || (props.alternatives && props.alternatives.length > 0)) && (
@@ -468,7 +470,7 @@ export function DesignEditor(props: DesignEditorProps) {
               </figure>
             )}
             <div className="flex flex-col gap-1">
-              <p>{spec.startedFrom === "photo" ? "We matched your photo to this dress and copied its main colors." : "We matched your description to this dress."}</p>
+              <p>{spec.startedFrom === "photo" ? `We matched your photo to this ${garment.noun} and copied its main colors.` : `We matched your description to this ${garment.noun}.`}</p>
               {props.alternatives && props.alternatives.length > 0 && (
                 <p className="text-muted-foreground">
                   Other good matches:{" "}
@@ -518,9 +520,9 @@ export function DesignEditor(props: DesignEditorProps) {
         <div className="min-h-[24rem] pt-4">
           <div role="tabpanel" id="panel-fabric" aria-labelledby="tab-fabric" hidden={tab !== "fabric"}>
             {colorableRegions.length > 0 ? (
-              <FabricTab config={config} spec={spec} regions={colorableRegions} onChangeParts={(change) => commit((s) => ({ ...s, parts: change(s.parts) }))} />
+              <FabricTab config={config} spec={spec} regions={colorableRegions} noun={garment.noun} onChangeParts={(change) => commit((s) => ({ ...s, parts: change(s.parts) }))} />
             ) : (
-              <p className="text-sm text-muted-foreground">This dress comes in one fabric.</p>
+              <p className="text-sm text-muted-foreground">This {garment.noun} comes in one fabric.</p>
             )}
           </div>
           <div role="tabpanel" id="panel-style" aria-labelledby="tab-style" hidden={tab !== "style"}>
@@ -535,6 +537,7 @@ export function DesignEditor(props: DesignEditorProps) {
           <div role="tabpanel" id="panel-personalise" aria-labelledby="tab-personalise" hidden={tab !== "personalise"}>
             <PersonaliseTab
               config={config}
+              noun={garment.noun}
               activeArea={activeArea}
               onArea={chooseArea}
               selectedLayer={selectedLayer}
@@ -581,7 +584,7 @@ export function DesignEditor(props: DesignEditorProps) {
             ) : (
               <div className="rounded-xl border border-dashed p-4" data-testid="ai-box">
                 <p className="font-medium">AI design box</p>
-                <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this dress.</p>
+                <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this {garment.noun}.</p>
               </div>
             )}
           </div>
@@ -610,7 +613,7 @@ export function DesignEditor(props: DesignEditorProps) {
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">Size</span>
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Dress size">
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${garment.label} size`}>
               {props.availableSizes.map((size) => (
                 <button
                   key={size}
@@ -636,7 +639,7 @@ export function DesignEditor(props: DesignEditorProps) {
                 ))}
               </ul>
             )}
-            <p className="mt-1 text-xs text-muted-foreground">Final price is confirmed when you save. Custom dresses are made to order.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Final price is confirmed when you save. Custom clothes are made to order.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">

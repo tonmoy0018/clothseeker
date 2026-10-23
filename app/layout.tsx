@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "ClothSeeker",
-  description: "ClothSeeker — custom dresses, designed by you and made by us",
+  description: "ClothSeeker — custom clothing, designed by you and made by us",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

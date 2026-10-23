@@ -44,3 +44,16 @@ export const GARMENT_TYPES: Record<GarmentType, GarmentTypeInfo> = {
 export function styleGroupsOf(type: GarmentType): readonly StyleGroup[] {
   return GARMENT_TYPES[type].groups;
 }
+
+export const AUDIENCE_IDS = ["women", "men"] as const;
+export type Audience = (typeof AUDIENCE_IDS)[number];
+
+/** Shop sections: a menu label, a heading, and what to call their products. */
+export const AUDIENCES: Record<Audience, { label: string; heading: string; plural: string }> = {
+  women: { label: "Women", heading: "Women's dresses", plural: "dresses" },
+  men: { label: "Men", heading: "Men's shirts & panjabis", plural: "items" },
+};
+
+export function garmentTypesFor(audience: Audience): GarmentType[] {
+  return GARMENT_TYPE_IDS.filter((type) => GARMENT_TYPES[type].audience === audience);
+}

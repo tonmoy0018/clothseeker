@@ -10,7 +10,7 @@ import { getStorage } from "@/lib/storage/supabase";
 
 import { EditorLoader } from "./editor-loader";
 
-export const metadata: Metadata = { title: "Design your dress — ClothSeeker" };
+export const metadata: Metadata = { title: "Design your own — ClothSeeker" };
 
 export default async function CustomizePage({ params, searchParams }: PageProps<"/customize/[productId]">) {
   const { productId } = await params;
@@ -22,10 +22,10 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
   if (!context) {
     return (
       <div className="flex flex-col items-start gap-3 rounded-xl border p-8" data-testid="not-customizable">
-        <h1 className="text-xl font-semibold">This dress can&apos;t be customized</h1>
+        <h1 className="text-xl font-semibold">This item can&apos;t be customized</h1>
         <p className="text-muted-foreground">It may not offer custom designs, or it&apos;s temporarily unavailable.</p>
         <Link href="/products" className={buttonVariants({ variant: "outline" })}>
-          Browse dresses
+          Browse the shop
         </Link>
       </div>
     );

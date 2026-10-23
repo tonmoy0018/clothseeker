@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { signOut } from "@/app/(shop)/auth-actions";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { AUDIENCE_IDS, AUDIENCES } from "@/lib/catalog/garment-types";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db";
 import { getCartCount } from "@/lib/shop/cart";
@@ -16,9 +17,11 @@ export async function ShopHeader() {
         <Link href="/" className="text-base font-semibold tracking-tight">
           ClothSeeker
         </Link>
-        <Link href="/products" className="text-muted-foreground hover:text-foreground">
-          Dresses
-        </Link>
+        {AUDIENCE_IDS.map((audience) => (
+          <Link key={audience} href={`/products?for=${audience}`} className="text-muted-foreground hover:text-foreground">
+            {AUDIENCES[audience].label}
+          </Link>
+        ))}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 whitespace-nowrap">
           {user?.role === "ADMIN" && (
             <Link href="/admin" className="text-muted-foreground hover:text-foreground">

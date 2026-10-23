@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { GARMENT_TYPE_IDS, type GarmentType } from "@/lib/catalog/garment-types";
+
 import { assertAdmin, type Actor } from "@/lib/auth/policy";
 import { compareSizes } from "@/lib/catalog/size-chart";
 import type { PrismaClient } from "@/lib/db/client";
@@ -22,6 +24,7 @@ export const slugSchema = z
 
 const productFields = {
   name: z.string().trim().min(2, "Enter a name").max(80),
+  garmentType: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.enum(GARMENT_TYPE_IDS).default("dress")),
   categoryId: z.uuid("Choose a category"),
   description: z.string().trim().min(10, "Write at least a sentence").max(2000),
 };
@@ -55,7 +58,7 @@ export async function createProduct(db: PrismaClient, actor: Actor, rawInput: un
   try {
     return await db.$transaction(async (tx) => {
       const product = await tx.product.create({
-        data: { name: input.name, slug, categoryId: input.categoryId, description: input.description, status: "DRAFT" },
+        data: { name: input.name, slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description, status: "DRAFT" },
         select: { id: true },
       });
       await writeAudit(tx, actor, "product.create", { type: "product", id: product.id }, { slug });
@@ -63,7 +66,7 @@ export async function createProduct(db: PrismaClient, actor: Actor, rawInput: un
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new AdminError("CONFLICT", `The web address "${slug}" is already used by another dress.`);
+      throw new AdminError("CONFLICT", `The web address "${slug}" is already used by another item.`);
     }
     throw error;
   }
@@ -74,14 +77,19 @@ export async function updateProduct(db: PrismaClient, actor: Actor, rawInput: un
   const input = updateProductSchema.parse(rawInput);
   const before = await db.product.findUnique({
     where: { id: input.id },
-    select: { name: true, slug: true, categoryId: true, description: true },
+    select: { name: true, slug: true, garmentType: true, categoryId: true, description: true, template: { select: { id: true } } },
   });
   if (!before) {
-    throw new AdminError("NOT_FOUND", "That dress no longer exists.");
+    throw new AdminError("NOT_FOUND", "That item no longer exists.");
+  }
+  // A template's style options belong to its garment type, so the type is fixed once one exists.
+  if (before.template && input.garmentType !== before.garmentType) {
+    throw new AdminError("BLOCKED", "This item has a customization template, so its garment type can't change.");
   }
   await ensureCategory(db, input.categoryId);
-  const after = { name: input.name, slug: input.slug, categoryId: input.categoryId, description: input.description };
-  const fields = changedFields(before, after);
+  const after = { name: input.name, slug: input.slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description };
+  const { template: _template, ...beforeFields } = before;
+  const fields = changedFields(beforeFields, after);
   if (fields.length === 0) {
     return;
   }
@@ -93,7 +101,7 @@ export async function updateProduct(db: PrismaClient, actor: Actor, rawInput: un
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new AdminError("CONFLICT", `The web address "${input.slug}" is already used by another dress.`);
+      throw new AdminError("CONFLICT", `The web address "${input.slug}" is already used by another item.`);
     }
     throw error;
   }
@@ -105,7 +113,7 @@ export async function setProductStatus(db: PrismaClient, actor: Actor, rawInput:
   const input = setProductStatusSchema.parse(rawInput);
   const product = await db.product.findUnique({ where: { id: input.id }, select: { status: true } });
   if (!product) {
-    throw new AdminError("NOT_FOUND", "That dress no longer exists.");
+    throw new AdminError("NOT_FOUND", "That item no longer exists.");
   }
   if (product.status === input.status) {
     return;
@@ -209,6 +217,7 @@ export type AdminProduct = {
   name: string;
   description: string;
   status: ProductStatus;
+  garmentType: GarmentType;
   categoryId: string;
   imageKeys: string[];
   variants: AdminVariant[];
@@ -228,6 +237,7 @@ export async function getAdminProduct(db: PrismaClient, actor: Actor, productId:
       name: true,
       description: true,
       status: true,
+      garmentType: true,
       categoryId: true,
       imageKeys: true,
       template: { select: { isActive: true, version: true, aiEnabled: true } },

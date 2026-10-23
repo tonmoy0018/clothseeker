@@ -259,7 +259,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
   return (
     <div ref={wrapperRef} className="w-full max-w-[560px]" data-testid="design-canvas">
       <canvas ref={elementRef} aria-label="Design canvas: drag items to move, use the corner handles to resize or rotate" />
-      {!props.garment && <div className="flex aspect-[1200/1560] w-full items-center justify-center rounded-xl bg-muted text-sm text-muted-foreground">Loading dress…</div>}
+      {!props.garment && <div className="flex aspect-[1200/1560] w-full items-center justify-center rounded-xl bg-muted text-sm text-muted-foreground">Loading…</div>}
     </div>
   );
 }

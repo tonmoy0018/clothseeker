@@ -65,6 +65,8 @@ export function FabricTab(props: {
   spec: DesignSpec;
   /** Recolorable regions shown on this dress. */
   regions: readonly { id: string; label: string }[];
+  /** What the garment is called ("Whole dress"). */
+  noun: string;
   onChangeParts: (change: (parts: DesignSpec["parts"]) => DesignSpec["parts"]) => void;
 }) {
   const { config, spec, regions } = props;
@@ -93,7 +95,7 @@ export function FabricTab(props: {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-2" role="group" aria-label="Part to color">
-        {[{ id: ALL, label: "Whole dress" }, ...regions].map((r) => (
+        {[{ id: ALL, label: `Whole ${props.noun}` }, ...regions].map((r) => (
           <button
             key={r.id}
             type="button"

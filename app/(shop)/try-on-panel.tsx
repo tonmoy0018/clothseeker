@@ -31,7 +31,8 @@ export type TryOnSource = { kind: "design"; spec: DesignSpec; designId: string |
 
 type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; running: boolean } | { kind: "error"; message: string };
 
-export function TryOnPanel({ source, signedIn, onSignIn }: { source: TryOnSource; signedIn: boolean; onSignIn: () => void }) {
+/** `noun` names the garment in messages: "Putting the shirt on you…". */
+export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOnSource; signedIn: boolean; onSignIn: () => void; noun: string }) {
   const [photos, setPhotos] = useState<TryOnPhotoView[]>([]);
   const [photoId, setPhotoId] = useState<string | null>(null);
   const [quota, setQuota] = useState<TryOnQuotaView | null>(null);
@@ -190,7 +191,7 @@ export function TryOnPanel({ source, signedIn, onSignIn }: { source: TryOnSource
     return (
       <section className="flex flex-col gap-2 rounded-xl border p-4" data-testid="try-on-panel">
         <h2 className="font-medium">See it on me</h2>
-        <p className="text-sm text-muted-foreground">Sign in to try dresses on with your own photo.</p>
+        <p className="text-sm text-muted-foreground">Sign in to try clothes on with your own photo.</p>
         <Button variant="outline" className="self-start" onClick={onSignIn}>
           Sign in to try on
         </Button>
@@ -210,7 +211,7 @@ export function TryOnPanel({ source, signedIn, onSignIn }: { source: TryOnSource
           </span>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">Rough AI preview: the real dress will fit and look different.</p>
+      <p className="text-xs text-muted-foreground">Rough AI preview: the real {noun} will fit and look different.</p>
 
       {/* Consent comes before any upload. */}
       <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3 text-sm" data-testid="try-on-consent">
@@ -291,7 +292,7 @@ export function TryOnPanel({ source, signedIn, onSignIn }: { source: TryOnSource
       )}
       {phase.kind === "waiting" && (
         <div className="flex aspect-[3/4] max-w-60 animate-pulse items-center justify-center rounded-lg bg-muted p-4 text-center text-xs text-muted-foreground" data-testid="try-on-loading" aria-live="polite">
-          {phase.running ? "Putting the dress on you… this can take a minute." : "Waiting for the try-on service…"}
+          {phase.running ? `Putting the ${noun} on you… this can take a minute.` : "Waiting for the try-on service…"}
         </div>
       )}
 
@@ -314,7 +315,7 @@ export function TryOnPanel({ source, signedIn, onSignIn }: { source: TryOnSource
             </figure>
             <figure className="flex flex-col gap-1">
               <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-muted">
-                {result.imageUrl && <Image src={result.imageUrl} alt="You wearing this dress (AI preview)" fill unoptimized className="object-cover" />}
+                {result.imageUrl && <Image src={result.imageUrl} alt={`You wearing this ${noun} (AI preview)`} fill unoptimized className="object-cover" />}
               </div>
               <figcaption className="text-xs text-muted-foreground">After (AI preview)</figcaption>
             </figure>

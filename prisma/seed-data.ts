@@ -1,3 +1,4 @@
+import type { GarmentType } from "@/lib/catalog/garment-types";
 import type { Size } from "@/lib/generated/prisma/enums";
 
 // Demo catalog for ClothSeeker. Prices are whole taka (converted to poisha by the seed).
@@ -21,6 +22,8 @@ export type SeedProduct = {
   sizes: readonly Size[];
   priceTaka: number;
   customizable: boolean;
+  /** Kind of garment (lib/catalog/garment-types.ts); dresses when left out. */
+  garmentType?: GarmentType;
   /**
    * Customizable dresses: the style its catalogue photo shows (ids from the default template). The
    * design screen shows that photo for this style and AI style pictures for the others

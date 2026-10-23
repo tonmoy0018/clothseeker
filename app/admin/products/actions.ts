@@ -31,6 +31,7 @@ export async function createProductAction(_prev: FormState, formData: FormData):
     ({ id } = await createProduct(getPrisma(), admin, {
       name: field(formData, "name"),
       slug: field(formData, "slug"),
+      garmentType: field(formData, "garmentType"),
       categoryId: field(formData, "categoryId"),
       description: field(formData, "description"),
     }));
@@ -49,6 +50,7 @@ export async function updateProductAction(_prev: FormState, formData: FormData):
       id,
       name: field(formData, "name"),
       slug: field(formData, "slug"),
+      garmentType: field(formData, "garmentType"),
       categoryId: field(formData, "categoryId"),
       description: field(formData, "description"),
     });

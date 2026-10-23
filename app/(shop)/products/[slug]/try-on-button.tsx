@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 
 import { TryOnPanel } from "../../try-on-panel";
 
-/** "Try on" for a ready-made dress: opens the try-on panel in place. */
-export function TryOnButton({ productId, slug, signedIn }: { productId: string; slug: string; signedIn: boolean }) {
+/** "Try on" for a ready-made garment: opens the try-on panel in place. */
+export function TryOnButton({ productId, slug, signedIn, noun }: { productId: string; slug: string; signedIn: boolean; noun: string }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   return (
@@ -20,6 +20,7 @@ export function TryOnButton({ productId, slug, signedIn }: { productId: string; 
         <TryOnPanel
           source={{ kind: "product", productId }}
           signedIn={signedIn}
+          noun={noun}
           onSignIn={() => router.push(`/login?next=${encodeURIComponent(`/products/${slug}`)}`)}
         />
       )}

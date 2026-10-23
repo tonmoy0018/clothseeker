@@ -30,6 +30,8 @@ export type UploadControls = {
 
 export function PersonaliseTab(props: {
   config: TemplateConfig;
+  /** What the garment is called ("Where on the dress"). */
+  noun: string;
   activeArea: PlacementArea | null;
   onArea: (area: PlacementArea) => void;
   selectedLayer: DesignLayer | null;
@@ -48,7 +50,7 @@ export function PersonaliseTab(props: {
   const decorations = DECORATIONS.filter((d) => config.allowedDecorations.includes(d.id));
 
   if (config.placementAreas.length === 0) {
-    return <p className="text-sm text-muted-foreground">This dress has no print areas, so text and images can&apos;t be added.</p>;
+    return <p className="text-sm text-muted-foreground">This {props.noun} has no print areas, so text and images can&apos;t be added.</p>;
   }
 
   return (
@@ -120,7 +122,7 @@ export function PersonaliseTab(props: {
       )}
 
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-medium">Where on the dress</span>
+        <span className="text-sm font-medium">Where on the {props.noun}</span>
         <div className="flex flex-wrap gap-2" role="group" aria-label="Print area">
           {config.placementAreas.map((area) => (
             <button

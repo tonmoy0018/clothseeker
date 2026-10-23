@@ -31,9 +31,9 @@ export default async function MyDesignsPage() {
       {designs.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-xl border p-8">
           <p className="font-medium">You haven&apos;t saved any designs yet.</p>
-          <p className="text-sm text-muted-foreground">Look for dresses marked “Customizable” and make one your own.</p>
+          <p className="text-sm text-muted-foreground">Look for items marked “Customizable” and make one your own.</p>
           <Link href="/products" className={buttonVariants()}>
-            Browse dresses
+            Browse the shop
           </Link>
         </div>
       ) : (

@@ -84,6 +84,6 @@ test.describe("@supabase design screen", () => {
 
   test("dresses without a live template show a friendly page", async ({ page }) => {
     await page.goto("/customize/11111111-1111-4111-8111-111111111111");
-    await expect(page.getByTestId("not-customizable")).toContainText("This dress can't be customized");
+    await expect(page.getByTestId("not-customizable")).toContainText("This item can't be customized");
   });
 });

@@ -1,3 +1,4 @@
+import type { GarmentType } from "@/lib/catalog/garment-types";
 import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeEach } from "vitest";
@@ -39,6 +40,7 @@ export async function createProduct(options: {
   slug?: string;
   status?: ProductStatus;
   category?: string;
+  garmentType?: GarmentType;
   variants: VariantSpec[];
 }) {
   const categorySlug = options.category ?? "casual";
@@ -53,6 +55,7 @@ export async function createProduct(options: {
       slug,
       name: `Dress ${slug}`,
       description: "Test dress",
+      garmentType: options.garmentType ?? "dress",
       categoryId: category.id,
       status: options.status ?? "ACTIVE",
       variants: {

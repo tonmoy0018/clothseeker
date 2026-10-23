@@ -38,9 +38,9 @@ export default async function CartPage() {
     return (
       <div className="flex flex-col items-start gap-3 rounded-xl border p-8">
         <h1 className="text-2xl font-semibold">Your cart is empty</h1>
-        <p className="text-muted-foreground">Find a dress you love and it will appear here.</p>
+        <p className="text-muted-foreground">Find something you love and it will appear here.</p>
         <Link href="/products" className={buttonVariants()}>
-          Browse dresses
+          Browse the shop
         </Link>
       </div>
     );

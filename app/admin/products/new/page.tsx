@@ -8,7 +8,7 @@ import { getPrisma } from "@/lib/db";
 
 import { createProductAction } from "../actions";
 
-export const metadata: Metadata = { title: "New dress — ClothSeeker admin" };
+export const metadata: Metadata = { title: "New item — ClothSeeker admin" };
 
 export default async function NewProductPage() {
   const admin = await requireAdmin();
@@ -16,9 +16,9 @@ export default async function NewProductPage() {
   return (
     <div className="flex max-w-3xl flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold">New dress</h1>
+        <h1 className="text-2xl font-semibold">New item</h1>
         <p className="text-sm text-muted-foreground">
-          New dresses start as drafts. Add sizes, colors and photos, then publish.
+          New items start as drafts. Add sizes, colors and photos, then publish.
         </p>
       </div>
       <ActionForm action={createProductAction} className="flex flex-col gap-4">

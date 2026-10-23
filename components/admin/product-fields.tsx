@@ -1,13 +1,16 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AUDIENCES, GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 
 type ProductFieldsProps = {
   categories: { id: string; name: string }[];
-  defaults?: { name: string; slug: string; categoryId: string; description: string };
+  defaults?: { name: string; slug: string; garmentType: GarmentType; categoryId: string; description: string };
   slugOptional?: boolean;
+  /** The garment type can't change once the item has a customization template. */
+  garmentTypeLocked?: boolean;
 };
 
-export function ProductFields({ categories, defaults, slugOptional }: ProductFieldsProps) {
+export function ProductFields({ categories, defaults, slugOptional, garmentTypeLocked }: ProductFieldsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="flex flex-col gap-1.5">
@@ -26,6 +29,26 @@ export function ProductFields({ categories, defaults, slugOptional }: ProductFie
           pattern="[a-z0-9]+(-[a-z0-9]+)*"
         />
         <p className="text-xs text-muted-foreground">Shown as /products/your-slug. Lowercase letters, numbers, hyphens.</p>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="garmentType">Garment type</Label>
+        {garmentTypeLocked && <input type="hidden" name="garmentType" value={defaults?.garmentType} />}
+        <select
+          id="garmentType"
+          name={garmentTypeLocked ? undefined : "garmentType"}
+          disabled={garmentTypeLocked}
+          defaultValue={defaults?.garmentType ?? "dress"}
+          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm disabled:opacity-70"
+        >
+          {GARMENT_TYPE_IDS.map((type) => (
+            <option key={type} value={type}>
+              {AUDIENCES[GARMENT_TYPES[type].audience].label}&apos;s {GARMENT_TYPES[type].noun}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {garmentTypeLocked ? "Fixed, because this item has a customization template." : "Decides the style options customers can choose (e.g. neckline or collar)."}
+        </p>
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="categoryId">Category</Label>

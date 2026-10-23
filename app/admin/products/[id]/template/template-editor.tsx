@@ -12,7 +12,7 @@ import { PATTERNS } from "@/lib/catalog/patterns";
 import { MINOR_PER_MAJOR } from "@/lib/money";
 import { uniqueSlug } from "@/lib/text/slug";
 import { cn } from "@/lib/utils";
-import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL, type StyleGroup } from "@/lib/catalog/garment-types";
+import { GARMENT_TYPES, STYLE_GROUP_IDS, STYLE_GROUP_LABEL, type StyleGroup } from "@/lib/catalog/garment-types";
 import { styleOptionsFor, templateStyleGroups, type StyleOption, type TemplateConfig } from "@/types/template";
 
 import { saveTemplateAction, setTemplateStateAction, uploadTemplateImageAction } from "./actions";
@@ -165,7 +165,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
         )}
       </div>
 
-      <Section title="Garment images" description="Plain front and back photos or drawings of the dress, at least 800×800 px. Customers design on top of these.">
+      <Section title="Garment images" description="Plain front and back photos or drawings of the garment, at least 800×800 px. Customers design on top of these.">
         <div className="grid gap-6 sm:grid-cols-2">
           {(["front", "back"] as const).map((s) => {
             const key = config.garmentImages[s];
@@ -192,8 +192,8 @@ export function TemplateEditor(props: TemplateEditorProps) {
         {config.styleVariants.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm" data-testid="style-pictures">
             <p className="max-w-prose text-muted-foreground">
-              This dress also has {config.styleVariants.length} style pictures, so the customer&apos;s preview changes shape with the neckline, sleeves and
-              length. They replace the images above whenever they match the customer&apos;s choices. If you upload your own garment images, remove them.
+              This {GARMENT_TYPES[config.garmentType].noun} also has {config.styleVariants.length} style pictures, so the customer&apos;s preview changes shape with
+              the style choices. They replace the images above whenever they match the customer&apos;s choices. If you upload your own garment images, remove them.
             </p>
             <Button size="sm" variant="outline" onClick={() => update((c) => ({ ...c, styleVariants: [] }))}>
               Remove style pictures
@@ -281,7 +281,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
 
       <Section
         title="Recolorable regions"
-        description="Parts of the dress customers can color or pattern separately. Each needs a mask: a black image the same size as the garment image, painted white where the region is."
+        description="Parts of the garment customers can color or pattern separately. Each needs a mask: a black image the same size as the garment image, painted white where the region is."
       >
         <div className="flex flex-col gap-2">
           {config.regions.map((region, index) => (
@@ -351,7 +351,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
         </div>
       </Section>
 
-      <Section title="Style options" description="One choice per group. Add-on prices are added to the base price. A reference image helps customers see the option.">
+      <Section title="Style options" description={`Style choices for a ${GARMENT_TYPES[config.garmentType].noun} (set by the item's garment type). One choice per group. Add-on prices are added to the base price. A reference image helps customers see the option.`}>
         <div className="grid gap-6 lg:grid-cols-3">
           {templateStyleGroups(config).map((group) => (
             <div key={group} className="flex flex-col gap-3">
@@ -460,7 +460,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
         </Section>
       </div>
 
-      <Section title="Add-on prices" description="Charged once per layer or patterned part, on top of the dress and style-option prices.">
+      <Section title="Add-on prices" description="Charged once per layer or patterned part, on top of the garment and style-option prices.">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {(Object.keys(ADD_ON_LABEL) as (keyof TemplateConfig["addOns"])[]).map((key) => (
             <LabeledNumber key={key} label={`${ADD_ON_LABEL[key]} (৳)`} value={toTaka(config.addOns[key])} step={50} onChange={(v) => update((c) => ({ ...c, addOns: { ...c.addOns, [key]: toMinor(String(v)) } }))} />

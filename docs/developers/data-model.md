@@ -18,7 +18,7 @@ ClothSeeker is a **single brand**. There are no sellers, stores, store members o
 |---|---|---|---|
 | Users | `User` | Profile and role (`CUSTOMER` or `ADMIN`) | `email` unique |
 | Catalog | `Category` | Casual, Party, … | `slug` unique |
-| | `Product` | A dress. `status` is `DRAFT`, `ACTIVE` or `ARCHIVED`; only `ACTIVE` products are visible in the shop | `slug` unique; index (`status`, `categoryId`) |
+| | `Product` | A garment for sale. `garmentType` (`dress`, `shirt`, `panjabi`) decides its shop section (Women/Men), size chart, wording and template style groups; it's fixed once a template exists. `status` is `DRAFT`, `ACTIVE` or `ARCHIVED`; only `ACTIVE` products are visible in the shop | `slug` unique; indexes (`status`, `categoryId`), (`status`, `garmentType`) |
 | | `Variant` | One size and color of a product, with its price and stock | `sku` unique; unique (`productId`, `size`, `colorName`); index (`productId`, `isActive`) |
 | | `CustomizationTemplate` | Customization rules for one product. `config` is versioned JSON, read only through `parseTemplateConfig()` ([`types/template.ts`](../../types/template.ts)). `version` increments on every save (optimistic locking) | `productId` unique (1:1) |
 | Design | `Design` | A customer's design. `spec` is a versioned DesignSpec (Phase 3) | index (`customerId`, `updatedAt`) |

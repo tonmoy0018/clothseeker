@@ -35,7 +35,7 @@ export default async function AdminDashboardPage() {
   ];
 
   const tiles = [
-    { label: "Live dresses", value: dashboard.counts.ACTIVE, href: "/admin/products?status=ACTIVE" },
+    { label: "Live items", value: dashboard.counts.ACTIVE, href: "/admin/products?status=ACTIVE" },
     { label: "Drafts", value: dashboard.counts.DRAFT, href: "/admin/products?status=DRAFT" },
     { label: "Archived", value: dashboard.counts.ARCHIVED, href: "/admin/products?status=ARCHIVED" },
     { label: "Templates not live", value: dashboard.inactiveTemplates, href: "/admin/products" },
@@ -46,7 +46,7 @@ export default async function AdminDashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <Link href="/admin/products/new" className={buttonVariants()}>
-          New dress
+          New item
         </Link>
       </div>
 

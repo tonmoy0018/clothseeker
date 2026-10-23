@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/session";
 import { signCatalogImages } from "@/lib/catalog/images";
-import { SIZE_CHART, SIZE_ORDER } from "@/lib/catalog/size-chart";
+import { AUDIENCES, GARMENT_TYPES } from "@/lib/catalog/garment-types";
+import { SIZE_ORDER, sizeChartFor } from "@/lib/catalog/size-chart";
 import { getPrisma } from "@/lib/db";
 import { getProductBySlug } from "@/lib/shop/catalog";
 import { productTryOnImageKey } from "@/lib/tryon/garment";
@@ -17,7 +18,7 @@ import { TryOnButton } from "./try-on-button";
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProductBySlug(getPrisma(), slug);
-  return { title: product ? `${product.name} — ClothSeeker` : "Dress not found — ClothSeeker" };
+  return { title: product ? `${product.name} — ClothSeeker` : "Not found — ClothSeeker" };
 }
 
 export default async function ProductPage({ params }: PageProps<"/products/[slug]">) {
@@ -29,7 +30,9 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
 
   const sizes = SIZE_ORDER.filter((s) => product.variants.some((v) => v.size === s));
   const colors = [...new Map(product.variants.map((v) => [v.colorName, { name: v.colorName, hex: v.colorHex }])).values()];
-  const chartRows = SIZE_CHART.filter((row) => sizes.includes(row.size));
+  const chart = sizeChartFor(product.garmentType);
+  const chartRows = chart.rows.filter((row) => sizes.includes(row.size));
+  const garment = GARMENT_TYPES[product.garmentType];
   const [signed, user, tryOnImage] = await Promise.all([signCatalogImages(product.imageKeys), getCurrentUser(), productTryOnImageKey(getPrisma(), product.id)]);
   const photos = product.imageKeys.flatMap((key) => {
     const url = signed.get(key);
@@ -39,8 +42,8 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
   return (
     <div className="flex flex-col gap-10">
       <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
-        <Link href="/products" className="hover:text-foreground">
-          Dresses
+        <Link href={`/products?for=${garment.audience}`} className="hover:text-foreground">
+          {AUDIENCES[garment.audience].label}
         </Link>{" "}
         /{" "}
         <Link href={`/products?category=${product.category.slug}`} className="hover:text-foreground">
@@ -60,7 +63,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
 
       <section className="grid gap-8 md:grid-cols-2">
         <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">About this dress</h2>
+          <h2 className="text-lg font-semibold">About this {garment.noun}</h2>
           <p className="text-muted-foreground">{product.description}</p>
           <div className="flex flex-wrap gap-2 pt-2">
             {product.customizable && <Badge variant="secondary">Customizable</Badge>}
@@ -68,10 +71,10 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
           <div className="flex flex-wrap gap-2 pt-2">
             {product.customizable && (
               <Link href={`/customize/${product.id}`} className={buttonVariants({ variant: "outline" })}>
-                Customize this dress
+                Customize this {garment.noun}
               </Link>
             )}
-            {tryOnImage && <TryOnButton productId={product.id} slug={product.slug} signedIn={user?.role === "CUSTOMER"} />}
+            {tryOnImage && <TryOnButton productId={product.id} slug={product.slug} signedIn={user?.role === "CUSTOMER"} noun={garment.noun} />}
           </div>
         </div>
 
@@ -81,18 +84,20 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
             <thead>
               <tr className="border-b text-left text-muted-foreground">
                 <th className="py-2 font-medium">Size</th>
-                <th className="py-2 font-medium">Bust</th>
-                <th className="py-2 font-medium">Waist</th>
-                <th className="py-2 font-medium">Hip</th>
+                {chart.columns.map((column) => (
+                  <th key={column} className="py-2 font-medium">
+                    {column}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {chartRows.map((row) => (
                 <tr key={row.size} className="border-b last:border-0">
                   <td className="py-2 font-medium">{row.size}</td>
-                  <td className="py-2">{`${row.bustCm[0]}–${row.bustCm[1]}`}</td>
-                  <td className="py-2">{`${row.waistCm[0]}–${row.waistCm[1]}`}</td>
-                  <td className="py-2">{`${row.hipCm[0]}–${row.hipCm[1]}`}</td>
+                  {row.cm.map(([from, to], i) => (
+                    <td key={chart.columns[i]} className="py-2">{`${from}–${to}`}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>

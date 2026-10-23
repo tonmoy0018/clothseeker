@@ -3,7 +3,7 @@ import { z } from "zod";
 import { STYLE_GROUP_IDS } from "@/lib/catalog/garment-types";
 
 import { assertAdmin, type Actor } from "@/lib/auth/policy";
-import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/catalog/default-template";
+import { defaultTemplateConfig } from "@/lib/catalog/default-template";
 import type { PrismaClient } from "@/lib/db/client";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -37,16 +37,17 @@ export type TemplateForEdit = {
 export async function createTemplate(db: PrismaClient, actor: Actor, rawProductId: unknown): Promise<void> {
   assertAdmin(actor);
   const productId = productIdSchema.parse(rawProductId);
-  const product = await db.product.findUnique({ where: { id: productId }, select: { template: { select: { id: true } } } });
+  const product = await db.product.findUnique({ where: { id: productId }, select: { garmentType: true, template: { select: { id: true } } } });
   if (!product) {
-    throw new AdminError("NOT_FOUND", "That dress no longer exists.");
+    throw new AdminError("NOT_FOUND", "That item no longer exists.");
   }
   if (product.template) {
     return;
   }
   await db.$transaction(async (tx) => {
     const template = await tx.customizationTemplate.create({
-      data: { productId, version: 1, config: DEFAULT_TEMPLATE_CONFIG, isActive: false, aiEnabled: false },
+      // The garment type's own style options, regions and print areas.
+      data: { productId, version: 1, config: defaultTemplateConfig(product.garmentType), isActive: false, aiEnabled: false },
       select: { id: true },
     });
     await writeAudit(tx, actor, "template.create", { type: "template", id: template.id }, { productId });
@@ -111,7 +112,7 @@ export function activationProblems(config: TemplateConfig): string[] {
 function assertKeysBelongToProduct(config: TemplateConfig, productId: string): void {
   const foreign = templateImageKeys(config).filter((key) => !key.startsWith(`${productId}/`));
   if (foreign.length > 0) {
-    throw new AdminError("INVALID", "The template references an image that doesn't belong to this dress.");
+    throw new AdminError("INVALID", "The template references an image that doesn't belong to this item.");
   }
 }
 
@@ -133,10 +134,13 @@ export async function saveTemplate(
 
   const current = await db.customizationTemplate.findUnique({
     where: { productId: input.productId },
-    select: { id: true, version: true, isActive: true, config: true },
+    select: { id: true, version: true, isActive: true, config: true, product: { select: { garmentType: true } } },
   });
   if (!current) {
-    throw new AdminError("NOT_FOUND", "This dress has no template yet.");
+    throw new AdminError("NOT_FOUND", "This item has no template yet.");
+  }
+  if (input.config.garmentType !== current.product.garmentType) {
+    throw new AdminError("INVALID", "A template must be for the same kind of garment as its product.");
   }
   if (current.isActive) {
     const problems = activationProblems(input.config);
@@ -190,7 +194,7 @@ export async function setTemplateState(db: PrismaClient, actor: Actor, rawInput:
     select: { id: true, isActive: true, aiEnabled: true, config: true },
   });
   if (!template) {
-    throw new AdminError("NOT_FOUND", "This dress has no template yet.");
+    throw new AdminError("NOT_FOUND", "This item has no template yet.");
   }
   if (input.isActive && !template.isActive) {
     const problems = activationProblems(parseTemplateConfig(template.config));
@@ -236,7 +240,7 @@ export async function uploadTemplateImage(
   const slot = slotSchema.parse(rawInput.slot);
   const template = await db.customizationTemplate.count({ where: { productId } });
   if (template === 0) {
-    throw new AdminError("NOT_FOUND", "This dress has no template yet.");
+    throw new AdminError("NOT_FOUND", "This item has no template yet.");
   }
   const isGarment = slot === "front" || slot === "back";
   const isMask = slot.startsWith("mask:");

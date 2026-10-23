@@ -21,13 +21,13 @@ export default async function QuotesPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">My tailoring quotes</h1>
-        <p className="text-sm text-muted-foreground">For designs started from a dress photo that need special tailoring. We reply within 24 hours; a price is valid for 7 days.</p>
+        <p className="text-sm text-muted-foreground">For designs started from a photo that need special tailoring. We reply within 24 hours; a price is valid for 7 days.</p>
       </div>
       {quotes.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-xl border p-8">
           <p className="font-medium">You haven&apos;t requested any quotes yet.</p>
           <Link href="/design/start" className={buttonVariants()}>
-            Start from a dress photo
+            Start from a photo
           </Link>
         </div>
       ) : (
