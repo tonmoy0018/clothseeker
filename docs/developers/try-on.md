@@ -55,7 +55,7 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 - `levihsu/OOTDiffusion` uses `/process_dc` with `category: "Dress"`.
 - `franciszzj/Leffa` uses `/leffa_predict_vt` with `vt_model_type: "dress_code"` and `vt_garment_type: "dresses"`.
 
-**Garment preparation.** Each garment is cropped and centred on a white 768×1024 canvas (`prepareGarment`). For designs this is the flat garment from `renderFlatGarment`; for ready-made dresses it's the first product photo, or else the template's garment image (`productTryOnImageKey`). "Try on" is hidden on dresses that have neither.
+**Garment preparation.** Each garment is cropped and centred on a white 768×1024 canvas (`prepareGarment`). For designs this is the flat garment from `renderFlatGarment`; for ready-made dresses it's the first product photo, or else the template's garment image (`productTryOnImageKey`), with the dress cut out of it first (`cutOutGarment` in `lib/garment-photo/align.ts`: no mannequin, stand or backdrop; the whole photo if no dress is found). For photo templates the flat garment is already cut out by the region masks. "Try on" is hidden on dresses that have neither.
 
 **Failures:**
 - A space that errors or sleeps → the next space is tried.
@@ -69,7 +69,7 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 `pnpm tsx ai-scripts/tryon-feasibility.ts <person> <garment> <out-dir> [space…]` sends one photo and one garment to each Space and saves the outputs. Use photos you may share with a third party, e.g. the Spaces' own examples.
 
 - Both Spaces were **running and answered in 17–26 s**, including through the app.
-- **Quality is a rough preview.** OOTDiffusion clearly showed our dress (colours, bodice/skirt split, pattern) on the person. It also often invented extra garments where the original sleeves were (e.g. a dark "jacket" over the arms). Leffa, given a loose drawing, kept the person's own clothes and pasted the pattern on. Tight garment images (`prepareGarment`) helped noticeably.
+- **Quality is a rough preview.** OOTDiffusion clearly showed our dress (colours, bodice/skirt split, pattern) on the person. It also often invented extra garments where the original sleeves were (e.g. a dark "jacket" over the arms). Leffa, given a loose drawing, kept the person's own clothes and pasted the pattern on. Tight garment images (`prepareGarment`) helped noticeably. Re-tested on 2026-10-23 with cut-out catalogue photos: OOTDiffusion put the smocked dress (puff sleeves, smocked bodice, midi skirt) convincingly on the Space's example model in about 30 s; Leffa treated it as a top. The cache key includes a version (`v: 2` since the cut-out), so older results are redone.
 - **The free GPU allowance is tiny.** Anonymous ZeroGPU use allowed **one** Leffa run (180 s of GPU reserved per call) before "You have exceeded your ZeroGPU quota… try again in 23:58". The allowance belongs to the worker, i.e. **all customers share it**. A free Hugging Face account token (`HF_TOKEN`) raises it somewhat; a paid plan or a self-hosted model is needed for real traffic.
 - **Decision (with the product owner):** ship it as a clearly labelled rough preview, with a friendly message when the daily limit is reached. Fakes stay the default.
 

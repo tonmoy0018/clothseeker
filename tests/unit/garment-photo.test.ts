@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
-import { alignPhoto, analysePhoto, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, TORSO } from "@/lib/garment-photo/align";
+import { alignPhoto, analysePhoto, cutOutGarment, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, TORSO } from "@/lib/garment-photo/align";
 import { maskArea, skirtRatio, sleeveStyle } from "@/lib/garment-photo/segment";
 import { luminance, shadeFactor, shadeRange } from "@/lib/design/shade";
 
@@ -77,6 +77,20 @@ describe("finding and splitting the dress in a photo", () => {
       expect(Math.abs(((parts.waistY - parts.shoulderY) * scale) / PHOTO_HEIGHT - TORSO)).toBeLessThan(0.025);
       expect(Math.abs((parts.centreX * scale) / PHOTO_WIDTH - 0.5)).toBeLessThan(0.02);
     }
+  });
+});
+
+describe("cutting the dress out for try-on", () => {
+  it("keeps the dress and drops the mannequin, stand and backdrop", async () => {
+    const cut = await cutOutGarment(await photo({ colour: "#1f2a44", sleeves: "short", hem: 320 }));
+    const { data, info } = await sharp(cut).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alpha = (x: number, y: number) => data[(Math.round(y * (info.height - 1)) * info.width + Math.round(x * (info.width - 1))) * 4 + 3] ?? 0;
+    // Trimmed to the dress: its middle is solid, the corners (backdrop) are clear.
+    expect(alpha(0.5, 0.6)).toBe(255);
+    expect(alpha(0, 0)).toBe(0);
+    expect(alpha(1, 1)).toBe(0);
+    // The mannequin head (above the shoulders) and stand (below the hem) were left behind.
+    expect(info.height).toBeLessThan(250);
   });
 });
 

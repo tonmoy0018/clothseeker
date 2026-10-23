@@ -212,7 +212,8 @@ export async function createTryOnJob(db: PrismaClient, storage: StorageAdapter, 
     garmentHash = productSignature(input.source.productId, imageKey);
   }
 
-  const inputHash = aiInputHash({ v: 1, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash });
+  // v2: ready-made dresses are cut out of their photo before try-on, so earlier results are redone.
+  const inputHash = aiInputHash({ v: 2, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash });
   const cached = await db.tryOnResult.findFirst({ where: { customerId: actor.id, inputHash, deletedAt: null }, orderBy: { createdAt: "desc" }, select: { jobId: true } });
   if (cached) {
     return { jobId: cached.jobId, cached: true };

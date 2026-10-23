@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { garmentPicture } from "@/lib/design/garment-variant";
+import { cutOutGarment } from "@/lib/garment-photo/align";
+import { SegmentationError } from "@/lib/garment-photo/segment";
 import { normalizeForRender } from "@/lib/design/normalize";
 import { checkDesign, DesignError } from "@/lib/design/service";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
@@ -19,7 +21,7 @@ import { leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import type { AiWorkerDeps } from "./run";
 
 // One virtual try-on, run by the worker:
-//   photo check (once per photo) → flat garment on a white 3:4 canvas → TryOnProvider
+//   photo check (once per photo) → flat garment (cut out of its picture) on a white 3:4 canvas → TryOnProvider
 //   → re-encode → one transaction: TryOnResult + job SUCCEEDED (only while holding the lease).
 
 const GARMENT_RENDER_WIDTH = 900;
@@ -62,7 +64,14 @@ async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPa
   if (!image) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
-  return prepareGarment(image);
+  // Try-on models want the garment alone: cut the dress out of the catalogue photo (mannequin and
+  // backdrop removed). If it can't be found, the whole photo is still better than nothing.
+  try {
+    return await prepareGarment(await cutOutGarment(image));
+  } catch (error) {
+    if (!(error instanceof SegmentationError)) throw error;
+    return prepareGarment(image);
+  }
 }
 
 export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal): Promise<void> {

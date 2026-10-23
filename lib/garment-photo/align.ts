@@ -115,3 +115,24 @@ export async function maskPng(mask: Mask, width: number, height: number): Promis
     .png({ compressionLevel: 9 })
     .toBuffer();
 }
+
+/**
+ * Just the dress from a catalogue photo, on a transparent background (no mannequin, stand or
+ * studio backdrop), as try-on models expect a garment. Throws SegmentationError if no dress is found.
+ */
+export async function cutOutGarment(input: Buffer): Promise<Buffer> {
+  const { parts } = await analysePhoto(input, 800);
+  const meta = await sharp(input).metadata();
+  const width = meta.width ?? 1;
+  const height = meta.height ?? 1;
+  const rgb = await sharp(input).removeAlpha().raw().toBuffer();
+  const alpha = await sharp(await maskPng(parts.garment, width, height)).blur(1).extractChannel(0).raw().toBuffer();
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let p = 0; p < width * height; p += 1) {
+    rgba[p * 4] = rgb[p * 3] ?? 0;
+    rgba[p * 4 + 1] = rgb[p * 3 + 1] ?? 0;
+    rgba[p * 4 + 2] = rgb[p * 3 + 2] ?? 0;
+    rgba[p * 4 + 3] = alpha[p] ?? 0;
+  }
+  return sharp(rgba, { raw: { width, height, channels: 4 } }).trim().png().toBuffer();
+}
