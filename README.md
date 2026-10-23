@@ -84,6 +84,7 @@ Local Supabase uses ports **55420–55429** (API 55421, Postgres 55422, Studio h
 - [docs/developers/order-lifecycle.md](docs/developers/order-lifecycle.md) and [payments.md](docs/developers/payments.md): checkout, webhooks, order states
 - [docs/developers/licences.md](docs/developers/licences.md): third-party licences (**AGPL note for background removal**)
 - [docs/developers/production.md](docs/developers/production.md): production, QC, shipping, refunds
+- [docs/developers/design-screen.md](docs/developers/design-screen.md): the customer's design screen (preview, Fabric / Style / Personalise / AI tabs)
 - [docs/developers/ai-pipelines.md](docs/developers/ai-pipelines.md): AI design box, photo/description starts, providers, quota, cache, worker jobs
 - [docs/developers/notifications.md](docs/developers/notifications.md): customer emails (outbox, worker, Mailpit)
 - [docs/developers/try-on.md](docs/developers/try-on.md): virtual try-on, consent and privacy, 24-hour cleanup, feasibility results

@@ -34,12 +34,26 @@ export async function signUpFreshCustomer(page: Page): Promise<string> {
   return email;
 }
 
+/** Opens a tab of the design screen (Fabric, Style, Personalise, AI ideas). */
+export async function openDesignTab(page: Page, name: "Fabric" | "Style" | "Personalise" | "AI ideas"): Promise<void> {
+  await page.getByRole("tab", { name }).click();
+  await expect(page.getByRole("tab", { name })).toHaveAttribute("aria-selected", "true");
+}
+
+/** On the design screen's Fabric tab: picks a part of the dress (e.g. "Skirt"), then a fabric (e.g. "Emerald"). */
+export async function chooseFabric(page: Page, part: string, fabric: string): Promise<void> {
+  await openDesignTab(page, "Fabric");
+  await page.getByRole("group", { name: "Part to color" }).getByRole("button", { name: part, exact: true }).click();
+  await page.getByTestId("fabric-grid").getByRole("button", { name: fabric, exact: true }).click();
+}
+
 /** Designs a custom Smocked Cotton Dress, adds it to the cart, checks out and pays. Returns the order page URL. */
 export async function orderCustomDesign(page: Page, options: { text: string; note?: string }): Promise<string> {
   await page.goto("/products/smocked-cotton-dress");
   await page.getByRole("link", { name: "Customize this dress" }).click();
-  await expect(page.getByTestId("price-breakdown")).toBeVisible();
-  await page.getByTestId("region-skirt").getByRole("button", { name: "Lilac" }).click();
+  await expect(page.getByTestId("design-total")).toBeVisible();
+  await chooseFabric(page, "Skirt", "Lilac");
+  await openDesignTab(page, "Personalise");
   await page.getByLabel("New text").fill(options.text);
   await page.getByRole("button", { name: /Add text/ }).click();
   await page.getByRole("button", { name: "Add to cart" }).click();

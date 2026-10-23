@@ -23,7 +23,8 @@ test.describe("@supabase start a design", () => {
     await expect(info.getByRole("img", { name: "Your reference photo" })).toBeVisible();
     await expect(info).toContainText("Other good matches");
     // The photo's wine red is applied, so a color is chosen for the skirt.
-    await expect(page.getByRole("group", { name: "Skirt color", exact: true }).getByRole("button", { name: "Wine" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("group", { name: "Part to color" }).getByRole("button", { name: "Skirt", exact: true }).click();
+    await expect(page.getByTestId("fabric-grid").getByRole("button", { name: "Wine", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "Save design" })).toBeVisible();
   });
 

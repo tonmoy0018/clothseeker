@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { signUpFreshCustomer } from "./helpers";
+import { openDesignTab, signUpFreshCustomer } from "./helpers";
 
 // @supabase — needs the local Supabase stack with seed data, plus the worker (started by
 // playwright.config.ts locally, with the fake AI providers). Each test signs up a fresh customer
@@ -12,6 +12,7 @@ async function openDesigner(page: Page) {
   await page.goto("/products/linen-wrap-dress");
   await page.getByRole("link", { name: "Customize this dress" }).click();
   await expect(page.getByRole("heading", { name: "Design your Linen Wrap Dress" })).toBeVisible();
+  await openDesignTab(page, "AI ideas");
   await expect(page.getByTestId("ai-quota")).toHaveText("10 of 10 AI rounds left today");
 }
 
@@ -41,8 +42,12 @@ test.describe("@supabase AI design box", () => {
     await box.getByRole("button", { name: "Pick option 2" }).click();
     await expect(page.getByRole("status")).toContainText("Applied option 2");
     await expect(page.getByTestId("price-breakdown")).toContainText("Image");
-    await expect(page.getByRole("group", { name: "Skirt color", exact: true }).locator('button[aria-pressed="true"]')).not.toHaveAttribute("aria-label", "Original");
     await expect(box.getByRole("button", { name: "Pick option 2" })).toHaveText("Picked");
+    // The skirt now has the option's fabric, not the original one.
+    await openDesignTab(page, "Fabric");
+    await page.getByRole("group", { name: "Part to color" }).getByRole("button", { name: "Skirt", exact: true }).click();
+    await expect(page.getByTestId("fabric-grid").getByRole("button", { name: "Original", exact: true })).toHaveAttribute("aria-pressed", "false");
+    await openDesignTab(page, "AI ideas");
     await page.getByRole("button", { name: "Undo" }).click();
     await expect(page.getByTestId("price-breakdown")).not.toContainText("Image");
     await page.getByRole("button", { name: "Redo" }).click();
@@ -68,6 +73,7 @@ test.describe("@supabase AI design box", () => {
     await page.getByRole("button", { name: "Save design" }).click();
     await expect(page.getByRole("status")).toContainText("Design saved");
     await page.reload();
+    await openDesignTab(page, "AI ideas");
     await expect(page.getByTestId("ai-history")).toContainText("Previous rounds (3)");
     await page.getByTestId("ai-history").locator("summary").click();
     await expect(page.getByTestId("ai-history").getByText("Picked 2")).toBeVisible();

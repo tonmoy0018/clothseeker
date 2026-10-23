@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 
-import { signUpFreshCustomer } from "./helpers";
+import { chooseFabric, signUpFreshCustomer } from "./helpers";
 
 // @supabase — needs the local Supabase stack with seed data, plus the worker (started by
 // playwright.config.ts locally, with the fake providers). Fresh customers get a full try-on quota.
@@ -16,7 +16,7 @@ test.describe("@supabase virtual try-on", () => {
     await signUpFreshCustomer(page);
     await page.goto("/products/linen-wrap-dress");
     await page.getByRole("link", { name: "Customize this dress" }).click();
-    await expect(page.getByTestId("price-breakdown")).toBeVisible();
+    await expect(page.getByTestId("design-total")).toBeVisible();
 
     await page.getByRole("button", { name: "See it on me" }).click();
     const panel = page.getByTestId("try-on-panel");
@@ -36,7 +36,7 @@ test.describe("@supabase virtual try-on", () => {
     await expect(panel.getByTestId("try-on-quota")).toHaveText("4 of 5 try-ons left today");
 
     // Editing the design never reruns the try-on by itself.
-    await page.getByTestId("region-skirt").getByRole("button", { name: "Emerald" }).click();
+    await chooseFabric(page, "Skirt", "Emerald");
     await expect(panel.getByTestId("try-on-stale")).toContainText("Your design changed since this try-on.");
     await page.waitForTimeout(2500);
     await expect(panel.getByTestId("try-on-loading")).toHaveCount(0);

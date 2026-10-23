@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { signUpFreshCustomer } from "./helpers";
+import { chooseFabric, openDesignTab, signUpFreshCustomer } from "./helpers";
 
 // @supabase — needs the local Supabase stack with seed data (customizable seeded dresses).
 
@@ -28,9 +28,11 @@ test.describe("@supabase design screen", () => {
 
     const total = page.getByTestId("design-total");
     const before = await total.textContent();
-    await page.getByTestId("region-skirt").getByRole("button", { name: "Emerald" }).click();
+    await chooseFabric(page, "Skirt", "Emerald");
+    await openDesignTab(page, "Personalise");
     await page.getByLabel("New text").fill("Noah's pick");
     await page.getByRole("button", { name: /Add text/ }).click();
+    await openDesignTab(page, "Style");
     await page.getByRole("button", { name: /Square/ }).click();
     await expect(page.getByTestId("price-breakdown")).toContainText("Neckline: Square");
     await expect(page.getByTestId("price-breakdown")).toContainText("Text");
@@ -68,6 +70,7 @@ test.describe("@supabase design screen", () => {
   test("a signed-out visitor's design survives signing in", async ({ page }) => {
     test.setTimeout(90_000);
     await openLinenDesigner(page);
+    await openDesignTab(page, "Personalise");
     await page.getByLabel("New text").fill("Keep me");
     await page.getByRole("button", { name: /Add text/ }).click();
     await page.getByRole("button", { name: "Save design" }).click();

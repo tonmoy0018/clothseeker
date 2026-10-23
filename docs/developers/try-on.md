@@ -1,6 +1,6 @@
 # Virtual try-on
 
-Customers can see a dress on a photo of themselves. It's available as "See it on me" on the design screen (it uses the design as currently edited) and as "Try on" on product pages (it uses the ready-made dress). It is **optional** and **labelled as a rough AI preview**.
+Customers can see a dress on a photo of themselves. It's available as "See it on me" (the shirt button beside the preview) on the design screen (it uses the design as currently edited) and as "Try on" on product pages (it uses the ready-made dress). It is **optional** and **labelled as a rough AI preview**.
 
 ```
 browser: consent ✓ → upload photo ──▶ uploadTryOnPhoto (lib/tryon/service.ts)
