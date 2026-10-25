@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { loadEnvConfig } from "@next/env";
@@ -141,7 +142,7 @@ function referenceFor(type: GarmentType, parts: GarmentParts, photoStyle: StyleC
  * Whether a picture shows the requested sleeves and length, with the whole garment in frame. Collars,
  * necklines and fit can't be read reliably from an outline, so they're left to the prompt.
  */
-async function checkPicture(image: Buffer, choice: StyleChoice, ref: Reference): Promise<Check> {
+async function checkPicture(image: Buffer, side: Side, choice: StyleChoice, ref: Reference): Promise<Check> {
   try {
     const { parts } = await analysePhoto(image);
     const got: StyleChoice = {};
@@ -149,7 +150,9 @@ async function checkPicture(image: Buffer, choice: StyleChoice, ref: Reference):
       got.sleeveLength = sleeveStyle(parts);
       got.dressLength = nearest(skirtRatio(parts), ref.base, DRESS_LENGTH_FACTOR);
     } else {
-      got.sleeveLength = menSleeves(ref.type, parts);
+      // From the back, a ghost-mannequin shirt's short sleeves often read as long (the back panel is
+      // wide): back views of shirts and panjabis aren't checked for sleeves.
+      if (side === "front") got.sleeveLength = menSleeves(ref.type, parts);
       if (ref.type === "panjabi") got.length = nearest(lengthRatio(parts), ref.base, PANJABI_LENGTH_FACTOR);
     }
     const wrong = STYLE_GROUP_IDS.filter((g) => got[g] !== undefined && choice[g] !== undefined && got[g] !== choice[g]);
@@ -193,7 +196,7 @@ async function main() {
     for (const { side, choice } of jobs) {
       const out = path.join(dir, styleFileName(type, side, choice));
       if (existsSync(out) && recheck) {
-        const check = await checkPicture(await readFile(out), choice, ref);
+        const check = await checkPicture(await readFile(out), side, choice, ref);
         if (check.ok) continue;
         log({ slug: product.slug, file: path.basename(out), recheck: check.problem });
         await rm(out);
@@ -212,8 +215,12 @@ async function main() {
           log({ slug: product.slug, file: path.basename(out), attempt, problem: "no image" });
           continue;
         }
-        const check = await checkPicture(image, choice, ref);
+        const check = await checkPicture(image, side, choice, ref);
         if (!check.ok) {
+          // Kept outside the repo, to see why pictures are refused.
+          const rejects = path.join(tmpdir(), "clothseeker-style-rejects", product.slug);
+          await mkdir(rejects, { recursive: true });
+          await writeFile(path.join(rejects, `${path.basename(out, ".jpg")}-${attempt}.jpg`), image);
           log({ slug: product.slug, file: path.basename(out), attempt, problem: check.problem });
           continue;
         }
