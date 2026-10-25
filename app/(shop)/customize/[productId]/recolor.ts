@@ -1,6 +1,7 @@
 "use client";
 
 import { patternSvg, type PatternId } from "@/lib/catalog/patterns";
+import { fabricField, type FabricField } from "@/lib/design/fabric-warp";
 import { luminance, shadeChannel, shadeFactor, shadeRange } from "@/lib/design/shade";
 
 // Browser version of the server's region recolor (lib/renderer/render.ts): the region's color or
@@ -147,4 +148,19 @@ export async function offFabricOverlay(garment: HTMLCanvasElement, maskUrls: rea
   for (let i = 0; i < pixels.data.length; i += 4) pixels.data[i + 3] = 255 - (fabric[i] ?? 0);
   outCtx.putImageData(pixels, 0, 0);
   return out;
+}
+
+/** The fabric's shape for printed items on a composed garment picture (lib/design/fabric-warp.ts). */
+export async function fabricFieldFor(garment: HTMLCanvasElement, maskUrls: readonly string[]): Promise<FabricField> {
+  const { width, height } = garment;
+  const union = document.createElement("canvas");
+  union.width = width;
+  union.height = height;
+  const unionCtx = context2d(union);
+  unionCtx.fillStyle = "#000000";
+  unionCtx.fillRect(0, 0, width, height);
+  unionCtx.globalCompositeOperation = "lighten";
+  for (const url of maskUrls) unionCtx.drawImage(await loadImage(url), 0, 0, width, height);
+  const pixels = context2d(garment).getImageData(0, 0, width, height).data;
+  return fabricField(pixels, 4, unionCtx.getImageData(0, 0, width, height).data, 4, width, height);
 }

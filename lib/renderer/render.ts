@@ -3,6 +3,7 @@ import sharp, { type OverlayOptions, type Sharp } from "sharp";
 import { decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
 import { patternSvg } from "@/lib/catalog/patterns";
 import type { AreaPlan, LayerOp, RenderPlan, Side, SidePlan } from "@/lib/design/normalize";
+import { applyFabricField, fabricField } from "@/lib/design/fabric-warp";
 import { luminance, shadeChannel, shadeFactor, shadeRange } from "@/lib/design/shade";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -258,24 +259,48 @@ async function trimmed(overlays: OverlayOptions[], mask: Buffer, width: number, 
   return png(sharp(layered, { raw: { width, height, channels: 4 } }));
 }
 
+/** Flat RGBA (width×height) of overlays composited on a transparent canvas. */
+async function flatLayers(overlays: OverlayOptions[], width: number, height: number): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite(overlays).raw().toBuffer();
+}
+
 /** Garment with region colors/patterns and the layers of every area on that side. */
 async function composeSide(plan: SidePlan, assets: Assets, width: number, recolor: RenderPlan["recolor"]): Promise<Garment> {
   const garment = await loadGarment(plan, assets, width);
   const overlays = await regionOverlays(plan, garment, assets, recolor);
+  const { width: w, height: h } = garment;
+  const free: OverlayOptions[] = [];
+  const trimmedLayers: OverlayOptions[] = [];
+  let trimKeys: string[] = [];
   for (const area of plan.areas) {
-    const areaW = area.rect.w * garment.width;
-    const areaH = area.rect.h * garment.height;
-    const layers = await layerOverlays(area, areaW, areaH, area.rect.x * garment.width, area.rect.y * garment.height, garment.width, garment.height, assets);
-    if (area.clipToFabric && area.fabricMaskKeys.length > 0 && layers.length > 0) {
-      // Whatever hangs off the garment's outline is trimmed away.
-      const mask = await unionMask(area.fabricMaskKeys, garment.width, garment.height, assets);
-      overlays.push({ input: await trimmed(layers, mask, garment.width, garment.height) });
+    const layers = await layerOverlays(area, area.rect.w * w, area.rect.h * h, area.rect.x * w, area.rect.y * h, w, h, assets);
+    if (area.clipToFabric && area.fabricMaskKeys.length > 0) {
+      trimmedLayers.push(...layers);
+      trimKeys = area.fabricMaskKeys;
     } else {
-      overlays.push(...layers);
+      free.push(...layers);
+    }
+  }
+  if (free.length + trimmedLayers.length > 0) {
+    // Items take the fabric's shape and shading (lib/design/fabric-warp.ts) inside the garment's outline.
+    const outline = plan.outlineMaskKeys.length > 0 ? await unionMask(plan.outlineMaskKeys, w, h, assets) : Buffer.alloc(w * h);
+    const field = fabricField(await rawRgb(sharp(garment.data)), 3, outline, 1, w, h);
+    const shaped = async (layers: OverlayOptions[]) => {
+      const out = Buffer.alloc(w * h * 4);
+      applyFabricField(await flatLayers(layers, w, h), out, field);
+      return out;
+    };
+    if (free.length > 0) overlays.push({ input: await png(sharp(await shaped(free), { raw: { width: w, height: h, channels: 4 } })) });
+    if (trimmedLayers.length > 0) {
+      // Whatever hangs off the garment's outline is trimmed away.
+      const shapedTrimmed = await shaped(trimmedLayers);
+      const mask = await unionMask(trimKeys, w, h, assets);
+      for (let p = 0; p < w * h; p += 1) shapedTrimmed[p * 4 + 3] = Math.round(((shapedTrimmed[p * 4 + 3] ?? 0) * (mask[p] ?? 0)) / 255);
+      overlays.push({ input: await png(sharp(shapedTrimmed, { raw: { width: w, height: h, channels: 4 } })) });
     }
   }
   const data = overlays.length > 0 ? await png(sharp(garment.data).composite(overlays)) : garment.data;
-  return { data, width: garment.width, height: garment.height };
+  return { data, width: w, height: h };
 }
 
 // ─── public API ──────────────────────────────────────────────────────────────

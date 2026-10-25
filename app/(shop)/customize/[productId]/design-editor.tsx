@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { FONTS, fontUrl } from "@/lib/catalog/fonts";
 import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import { decorationSvg } from "@/lib/catalog/decorations";
+import type { FabricField } from "@/lib/design/fabric-warp";
 import { garmentPicture } from "@/lib/design/garment-variant";
 import { pictureWidthCm } from "@/lib/design/normalize";
 import { luminance } from "@/lib/design/shade";
@@ -30,7 +31,7 @@ import { DesignCanvas, type LayerBox } from "./design-canvas";
 import { RailButton, SideThumb } from "./editor-ui";
 import { FabricTab } from "./fabric-tab";
 import { PersonaliseTab } from "./personalise-tab";
-import { composeGarment, decorationDataUrl, loadImage, offFabricOverlay, type ClientFill, type ClientPrint } from "./recolor";
+import { composeGarment, decorationDataUrl, fabricFieldFor, loadImage, offFabricOverlay, type ClientFill, type ClientPrint } from "./recolor";
 import { StyleTab } from "./style-tab";
 
 const HISTORY_LIMIT = 50;
@@ -217,6 +218,34 @@ export function DesignEditor(props: DesignEditorProps) {
       cancelled = true;
     };
   }, [garments, pictures, config.regions, config.placementAreas, props.imageUrls]);
+  // The fabric's shape for each side, so items look printed on it (bent along folds, shaded, wrapped).
+  type Shape = { garment: HTMLCanvasElement; field: FabricField };
+  const [shapes, setShapes] = useState<{ front: Shape | null; back: Shape | null }>({ front: null, back: null });
+  useEffect(() => {
+    let cancelled = false;
+    for (const s of ["front", "back"] as const) {
+      const garment = garments[s];
+      const maskUrls = config.regions.flatMap((r) => {
+        const key = pictures[s].maskFor(r.id);
+        const url = key ? props.imageUrls[key] : undefined;
+        return url ? [url] : [];
+      });
+      if (!garment || maskUrls.length === 0) continue;
+      void fabricFieldFor(garment, maskUrls)
+        .then((field) => {
+          if (!cancelled) setShapes((t) => ({ ...t, [s]: { garment, field } }));
+        })
+        .catch(() => undefined); // without it, items are drawn flat
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [garments, pictures, config.regions, props.imageUrls]);
+  const fieldFor = (s: "front" | "back") => {
+    const shape = shapes[s];
+    return shape && shape.garment === garments[s] ? shape.field : null;
+  };
+
   const offFabric = (s: "front" | "back") => {
     const trim = trims[s];
     return trim && trim.garment === garments[s] ? trim.overlay : null;
@@ -281,15 +310,15 @@ export function DesignEditor(props: DesignEditorProps) {
   const allowedColors = config.allowedColors;
   const defaultColor = allowedColors[0]?.hex.toLowerCase() ?? "#1b1b1b";
 
-  /** The allowed colour that stands out most from the garment inside an area (for new text and decorations). */
-  function contrastingColor(area: PlacementArea): string {
+  /** The allowed colour that stands out most from the garment where a new item goes (its box in the area). */
+  function contrastingColor(area: PlacementArea, box: LayerBox): string {
     const garment = garments[area.side];
     const ctx = garment?.getContext("2d");
     if (!garment || !ctx) return defaultColor;
-    const x = Math.round(area.rect.x * garment.width);
-    const y = Math.round(area.rect.y * garment.height);
-    const w = Math.max(1, Math.round(area.rect.w * garment.width));
-    const h = Math.max(1, Math.round(area.rect.h * garment.height));
+    const x = Math.round((area.rect.x + box.x * area.rect.w) * garment.width);
+    const y = Math.round((area.rect.y + box.y * area.rect.h) * garment.height);
+    const w = Math.max(1, Math.round(box.w * area.rect.w * garment.width));
+    const h = Math.max(1, Math.round(box.h * area.rect.h * garment.height));
     const data = ctx.getImageData(x, y, w, h).data;
     let total = 0;
     let count = 0;
@@ -489,6 +518,7 @@ export function DesignEditor(props: DesignEditorProps) {
             <DesignCanvas
               garment={garments[side]}
               offFabric={offFabric(side)}
+              field={fieldFor(side)}
               areas={areasOnSide}
               layers={layersOnSide}
               uploadUrls={uploadUrls}
@@ -633,11 +663,15 @@ export function DesignEditor(props: DesignEditorProps) {
               }}
               onAddText={(content) => {
                 if (!activeArea || !firstFont) return;
-                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "text", ...centredBox(activeArea, 0.9, 30, 3, 0.3), text: { content, fontId: firstFont, color: contrastingColor(activeArea) } });
+                // On a whole-garment area, start at chest height; on a small area, near its top.
+                const box = centredBox(activeArea, 0.9, 30, 3, activeArea.clipToFabric ? 0.13 : 0.3);
+                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "text", ...box, text: { content, fontId: firstFont, color: contrastingColor(activeArea, box) } });
               }}
               onAddDecoration={(id) => {
                 if (!activeArea) return;
-                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "decoration", ...centredBox(activeArea, 0.35, 12, 1, 0.72), decoration: { id, color: contrastingColor(activeArea) } });
+                // On a whole-garment area, start just below the waist (above any hem); on a small area, low in it.
+                const box = centredBox(activeArea, 0.35, 12, 1, activeArea.clipToFabric ? 0.38 : 0.72);
+                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "decoration", ...box, decoration: { id, color: contrastingColor(activeArea, box) } });
               }}
               upload={{ state: uploadState, removeBackground: removeBg, setRemoveBackground: setRemoveBg, onFile: (file) => void uploadImage(file) }}
             />

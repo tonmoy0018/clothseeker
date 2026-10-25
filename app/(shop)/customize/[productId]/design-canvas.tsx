@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { decorationSvg } from "@/lib/catalog/decorations";
 import { FONTS } from "@/lib/catalog/fonts";
+import { applyFabricField, type FabricField } from "@/lib/design/fabric-warp";
 import { layerFitsArea } from "@/lib/design/validate";
 import type { DesignLayer } from "@/types/design-spec";
 import type { PlacementArea } from "@/types/template";
@@ -18,6 +19,8 @@ type DesignCanvasProps = {
   garment: HTMLCanvasElement | null;
   /** Drawn over the items to trim what hangs off the fabric (areas with `clipToFabric`), or null. */
   offFabric: HTMLCanvasElement | null;
+  /** The garment's fabric shape (same size as `garment`): items are drawn bent and shaded by it. */
+  field: FabricField | null;
   areas: readonly PlacementArea[];
   layers: readonly DesignLayer[];
   uploadUrls: Readonly<Record<string, string>>;
@@ -257,9 +260,47 @@ export function DesignCanvas(props: DesignCanvasProps) {
       canvas.on("selection:created", select);
       canvas.on("selection:updated", select);
       canvas.on("selection:cleared", () => propsRef.current.onSelect(null));
+      // Draw the items as printed on the fabric: render them flat at the garment's resolution, bend and
+      // shade them with the fabric field, and put the result into the background. The editable objects
+      // stay (invisible) on top for dragging; the one being moved shows flat while it moves.
+      const field = props.field;
+      if (field && objects.length > 0 && field.width === garment.width) {
+        const guides = canvas.getObjects().filter((o) => !objects.includes(o));
+        for (const guide of guides) guide.visible = false;
+        canvas.backgroundImage = undefined;
+        const overlay = canvas.overlayImage;
+        canvas.overlayImage = undefined;
+        const flat = canvas.toCanvasElement(garment.width / width);
+        canvas.backgroundImage = background;
+        canvas.overlayImage = overlay;
+        for (const guide of guides) guide.visible = true;
+        const flatPixels = flat.getContext("2d")?.getImageData(0, 0, field.width, field.height);
+        const composite = document.createElement("canvas");
+        composite.width = garment.width;
+        composite.height = garment.height;
+        const ctx = composite.getContext("2d");
+        if (flatPixels && ctx && flat.width === field.width && flat.height === field.height) {
+          const shaped = ctx.createImageData(field.width, field.height);
+          applyFabricField(flatPixels.data, shaped.data, field);
+          const printed = document.createElement("canvas");
+          printed.width = field.width;
+          printed.height = field.height;
+          printed.getContext("2d")?.putImageData(shaped, 0, 0);
+          ctx.drawImage(garment, 0, 0);
+          ctx.drawImage(printed, 0, 0);
+          canvas.backgroundImage = new module.FabricImage(composite, { originX: "left", originY: "top", left: 0, top: 0, scaleX: scale, scaleY: scale, selectable: false, evented: false });
+          for (const object of objects) object.set({ opacity: 0 });
+          const showWhileMoving = ({ target }: { target: FabricObject }) => {
+            if (target.opacity !== 0.75) target.set({ opacity: 0.75 });
+          };
+          canvas.on("object:moving", showWhileMoving);
+          canvas.on("object:scaling", showWhileMoving);
+          canvas.on("object:rotating", showWhileMoving);
+        }
+      }
       canvas.requestRenderAll();
     });
-  }, [ready, width, resetTick, props.garment, props.offFabric, props.areas, props.layers, props.uploadUrls, props.selectedLayerId, props.activeAreaId]);
+  }, [ready, width, resetTick, props.garment, props.offFabric, props.field, props.areas, props.layers, props.uploadUrls, props.selectedLayerId, props.activeAreaId]);
 
   return (
     <div ref={wrapperRef} className="w-full max-w-[560px]" data-testid="design-canvas">

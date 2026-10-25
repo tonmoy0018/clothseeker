@@ -15,6 +15,11 @@ Server-side renderer: [`lib/renderer/render.ts`](../../lib/renderer/render.ts) (
 1. **Garment image:** the picture for the design's neckline, sleeve length and dress length (a template's `styleVariants`, picked by `garmentPicture()` in [`lib/design/garment-variant.ts`](../../lib/design/garment-variant.ts)), or the template's own image when no style picture matches. It's resized to the output width. The browser preview uses the same function, so both always show the same picture.
 2. **Regions:** for each region the design colors that has a mask on this side, the renderer builds a color image (or the pattern SVG from [`lib/catalog/patterns.ts`](../../lib/catalog/patterns.ts)) whose alpha is the region's mask. With `recolor: "multiply"` (light drawings) it's composited with **`multiply`**, so the garment's own shading, seams and folds show through the new color. With `recolor: "shade"` (photos of any colour) each pixel of the new colour is scaled by the photo's brightness there, stretched between the region's darkest and brightest fabric ([`lib/design/shade.ts`](../../lib/design/shade.ts)), so a navy photo can turn pale pink with its folds intact. The browser preview uses the same functions.
 3. **Layers:** each layer is rendered into its box (fractions of the area × the area's pixel size), rotated around its centre with a transparent background, and placed in the area. Layers are drawn bottom to top.
+4. **Printed on the fabric:** the layers are flattened to one full-size RGBA image, then shaped by the garment picture ([`lib/design/fabric-warp.ts`](../../lib/design/fabric-warp.ts)), so text, decorations and images look printed instead of floating flat:
+   - **wrap:** along each row of the garment's outline (the union of the picture's region masks, `outlineMaskKeys`, smoothed over ±6% of the height) the print is bent like a partial cylinder (`WRAP` 0.4), so it narrows towards the sides of the body;
+   - **folds:** it shifts along the slope of the photo's blurred brightness (a displacement map from the fabric's own creases), at most 1.6% of the width;
+   - **light:** its colour is scaled by the fabric's brightness relative to the garment's median (0.42–1.25), so it darkens in folds and shadows.
+   Areas that trim to the fabric are trimmed after the shaping. The browser runs the same functions on the canvas, so the design screen and the saved preview match. **Print files stay flat:** the printer prints flat, and the real fabric does the bending.
 
 ## All-over prints
 
@@ -26,7 +31,7 @@ A placement area with `clipToFabric` lets customers put items anywhere in a larg
 
 - **Previews:** the area's layers are composited on a transparent canvas, their alpha multiplied by that outline, then laid on the garment.
 - **Print files:** the outline is cropped to the area and scaled to the print size, so production never prints off the fabric. Large areas lower the DPI so the longest side stays within `MAX_PRINT_SIDE` (6000 px); `printPixels()` returns the DPI used, and the PNG records it.
-- **Design screen:** the garment off the fabric (`offFabricOverlay` in `recolor.ts`) is drawn over the items as Fabric's `overlayImage`, so the trim shows live.
+- **Design screen:** the garment off the fabric (`offFabricOverlay` in `recolor.ts`) is drawn over the items as Fabric's `overlayImage`, so the trim shows live while an item is moved.
 
 ## Region masks
 

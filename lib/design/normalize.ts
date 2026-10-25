@@ -65,6 +65,8 @@ export type AreaPlan = {
 export type SidePlan = {
   side: Side;
   garmentKey: string | null;
+  /** The garment's outline on this picture (every region's mask): items are shaped to the fabric inside it. */
+  outlineMaskKeys: string[];
   fills: RegionFill[];
   areas: AreaPlan[];
 };
@@ -135,6 +137,7 @@ export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): 
     return {
       side,
       garmentKey: picture.garmentKey,
+      outlineMaskKeys: outline[side],
       // Template region order is the paint order, independent of how the spec's object was built.
       fills: template.regions.flatMap((region) => {
         const part = spec.parts[region.id];
