@@ -16,6 +16,10 @@ Server-side renderer: [`lib/renderer/render.ts`](../../lib/renderer/render.ts) (
 2. **Regions:** for each region the design colors that has a mask on this side, the renderer builds a color image (or the pattern SVG from [`lib/catalog/patterns.ts`](../../lib/catalog/patterns.ts)) whose alpha is the region's mask. With `recolor: "multiply"` (light drawings) it's composited with **`multiply`**, so the garment's own shading, seams and folds show through the new color. With `recolor: "shade"` (photos of any colour) each pixel of the new colour is scaled by the photo's brightness there, stretched between the region's darkest and brightest fabric ([`lib/design/shade.ts`](../../lib/design/shade.ts)), so a navy photo can turn pale pink with its folds intact. The browser preview uses the same functions.
 3. **Layers:** each layer is rendered into its box (fractions of the area × the area's pixel size), rotated around its centre with a transparent background, and placed in the area. Layers are drawn bottom to top.
 
+## All-over prints
+
+A part's `print` repeats a motif (a decoration in a colour, or the customer's image) across the part, like printed fabric. The render plan turns its `tileCm` into a fraction of the picture width with `pictureWidthCm()` (from the placement areas' cm and fractions). The renderer tiles one repeat (the motif fills 70% of it, `PRINT_MOTIF`) over the part's base colour with sharp's `tile` composite, then recolours like a pattern (multiply or shade), so folds show through. The browser does the same with a canvas pattern. Production gets one print file per printed part (`print-<region>`): a single repeat at real size, 300 DPI, labelled with how often it repeats.
+
 ## Areas that trim to the fabric
 
 A placement area with `clipToFabric` lets customers put items anywhere in a large box (a whole part or the whole front), and keeps only what lands on the garment: the union of the region masks of the chosen style's picture (`fabricMaskKeys` in the render plan).

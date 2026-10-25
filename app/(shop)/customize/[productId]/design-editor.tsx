@@ -4,12 +4,14 @@ import { Redo2, Shirt, Undo2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FONTS, fontUrl } from "@/lib/catalog/fonts";
 import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
+import { decorationSvg } from "@/lib/catalog/decorations";
 import { garmentPicture } from "@/lib/design/garment-variant";
+import { pictureWidthCm } from "@/lib/design/normalize";
 import { luminance } from "@/lib/design/shade";
 import { priceDesign, type DesignPrice } from "@/lib/design/pricing";
 import { validateDesignAgainstTemplate, type DesignIssue } from "@/lib/design/validate";
@@ -28,7 +30,7 @@ import { DesignCanvas, type LayerBox } from "./design-canvas";
 import { RailButton, SideThumb } from "./editor-ui";
 import { FabricTab } from "./fabric-tab";
 import { PersonaliseTab } from "./personalise-tab";
-import { composeGarment, loadImage, offFabricOverlay, type ClientFill } from "./recolor";
+import { composeGarment, decorationDataUrl, loadImage, offFabricOverlay, type ClientFill, type ClientPrint } from "./recolor";
 import { StyleTab } from "./style-tab";
 
 const HISTORY_LIMIT = 50;
@@ -168,16 +170,28 @@ export function DesignEditor(props: DesignEditorProps) {
     [config, styleOptions],
   );
 
+  const widthCm = pictureWidthCm(config);
+  /** An all-over print for the browser: a decoration drawn as SVG, or the customer's uploaded image. */
+  const clientPrint = useCallback(
+    (print: DesignSpec["parts"][string]["print"]): ClientPrint | null => {
+      if (!print) return null;
+      const url = print.kind === "decoration" ? decorationDataUrl(decorationSvg(print.id, print.color, 256)) : uploadUrls[print.assetKey];
+      return url ? { url, tile: print.tileCm / widthCm } : null;
+    },
+    [uploadUrls, widthCm],
+  );
+
   const fillsBySide = useMemo(() => {
     const fills = (s: "front" | "back"): ClientFill[] =>
       config.regions.flatMap((region) => {
         const part = spec.parts[region.id];
         const maskKey = pictures[s].maskFor(region.id);
         const maskUrl = maskKey ? props.imageUrls[maskKey] : undefined;
-        return part && maskUrl && region.recolorable ? [{ maskUrl, color: part.color, pattern: part.pattern ?? null }] : [];
+        if (!part || !maskUrl || !region.recolorable) return [];
+        return [{ maskUrl, color: part.color, pattern: part.pattern ?? null, print: clientPrint(part.print) }];
       });
     return { front: fills("front"), back: fills("back") };
-  }, [config.regions, pictures, spec.parts, props.imageUrls]);
+  }, [config.regions, pictures, spec.parts, props.imageUrls, clientPrint]);
 
   // Over each side: the garment off the fabric, to trim items in areas that keep to the fabric. Each
   // overlay remembers the garment picture it was made from and is only used while that one is shown.
@@ -373,15 +387,15 @@ export function DesignEditor(props: DesignEditorProps) {
   const [removeBg, setRemoveBg] = useState(false);
   const [uploadState, setUploadState] = useState<string | null>(null);
 
-  async function uploadImage(file: File) {
-    if (!activeArea) return;
+  /** Uploads one of the customer's images (optionally without its background); returns its key and URL. */
+  async function uploadAsset(file: File): Promise<{ key: string; url: string } | null> {
     if (file.size > 4 * 1024 * 1024) {
       setMessage({ kind: "error", text: "Images must be 4 MB or smaller." });
-      return;
+      return null;
     }
     if (!props.customerId) {
       handleResult({ status: "signin" }, () => undefined);
-      return;
+      return null;
     }
     try {
       let blob: Blob = file;
@@ -398,21 +412,34 @@ export function DesignEditor(props: DesignEditorProps) {
       const result = await uploadDesignImageAction(form);
       if (result.status === "signin") {
         handleResult(result, () => undefined);
-        return;
+        return null;
       }
       if (result.status === "error") {
         setMessage({ kind: "error", text: result.message });
-        return;
+        return null;
       }
       const url = result.url ?? "";
-      const img = await loadImage(url);
-      const aspectCm = img.naturalWidth / img.naturalHeight;
       setUploadUrls((u) => ({ ...u, [result.key]: url }));
-      addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "image", ...centredBox(activeArea, 0.6, 25, aspectCm), image: { assetKey: result.key } });
+      return { key: result.key, url };
     } catch {
       setMessage({ kind: "error", text: "That image couldn't be added. Try a different file." });
+      return null;
     } finally {
       setUploadState(null);
+    }
+  }
+
+  /** Uploads an image and places it in the active print area. */
+  async function uploadImage(file: File) {
+    if (!activeArea) return;
+    const area = activeArea;
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+    try {
+      const img = await loadImage(asset.url);
+      addLayer({ id: newLayerId(), areaId: area.id, kind: "image", ...centredBox(area, 0.6, 25, img.naturalWidth / img.naturalHeight), image: { assetKey: asset.key } });
+    } catch {
+      setMessage({ kind: "error", text: "That image couldn't be added. Try a different file." });
     }
   }
 
@@ -577,7 +604,7 @@ export function DesignEditor(props: DesignEditorProps) {
         <div className="min-h-[24rem] pt-4">
           <div role="tabpanel" id="panel-fabric" aria-labelledby="tab-fabric" hidden={tab !== "fabric"}>
             {colorableRegions.length > 0 ? (
-              <FabricTab config={config} spec={spec} regions={colorableRegions} noun={garment.noun} onChangeParts={(change) => commit((s) => ({ ...s, parts: change(s.parts) }))} />
+              <FabricTab config={config} spec={spec} regions={colorableRegions} noun={garment.noun} uploadUrls={uploadUrls} uploadState={uploadState} onUpload={uploadAsset} onChangeParts={(change) => commit((s) => ({ ...s, parts: change(s.parts) }))} />
             ) : (
               <p className="text-sm text-muted-foreground">This {garment.noun} comes in one fabric.</p>
             )}

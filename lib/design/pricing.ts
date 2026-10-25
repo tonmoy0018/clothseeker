@@ -39,9 +39,12 @@ export function priceDesign(spec: DesignSpec, template: TemplateConfig, basePric
   }
 
   const patterned = Object.values(spec.parts).filter((p) => p.pattern).length;
+  const printed = Object.values(spec.parts).filter((p) => p.print).length;
   const count = (kind: DesignSpec["layers"][number]["kind"]) => spec.layers.filter((l) => l.kind === kind).length;
   for (const line of [
     countLine("Pattern", patterned, template.addOns.patternMinor),
+    // An all-over print is printed fabric: priced like a pattern.
+    countLine("All-over print", printed, template.addOns.patternMinor),
     countLine("Text", count("text"), template.addOns.textMinor),
     countLine("Image", count("image"), template.addOns.imageMinor),
     countLine("Decoration", count("decoration"), template.addOns.decorationMinor),

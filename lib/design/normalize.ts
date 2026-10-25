@@ -12,12 +12,24 @@ import { garmentPicture } from "./garment-variant";
 
 export type Side = "front" | "back";
 
+/** An all-over print as drawn: the motif repeats every `tile` (a fraction of the picture's width). */
+export type PrintFill =
+  | { kind: "image"; assetKey: string; tile: number }
+  | { kind: "decoration"; decorationId: DecorationId; color: string; tile: number };
+
 export type RegionFill = {
   regionId: string;
   maskKey: string;
   color: string;
   pattern: { id: PatternId; color: string } | null;
+  print: PrintFill | null;
 };
+
+/** A production file for an all-over print: one tile of the motif at its real size. */
+export type PrintTile = { regionId: string; label: string; tileCm: number } & (
+  | { kind: "image"; assetKey: string }
+  | { kind: "decoration"; decorationId: DecorationId; color: string }
+);
 
 export type LayerOp = {
   id: string;
@@ -64,7 +76,18 @@ export type RenderPlan = {
   back: SidePlan;
   /** Areas that have at least one layer, i.e. the print files to produce. */
   printAreas: AreaPlan[];
+  /** All-over prints, one production tile each. */
+  printTiles: PrintTile[];
 };
+
+/**
+ * How many cm the full width of a garment picture spans, from its placement areas (each knows its size
+ * in cm and in fractions of the picture). 100 cm when the template has no areas.
+ */
+export function pictureWidthCm(template: Pick<TemplateConfig, "placementAreas">): number {
+  const widths = template.placementAreas.map((a) => a.widthCm / a.rect.w).filter((w) => Number.isFinite(w) && w > 0);
+  return widths.length > 0 ? Math.max(...widths) : 100;
+}
 
 const r4 = (v: number) => Math.round(v * 10_000) / 10_000;
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -82,6 +105,12 @@ function toOp(layer: DesignSpec["layers"][number]): LayerOp {
 }
 
 export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): RenderPlan {
+  const widthCm = pictureWidthCm(template);
+  const printFill = (print: DesignSpec["parts"][string]["print"]): PrintFill | null => {
+    if (!print) return null;
+    const tile = r4(print.tileCm / widthCm);
+    return print.kind === "image" ? { kind: "image", assetKey: print.assetKey, tile } : { kind: "decoration", decorationId: print.id, color: print.color.toLowerCase(), tile };
+  };
   // The garment's outline on each side, as drawn by the chosen style's picture: every region's mask.
   const fabricMasks = (side: Side) => {
     const picture = garmentPicture(template, side, spec.styleOptions);
@@ -119,6 +148,7 @@ export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): 
             maskKey,
             color: part.color.toLowerCase(),
             pattern: part.pattern ? { id: part.pattern.id, color: part.pattern.color.toLowerCase() } : null,
+            print: printFill(part.print),
           },
         ];
       }),
@@ -126,8 +156,16 @@ export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): 
     };
   };
 
+  const printTiles: PrintTile[] = template.regions.flatMap((region) => {
+    const print = spec.parts[region.id]?.print;
+    if (!print || !region.recolorable) return [];
+    const base = { regionId: region.id, label: `${region.label} all-over print`, tileCm: r1(print.tileCm) };
+    return [print.kind === "image" ? { ...base, kind: "image" as const, assetKey: print.assetKey } : { ...base, kind: "decoration" as const, decorationId: print.id, color: print.color.toLowerCase() }];
+  });
+
   return {
     recolor: template.recolor,
+    printTiles,
     front: sidePlan("front"),
     back: sidePlan("back"),
     printAreas: areaPlans.filter((a) => a.layers.length > 0),

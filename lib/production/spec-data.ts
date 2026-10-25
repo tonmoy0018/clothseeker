@@ -8,7 +8,7 @@ import type { PrismaClient } from "@/lib/db/client";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { isSafeObjectKey } from "@/lib/storage/object-key";
-import { designSpecSchema } from "@/types/design-spec";
+import { designSpecSchema, type PartPrint } from "@/types/design-spec";
 import { parseTemplateConfig, styleOptionsFor, templateStyleGroups, type TemplateConfig } from "@/types/template";
 
 import type { SpecSheetData } from "./pdf/spec-sheet";
@@ -24,6 +24,12 @@ function colourName(hex: string, template: TemplateConfig | null): string {
  * Everything printed on one item's spec sheet. Uses the frozen DesignSpec and print files;
  * the template is only consulted for human-readable labels.
  */
+/** "All-over print of Star in Navy, repeating every 8 cm". */
+function printDescription(print: PartPrint, template: TemplateConfig | null): string {
+  const motif = print.kind === "image" ? "the customer's image (see print file)" : `${DECORATIONS.find((d) => d.id === print.id)?.label ?? print.id} in ${colourName(print.color, template)}`;
+  return `All-over print of ${motif}, repeating every ${print.tileCm} cm`;
+}
+
 export async function specSheetData(
   db: PrismaClient,
   storage: StorageAdapter,
@@ -82,7 +88,9 @@ export async function specSheetData(
       color: colourName(part.color, template),
       pattern: part.pattern
         ? `${PATTERNS.find((p) => p.id === part.pattern?.id)?.label ?? part.pattern.id} in ${colourName(part.pattern.color, template)}`
-        : null,
+        : part.print
+          ? printDescription(part.print, template)
+          : null,
     })),
     // The template's groups when it's still readable, else whatever the design recorded.
     styleOptions: (template ? templateStyleGroups(template) : STYLE_GROUP_IDS.filter((g) => spec.data.styleOptions[g] !== undefined)).map((group) => ({

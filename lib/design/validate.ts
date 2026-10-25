@@ -113,6 +113,20 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
         add(`${path}.pattern.color`, `That pattern color isn't available for this ${noun}.`);
       }
     }
+    if (part.print?.kind === "decoration") {
+      if (!template.allowedDecorations.includes(part.print.id)) {
+        add(`${path}.print.id`, `That decoration isn't available for this ${noun}.`);
+      }
+      if (!allowedColors.has(part.print.color)) {
+        add(`${path}.print.color`, `That print color isn't available for this ${noun}.`);
+      }
+    } else if (part.print?.kind === "image") {
+      if (!ctx.customerId) {
+        add(`${path}.print`, "Sign in to use your own images.");
+      } else if (!isCustomerImageKey(part.print.assetKey, ctx.customerId)) {
+        add(`${path}.print`, "That image isn't one of your uploads.");
+      }
+    }
   }
 
   const areas = new Map(template.placementAreas.map((a) => [a.id, a]));

@@ -11,7 +11,7 @@ Schema: [`types/design-spec.ts`](../../types/design-spec.ts) (Zod; TypeScript ty
 | `productId`, `templateId`, `templateVersion` | The dress and the template version the design was made with |
 | `size` | One of the sizes the dress is sold in |
 | `styleOptions` | The chosen option id for each style group of the template's garment type (e.g. `{ neckline, sleeveLength, dressLength }` for a dress, `{ collar, sleeveLength, fit }` for a shirt). Validated against the live template: every group present, no others |
-| `parts` | `{ [regionId]: { color, pattern?: { id, color } } }`: colors and patterns per recolorable region. Regions not listed keep the garment's own look |
+| `parts` | `{ [regionId]: { color, pattern?: { id, color }, print?: … } }`: per recolorable region, a colour with either a pattern or an **all-over print** (`{ kind: "decoration", id, color, tileCm }` or `{ kind: "image", assetKey, tileCm }`, the motif repeating every `tileCm`, 3–40 cm; never both). Regions not listed keep the garment's own look. An image print must be the customer's own upload; a print is priced like a pattern |
 | `layers` | Ordered bottom-to-top; each sits inside one placement area (see below) |
 | `startedFrom` | `shop`, `photo` or `description` (photo/description starts arrive in Phase 7) |
 | `referencePhotoKey` | Optional reference dress photo (Phase 7) |

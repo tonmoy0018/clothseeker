@@ -63,6 +63,18 @@ export const decorationLayerSchema = z.object({
   decoration: z.object({ id: z.enum(DECORATION_IDS), color: hex }),
 });
 
+/** All-over print tile size: the motif repeats every `tileCm` across the part. */
+export const PRINT_TILE_CM = { min: 3, max: 40 } as const;
+const tileCm = z.number().min(PRINT_TILE_CM.min).max(PRINT_TILE_CM.max);
+
+/** A motif repeated across a whole part, like printed fabric. */
+export const partPrintSchema = z.discriminatedUnion("kind", [
+  /** design-assets key; must belong to the design's customer (checked in validate.ts). */
+  z.object({ kind: z.literal("image"), assetKey: storageKey, tileCm }),
+  z.object({ kind: z.literal("decoration"), id: z.enum(DECORATION_IDS), color: hex, tileCm }),
+]);
+export type PartPrint = z.infer<typeof partPrintSchema>;
+
 export const designLayerSchema = z.discriminatedUnion("kind", [textLayerSchema, imageLayerSchema, decorationLayerSchema]);
 
 export const MAX_LAYERS_TOTAL = 30;
@@ -76,8 +88,16 @@ export const designSpecSchema = z.object({
   size: z.enum(Size),
   /** The chosen option for each of the template's style groups (validated against the template). */
   styleOptions: z.partialRecord(z.enum(STYLE_GROUP_IDS), id),
-  /** Per recolorable region: a color, optionally with a pattern drawn in a second color. */
-  parts: z.record(id, z.object({ color: hex, pattern: z.object({ id: z.enum(PATTERN_IDS), color: hex }).optional() })),
+  /**
+   * Per recolorable region: a color, optionally with either a pattern drawn in a second color or an
+   * all-over print (the customer's image or a decoration repeated across the part).
+   */
+  parts: z.record(
+    id,
+    z
+      .object({ color: hex, pattern: z.object({ id: z.enum(PATTERN_IDS), color: hex }).optional(), print: partPrintSchema.optional() })
+      .refine((part) => !(part.pattern && part.print), "A part can have a pattern or an all-over print, not both"),
+  ),
   layers: z.array(designLayerSchema).max(MAX_LAYERS_TOTAL, `A design can have at most ${MAX_LAYERS_TOTAL} layers`),
   startedFrom: z.enum(["shop", "photo", "description"]),
   referencePhotoKey: storageKey.optional(),

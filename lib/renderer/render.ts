@@ -1,6 +1,6 @@
 import sharp, { type OverlayOptions, type Sharp } from "sharp";
 
-import { decorationSvg } from "@/lib/catalog/decorations";
+import { decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
 import { patternSvg } from "@/lib/catalog/patterns";
 import type { AreaPlan, LayerOp, RenderPlan, Side, SidePlan } from "@/lib/design/normalize";
 import { luminance, shadeChannel, shadeFactor, shadeRange } from "@/lib/design/shade";
@@ -130,6 +130,25 @@ async function layerOverlays(
   return overlays;
 }
 
+// ─── all-over prints ─────────────────────────────────────────────────────────
+
+/** Share of a print tile the motif fills; the rest is the gap between repeats. */
+const PRINT_MOTIF = 0.7;
+
+/** One repeat of an all-over print: the motif centred on a transparent size×size square. */
+async function printTile(
+  print: { kind: "image"; assetKey: string } | { kind: "decoration"; decorationId: DecorationId; color: string },
+  size: number,
+  assets: Assets,
+): Promise<Buffer> {
+  const motif = Math.max(4, Math.round(size * PRINT_MOTIF));
+  const art =
+    print.kind === "decoration"
+      ? await png(sharp(Buffer.from(decorationSvg(print.decorationId, print.color, motif))))
+      : await png(sharp(await assets.upload(print.assetKey)).ensureAlpha().resize(motif, motif, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }));
+  return png(sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite([{ input: art, gravity: "center" }]));
+}
+
 // ─── garment ─────────────────────────────────────────────────────────────────
 
 type Garment = { data: Buffer; width: number; height: number };
@@ -186,9 +205,16 @@ async function regionOverlays(plan: SidePlan, garment: Garment, assets: Assets, 
   const garmentRgb = recolor === "shade" && plan.fills.length > 0 ? await rawRgb(sharp(garment.data)) : null;
   for (const fill of plan.fills) {
     const mask = await maskRaw(fill.maskKey, width, height, assets);
-    const paintImage = fill.pattern
-      ? sharp(Buffer.from(patternSvg(fill.pattern.id, fill.pattern.color, fill.color, width, height, width / 16))).resize(width, height, { fit: "fill" })
-      : sharp({ create: { width, height, channels: 3, background: fill.color } });
+    let paintImage: Sharp;
+    if (fill.print) {
+      // All-over print: the motif repeated across the part, over its base colour.
+      const tile = await printTile(fill.print, Math.max(8, Math.round(fill.print.tile * width)), assets);
+      paintImage = sharp(await png(sharp({ create: { width, height, channels: 3, background: fill.color } }).composite([{ input: tile, tile: true, left: 0, top: 0 }])));
+    } else if (fill.pattern) {
+      paintImage = sharp(Buffer.from(patternSvg(fill.pattern.id, fill.pattern.color, fill.color, width, height, width / 16))).resize(width, height, { fit: "fill" });
+    } else {
+      paintImage = sharp({ create: { width, height, channels: 3, background: fill.color } });
+    }
     const paint = await rawRgb(paintImage);
     if (garmentRgb) {
       const range = shadeRange(garmentRgb, 3, mask, 1);
@@ -318,6 +344,12 @@ export async function renderPrintFiles(plan: RenderPlan, assets: Assets): Promis
       data = await canvas.composite(overlays).withMetadata({ density: dpi }).png({ compressionLevel: 9 }).toBuffer();
     }
     files.push({ areaId: area.areaId, label: area.label, widthPx: width, heightPx: height, widthCm: area.widthCm, heightCm: area.heightCm, png: data });
+  }
+  // All-over prints: one repeat at real size; the print shop repeats it across the part's fabric.
+  for (const tile of plan.printTiles) {
+    const { width, dpi } = printPixels(tile.tileCm, tile.tileCm);
+    const data = await sharp(await printTile(tile, width, assets)).withMetadata({ density: dpi }).png({ compressionLevel: 9 }).toBuffer();
+    files.push({ areaId: `print-${tile.regionId}`, label: `${tile.label} (repeats every ${tile.tileCm} cm)`, widthPx: width, heightPx: width, widthCm: tile.tileCm, heightCm: tile.tileCm, png: data });
   }
   return files;
 }

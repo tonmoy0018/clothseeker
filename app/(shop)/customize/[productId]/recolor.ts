@@ -8,7 +8,12 @@ import { luminance, shadeChannel, shadeFactor, shadeRange } from "@/lib/design/s
 // photo's own light and shadow for photos ("shade", lib/design/shade.ts).
 // The server render is the source of truth; this is the live preview.
 
-export type ClientFill = { maskUrl: string; color: string; pattern: { id: PatternId; color: string } | null };
+/** An all-over print as drawn in the browser: the motif image and how often it repeats (fraction of the width). */
+export type ClientPrint = { url: string; tile: number };
+export type ClientFill = { maskUrl: string; color: string; pattern: { id: PatternId; color: string } | null; print?: ClientPrint | null };
+
+/** Share of a print tile the motif fills (same as the server renderer's PRINT_MOTIF). */
+const PRINT_MOTIF = 0.7;
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -69,7 +74,26 @@ export async function composeGarment(garmentUrl: string, fills: readonly ClientF
     paint.width = width;
     paint.height = height;
     const paintCtx = context2d(paint);
-    if (fill.pattern) {
+    if (fill.print) {
+      // All-over print: the motif repeated across the part, over its base colour.
+      paintCtx.fillStyle = fill.color;
+      paintCtx.fillRect(0, 0, width, height);
+      const size = Math.max(8, Math.round(fill.print.tile * width));
+      const tile = document.createElement("canvas");
+      tile.width = size;
+      tile.height = size;
+      const art = await loadImage(fill.print.url);
+      const motif = size * PRINT_MOTIF;
+      const fit = Math.min(motif / art.naturalWidth, motif / art.naturalHeight);
+      const w = art.naturalWidth * fit;
+      const h = art.naturalHeight * fit;
+      context2d(tile).drawImage(art, (size - w) / 2, (size - h) / 2, w, h);
+      const repeat = paintCtx.createPattern(tile, "repeat");
+      if (repeat) {
+        paintCtx.fillStyle = repeat;
+        paintCtx.fillRect(0, 0, width, height);
+      }
+    } else if (fill.pattern) {
       const pattern = await loadImage(svgUrl(patternSvg(fill.pattern.id, fill.pattern.color, fill.color, width, height, width / 16)));
       paintCtx.drawImage(pattern, 0, 0, width, height);
     } else {
