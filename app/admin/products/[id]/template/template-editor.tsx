@@ -202,7 +202,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
         )}
       </Section>
 
-      <Section title="Placement areas" description="Where customers may put text, images and decorations. Draw the area on the garment and enter its real printable size.">
+      <Section title="Placement areas" description="Where customers may put text, images and decorations. Draw the area on the garment and enter its real printable size. A large area (a whole part or the whole front) should trim to the fabric.">
         <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
           <div className="flex flex-col gap-2">
             <div className="flex gap-1" role="group" aria-label="Garment side">
@@ -257,6 +257,15 @@ export function TemplateEditor(props: TemplateEditorProps) {
                 <LabeledNumber label="Top %" value={pct(area.rect.y)} step={0.5} onChange={(v) => update((c) => withArea(c, index, { rect: { ...area.rect, y: v / 100 } }))} />
                 <LabeledNumber label="Width %" value={pct(area.rect.w)} step={0.5} onChange={(v) => update((c) => withArea(c, index, { rect: { ...area.rect, w: v / 100 } }))} />
                 <LabeledNumber label="Height %" value={pct(area.rect.h)} step={0.5} onChange={(v) => update((c) => withArea(c, index, { rect: { ...area.rect, h: v / 100 } }))} />
+                <label className="col-span-full flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={area.clipToFabric === true}
+                    onChange={(e) => update((c) => withArea(c, index, { clipToFabric: e.target.checked }))}
+                  />
+                  Trim to the fabric: items may go anywhere in the area, and whatever falls off the garment (by its masks) isn&apos;t printed
+                </label>
               </div>
             ))}
             {config.placementAreas.length < 8 && (

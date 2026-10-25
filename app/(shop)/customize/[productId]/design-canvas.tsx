@@ -16,6 +16,8 @@ export type LayerBox = Pick<DesignLayer, "x" | "y" | "w" | "h" | "rotation">;
 type DesignCanvasProps = {
   /** Recolored garment for the current side (or null while composing). */
   garment: HTMLCanvasElement | null;
+  /** Drawn over the items to trim what hangs off the fabric (areas with `clipToFabric`), or null. */
+  offFabric: HTMLCanvasElement | null;
   areas: readonly PlacementArea[];
   layers: readonly DesignLayer[];
   uploadUrls: Readonly<Record<string, string>>;
@@ -173,17 +175,20 @@ export function DesignCanvas(props: DesignCanvasProps) {
         evented: false,
       });
       canvas.backgroundImage = background;
+      canvas.overlayImage = props.offFabric
+        ? new module.FabricImage(props.offFabric, { originX: "left", originY: "top", left: 0, top: 0, scaleX: scale, scaleY: scale, selectable: false, evented: false })
+        : undefined;
 
-      for (const area of props.areas) {
+      // Only the area in use is outlined: large areas (whole front, bodice, skirt) overlap.
+      for (const area of props.areas.filter((a) => a.id === props.activeAreaId)) {
         const px = areaPx(area);
-        const active = area.id === props.activeAreaId;
         canvas.add(
           new module.Rect({
             ...px,
             originX: "left",
             originY: "top",
-            fill: active ? "rgba(37,99,235,0.06)" : "transparent",
-            stroke: active ? "#2563eb" : "rgba(0,0,0,0.35)",
+            fill: area.clipToFabric ? "transparent" : "rgba(37,99,235,0.06)",
+            stroke: "#2563eb",
             strokeDashArray: [6, 4],
             strokeWidth: 1.5,
             selectable: false,
@@ -254,7 +259,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
       canvas.on("selection:cleared", () => propsRef.current.onSelect(null));
       canvas.requestRenderAll();
     });
-  }, [ready, width, resetTick, props.garment, props.areas, props.layers, props.uploadUrls, props.selectedLayerId, props.activeAreaId]);
+  }, [ready, width, resetTick, props.garment, props.offFabric, props.areas, props.layers, props.uploadUrls, props.selectedLayerId, props.activeAreaId]);
 
   return (
     <div ref={wrapperRef} className="w-full max-w-[560px]" data-testid="design-canvas">

@@ -205,6 +205,33 @@ async function regionOverlays(plan: SidePlan, garment: Garment, assets: Assets, 
   return overlays;
 }
 
+/** Union of masks (per-pixel maximum), one 8-bit channel at width×height. */
+async function unionMask(keys: readonly string[], width: number, height: number, assets: Assets): Promise<Buffer> {
+  let union: Buffer | null = null;
+  for (const key of keys) {
+    const mask = await maskRaw(key, width, height, assets);
+    if (!union) {
+      union = Buffer.from(mask);
+    } else {
+      for (let i = 0; i < union.length; i += 1) union[i] = Math.max(union[i] ?? 0, mask[i] ?? 0);
+    }
+  }
+  if (!union) throw new RenderError("No masks");
+  return union;
+}
+
+/** Composites `overlays` onto a transparent width×height canvas, keeping only what lies on the mask. */
+async function trimmed(overlays: OverlayOptions[], mask: Buffer, width: number, height: number): Promise<Buffer> {
+  const layered = await sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite(overlays)
+    .raw()
+    .toBuffer();
+  for (let p = 0; p < width * height; p += 1) {
+    layered[p * 4 + 3] = Math.round(((layered[p * 4 + 3] ?? 0) * (mask[p] ?? 0)) / 255);
+  }
+  return png(sharp(layered, { raw: { width, height, channels: 4 } }));
+}
+
 /** Garment with region colors/patterns and the layers of every area on that side. */
 async function composeSide(plan: SidePlan, assets: Assets, width: number, recolor: RenderPlan["recolor"]): Promise<Garment> {
   const garment = await loadGarment(plan, assets, width);
@@ -212,9 +239,14 @@ async function composeSide(plan: SidePlan, assets: Assets, width: number, recolo
   for (const area of plan.areas) {
     const areaW = area.rect.w * garment.width;
     const areaH = area.rect.h * garment.height;
-    overlays.push(
-      ...(await layerOverlays(area, areaW, areaH, area.rect.x * garment.width, area.rect.y * garment.height, garment.width, garment.height, assets)),
-    );
+    const layers = await layerOverlays(area, areaW, areaH, area.rect.x * garment.width, area.rect.y * garment.height, garment.width, garment.height, assets);
+    if (area.clipToFabric && area.fabricMaskKeys.length > 0 && layers.length > 0) {
+      // Whatever hangs off the garment's outline is trimmed away.
+      const mask = await unionMask(area.fabricMaskKeys, garment.width, garment.height, assets);
+      overlays.push({ input: await trimmed(layers, mask, garment.width, garment.height) });
+    } else {
+      overlays.push(...layers);
+    }
   }
   const data = overlays.length > 0 ? await png(sharp(garment.data).composite(overlays)) : garment.data;
   return { data, width: garment.width, height: garment.height };
@@ -234,42 +266,57 @@ export async function renderFlatGarment(plan: RenderPlan, assets: Assets, maskKe
   }
   const composed = await composeSide(plan.front, assets, width, plan.recolor);
   const { width: w, height: h } = composed;
-  // Union of masks = per-pixel maximum.
-  let union: Buffer | null = null;
-  for (const key of maskKeys) {
-    const mask = await maskRaw(key, w, h, assets);
-    if (!union) {
-      union = Buffer.from(mask);
-    } else {
-      for (let i = 0; i < union.length; i += 1) {
-        union[i] = Math.max(union[i] ?? 0, mask[i] ?? 0);
-      }
-    }
-  }
-  if (!union) {
-    throw new RenderError("No masks");
-  }
-  return rgbaFrom(await rawRgb(sharp(composed.data)), union, w, h);
+  return rgbaFrom(await rawRgb(sharp(composed.data)), await unionMask(maskKeys, w, h, assets), w, h);
 }
 
 export type PrintFile = { areaId: string; label: string; widthPx: number; heightPx: number; widthCm: number; heightCm: number; png: Buffer };
 
-/** Pixel size of a print file for an area at PRINT_DPI. */
-export function printPixels(widthCm: number, heightCm: number): { width: number; height: number } {
+/** Longest side of a print file; a whole-front area at 300 DPI would be far too large to render. */
+export const MAX_PRINT_SIDE = 6000;
+
+/** Pixel size and DPI of a print file: PRINT_DPI, lowered for large areas to keep within MAX_PRINT_SIDE. */
+export function printPixels(widthCm: number, heightCm: number): { width: number; height: number; dpi: number } {
+  const dpi = Math.min(PRINT_DPI, Math.floor((MAX_PRINT_SIDE * CM_PER_INCH) / Math.max(widthCm, heightCm)));
   return {
-    width: Math.round((widthCm / CM_PER_INCH) * PRINT_DPI),
-    height: Math.round((heightCm / CM_PER_INCH) * PRINT_DPI),
+    width: Math.round((widthCm / CM_PER_INCH) * dpi),
+    height: Math.round((heightCm / CM_PER_INCH) * dpi),
+    dpi,
   };
 }
 
-/** 3. One transparent 300 DPI PNG per placement area that has layers. */
+/** Width of the garment outline used to trim print files (cropped to the area, then scaled up). */
+const OUTLINE_WIDTH = 1200;
+
+/** 3. One transparent PNG per placement area that has layers (300 DPI, less for very large areas). */
 export async function renderPrintFiles(plan: RenderPlan, assets: Assets): Promise<PrintFile[]> {
   const files: PrintFile[] = [];
   for (const area of plan.printAreas) {
-    const { width, height } = printPixels(area.widthCm, area.heightCm);
+    const { width, height, dpi } = printPixels(area.widthCm, area.heightCm);
     const overlays = await layerOverlays(area, width, height, 0, 0, width, height, assets);
-    const canvas = sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
-    const data = await canvas.composite(overlays).withMetadata({ density: PRINT_DPI }).png({ compressionLevel: 9 }).toBuffer();
+    let data: Buffer;
+    if (area.clipToFabric && area.fabricMaskKeys.length > 0) {
+      // The garment outline inside the area, at print size: only what lands on fabric is printed.
+      const outlineH = Math.round((OUTLINE_WIDTH * 13) / 10);
+      const outline = await unionMask(area.fabricMaskKeys, OUTLINE_WIDTH, outlineH, assets);
+      const left = Math.round(area.rect.x * OUTLINE_WIDTH);
+      const top = Math.round(area.rect.y * outlineH);
+      const crop = {
+        left,
+        top,
+        width: Math.max(1, Math.min(OUTLINE_WIDTH - left, Math.round(area.rect.w * OUTLINE_WIDTH))),
+        height: Math.max(1, Math.min(outlineH - top, Math.round(area.rect.h * outlineH))),
+      };
+      const mask = await sharp(outline, { raw: { width: OUTLINE_WIDTH, height: outlineH, channels: 1 } })
+        .extract(crop)
+        .resize(width, height, { fit: "fill" })
+        .extractChannel(0)
+        .raw()
+        .toBuffer();
+      data = await sharp(await trimmed(overlays, mask, width, height)).withMetadata({ density: dpi }).png({ compressionLevel: 9 }).toBuffer();
+    } else {
+      const canvas = sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
+      data = await canvas.composite(overlays).withMetadata({ density: dpi }).png({ compressionLevel: 9 }).toBuffer();
+    }
     files.push({ areaId: area.areaId, label: area.label, widthPx: width, heightPx: height, widthCm: area.widthCm, heightCm: area.heightCm, png: data });
   }
   return files;

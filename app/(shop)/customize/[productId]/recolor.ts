@@ -97,3 +97,30 @@ export async function composeGarment(garmentUrl: string, fills: readonly ClientF
 export function decorationDataUrl(svg: string): string {
   return svgUrl(svg);
 }
+
+/**
+ * The garment picture everywhere *off* the fabric (backdrop, mannequin) and transparent on it: drawn over
+ * the design's items, it trims what hangs off the garment, like the server's trimmed print areas.
+ */
+export async function offFabricOverlay(garment: HTMLCanvasElement, maskUrls: readonly string[]): Promise<HTMLCanvasElement> {
+  const { width, height } = garment;
+  const union = document.createElement("canvas");
+  union.width = width;
+  union.height = height;
+  const unionCtx = context2d(union);
+  unionCtx.fillStyle = "#000000";
+  unionCtx.fillRect(0, 0, width, height);
+  unionCtx.globalCompositeOperation = "lighten"; // per-pixel maximum of the masks
+  for (const url of maskUrls) unionCtx.drawImage(await loadImage(url), 0, 0, width, height);
+  const fabric = unionCtx.getImageData(0, 0, width, height).data;
+
+  const out = document.createElement("canvas");
+  out.width = width;
+  out.height = height;
+  const outCtx = context2d(out);
+  outCtx.drawImage(garment, 0, 0);
+  const pixels = outCtx.getImageData(0, 0, width, height);
+  for (let i = 0; i < pixels.data.length; i += 4) pixels.data[i + 3] = 255 - (fabric[i] ?? 0);
+  outCtx.putImageData(pixels, 0, 0);
+  return out;
+}

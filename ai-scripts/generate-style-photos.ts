@@ -10,10 +10,10 @@ import sharp from "sharp";
 import { defaultTemplateConfig } from "@/lib/catalog/default-template";
 import { GARMENT_TYPES, STYLE_GROUP_IDS, styleGroupsOf, type GarmentType, type StyleGroup } from "@/lib/catalog/garment-types";
 import { analysePhoto } from "@/lib/garment-photo/align";
-import { lengthRatio, SegmentationError, skirtRatio, sleeveReach, sleeveStyle, type GarmentParts } from "@/lib/garment-photo/segment";
+import { lengthRatio, SegmentationError, skirtRatio, sleeveStyle, widthAt, type GarmentParts } from "@/lib/garment-photo/segment";
 import { pictureGroups, styleCombinations, styleFileName, type Side, type StyleChoice } from "@/lib/garment-photo/style-files";
 import { styleOptionsFor } from "@/types/template";
-import { SEED_PRODUCTS, type SeedProduct } from "@/prisma/seed-data";
+import { photoColour, SEED_PRODUCTS, type SeedProduct } from "@/prisma/seed-data";
 
 // Makes the style pictures for the customizable seeded items: for every combination of their garment
 // type's style choices (and back views, which ignore the neckline or collar), a photo-like picture of that
@@ -118,10 +118,14 @@ function nearest(ratio: number, base: number, factors: Record<string, number>): 
   return best;
 }
 
-/** Shirt and panjabi sleeves by how far they reach, in shoulder widths. */
-function menSleeves(parts: GarmentParts): string {
-  const reach = sleeveReach(parts);
-  return reach === 0 ? "sleeveless" : reach < 0.85 ? "short" : reach < 1.3 ? "three-quarter" : "long";
+/**
+ * Shirt and panjabi sleeves from the outline's width: hanging long sleeves make the garment wide at
+ * mid-height; three-quarter sleeves only higher up (calibrated on the catalogue photos).
+ */
+function menSleeves(type: GarmentType, parts: GarmentParts): string {
+  const wide = (fraction: number) => widthAt(parts, fraction) > 1.15;
+  if (type === "shirt") return wide(0.5) ? "long" : "short";
+  return wide(0.45) ? "long" : wide(0.3) ? "three-quarter" : "short";
 }
 
 type Reference = { type: GarmentType; base: number };
@@ -145,9 +149,7 @@ async function checkPicture(image: Buffer, choice: StyleChoice, ref: Reference):
       got.sleeveLength = sleeveStyle(parts);
       got.dressLength = nearest(skirtRatio(parts), ref.base, DRESS_LENGTH_FACTOR);
     } else {
-      // Three-quarter and long sleeves are hard to tell apart from an outline: accept either for each.
-      const sleeves = menSleeves(parts);
-      got.sleeveLength = choice.sleeveLength !== "short" && sleeves !== "short" && sleeves !== "sleeveless" ? choice.sleeveLength : sleeves;
+      got.sleeveLength = menSleeves(ref.type, parts);
       if (ref.type === "panjabi") got.length = nearest(lengthRatio(parts), ref.base, PANJABI_LENGTH_FACTOR);
     }
     const wrong = STYLE_GROUP_IDS.filter((g) => got[g] !== undefined && choice[g] !== undefined && got[g] !== choice[g]);
@@ -183,8 +185,7 @@ async function main() {
     }
     const dir = path.join(OUT_DIR, product.slug);
     await mkdir(dir, { recursive: true });
-    // The catalogue photo was made in the first colour alphabetically (ai-scripts/generate-dress-photos.ts).
-    const colour = [...product.colors].sort((a, b) => a.name.localeCompare(b.name))[0]?.name ?? "neutral";
+    const colour = photoColour(product);
     const ref = referenceFor(type, (await analysePhoto(await readFile(photoPath))).parts, photoStyle);
     const options = Object.fromEntries(styleGroupsOf(type).map((g) => [g, styleOptionsFor(template, g).map((o) => o.id)]));
     const jobs = styleCombinations(type, options);

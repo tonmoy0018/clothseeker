@@ -30,6 +30,8 @@ export type SeedProduct = {
    * pictures for the others (prisma/style-photos, made by ai-scripts/generate-style-photos.ts).
    */
   photoStyle?: Partial<Record<StyleGroup, string>>;
+  /** The colour its catalogue photo shows (one of `colors`); the first alphabetically when left out. */
+  photoColor?: string;
   status?: "ACTIVE" | "DRAFT";
 };
 
@@ -255,6 +257,8 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     priceTaka: 2200,
     customizable: true,
     photoStyle: { collar: "button-down", sleeveLength: "long", fit: "regular" },
+    // Light grey on the light grey studio backdrop can't be cut out reliably.
+    photoColor: "Oxford Blue",
   },
   {
     slug: "linen-casual-shirt",
@@ -315,6 +319,11 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     customizable: false,
   },
 ];
+
+/** The colour an item's catalogue and style photos are made in. */
+export function photoColour(product: Pick<SeedProduct, "colors" | "photoColor">): string {
+  return product.photoColor ?? [...product.colors].sort((a, b) => a.name.localeCompare(b.name))[0]?.name ?? "neutral";
+}
 
 /** Larger sizes cost a little more, like real pattern grading. */
 export function sizeSurchargeTaka(size: Size): number {

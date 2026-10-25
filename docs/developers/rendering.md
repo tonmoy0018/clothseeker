@@ -16,19 +16,28 @@ Server-side renderer: [`lib/renderer/render.ts`](../../lib/renderer/render.ts) (
 2. **Regions:** for each region the design colors that has a mask on this side, the renderer builds a color image (or the pattern SVG from [`lib/catalog/patterns.ts`](../../lib/catalog/patterns.ts)) whose alpha is the region's mask. With `recolor: "multiply"` (light drawings) it's composited with **`multiply`**, so the garment's own shading, seams and folds show through the new color. With `recolor: "shade"` (photos of any colour) each pixel of the new colour is scaled by the photo's brightness there, stretched between the region's darkest and brightest fabric ([`lib/design/shade.ts`](../../lib/design/shade.ts)), so a navy photo can turn pale pink with its folds intact. The browser preview uses the same functions.
 3. **Layers:** each layer is rendered into its box (fractions of the area × the area's pixel size), rotated around its centre with a transparent background, and placed in the area. Layers are drawn bottom to top.
 
+## Areas that trim to the fabric
+
+A placement area with `clipToFabric` lets customers put items anywhere in a large box (a whole part or the whole front), and keeps only what lands on the garment: the union of the region masks of the chosen style's picture (`fabricMaskKeys` in the render plan).
+
+- **Previews:** the area's layers are composited on a transparent canvas, their alpha multiplied by that outline, then laid on the garment.
+- **Print files:** the outline is cropped to the area and scaled to the print size, so production never prints off the fabric. Large areas lower the DPI so the longest side stays within `MAX_PRINT_SIDE` (6000 px); `printPixels()` returns the DPI used, and the PNG records it.
+- **Design screen:** the garment off the fabric (`offFabricOverlay` in `recolor.ts`) is drawn over the items as Fabric's `overlayImage`, so the trim shows live.
+
 ## Region masks
 
 A mask is a grayscale image aligned with the garment image: white = the region, black = outside. Admins upload one per region and side in the template editor. Uploads are normalized to single-channel lossless PNG, and transparency counts as black. A recolorable region needs at least one mask before the template can go live. Style pictures carry their own masks, because the regions move when the shape changes.
 
 ## Seeded photo templates
 
-The five customizable demo dresses are designed on photos ([`prisma/seed-style-photos.ts`](../../prisma/seed-style-photos.ts)):
+The customizable demo items (five dresses, two shirts, two panjabis) are designed on photos ([`prisma/seed-style-photos.ts`](../../prisma/seed-style-photos.ts)):
 
-- **Pictures:** the dress's catalogue photo (for the style it shows, `photoStyle` in `prisma/seed-data.ts`, also the design's starting style) plus AI style pictures in `prisma/style-photos/<slug>/` (`front-<neckline>-<sleeves>-<length>.jpg`, `back-<sleeves>-<length>.jpg`), from [`ai-scripts/generate-style-photos.ts`](../../ai-scripts/generate-style-photos.ts).
+- **Pictures:** the item's catalogue photo (for the style it shows, `photoStyle` in `prisma/seed-data.ts`, also the design's starting style; made in `photoColor`) plus AI style pictures in `prisma/style-photos/<slug>/`, named by [`lib/garment-photo/style-files.ts`](../../lib/garment-photo/style-files.ts): one option id per style group of the garment type, separated by `--` (`front--v-neck--short--midi.jpg`; backs leave out the neckline or collar: `back--short--midi.jpg`). They come from [`ai-scripts/generate-style-photos.ts`](../../ai-scripts/generate-style-photos.ts).
 - **Cutting out** ([`lib/garment-photo/segment.ts`](../../lib/garment-photo/segment.ts)): the background is modelled from the photo's border, the dress colour from its middle, and the dress is what differs from the background and is close to that colour (mannequin and stand trimmed). Sleeves are found by following the body's sides up from the hips: where an edge suddenly moves out, a sleeve starts. The waist is the narrowest torso row (estimated from the shoulder width when long sleeves hide it).
-- **Lining up** ([`lib/garment-photo/align.ts`](../../lib/garment-photo/align.ts)): every picture is scaled so the shoulders sit at 6% of the height and the shoulders-to-waist distance is 19%, centred, so the body is the same size in all of them. The masks move with the picture.
-- **Checking:** the generator reads the sleeves and the skirt length (relative to the catalogue photo's) back from each AI picture and redraws wrong ones, up to 8 times.
-- **Print areas** are fitted so they sit on their part in nearly all pictures (`fitPrintAreas`).
+- **Lining up** ([`lib/garment-photo/align.ts`](../../lib/garment-photo/align.ts)): every picture is scaled so the shoulders sit at 6% of the height and, for dresses, the shoulders-to-waist distance is 19%; shirts and panjabis (no clear waist) get a shoulder width of 36% of the picture. Centred, so the body is the same size in all of them. The masks move with the picture.
+- **Parts:** dresses are cut into Sleeves, Bodice and Skirt. Shirts and panjabis are one part, Body (the whole garment), because long sleeves hang against the body in their photos and can't be cut apart reliably.
+- **Checking:** the generator reads the sleeves and the length back from each AI picture and redraws wrong ones, up to 8 times. Dresses: sleeves from the outline, skirt length relative to the catalogue photo's. Shirts and panjabis: sleeves from the garment's width at mid-height (hanging long sleeves make it wide, `widthAt`), panjabi length relative to the catalogue photo's. Collars, necklines and fit are left to the prompt.
+- **Print areas** (`printAreasFor`) cover the whole front, each part (dresses: bodice, skirt, sleeves) and the whole back of every style picture, and trim to the fabric (below).
 
 `tests/unit/garment-photo.test.ts` covers cutting out, sleeve and length reading, and lining up on synthetic photos.
 

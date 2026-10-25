@@ -78,6 +78,11 @@ export const placementAreaSchema = z.object({
   /** Real-world printable size in centimetres. */
   widthCm: z.number().positive().max(100),
   heightCm: z.number().positive().max(150),
+  /**
+   * Trim items to the garment's outline (its region masks), so an area can cover a whole part or the
+   * whole front without printing off the fabric. Off for plain rectangular areas.
+   */
+  clipToFabric: z.boolean().optional(),
 });
 
 export const styleOptionSchema = z.object({

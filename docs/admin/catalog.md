@@ -31,6 +31,7 @@ Either way it disappears from the shop immediately. Customers who already ordere
 3. **Placement areas:** these are where customers may add text, images and decorations.
    - Select an area, then drag on the garment to draw it, or drag inside it to move it.
    - Enter its real printable **Width (cm)** and **Height (cm)**.
+3b. **Trim to the fabric:** tick this on a large area (a whole part or the whole front) so customers can place items anywhere in it; anything that falls off the garment (by its masks) isn't printed. The demo items use it for Whole front, Bodice, Skirt, Sleeves and Whole back.
 4. **Recolorable regions:** the parts customers can color separately, such as Bodice or Skirt. Each region needs a **mask**: an image the same size as the garment image, black everywhere except the region, which is painted white. Upload a **front mask** and/or **back mask** for each region. Customers can only recolor regions that have masks, and the template can't go live until every recolorable region has one.
 5. **Style options:** neckline, sleeve length and dress length, each with an optional **Add-on ৳** price and a **reference image**.
 6. **Allowed colors**, **Patterns**, **Fonts** and **Add-on prices**.

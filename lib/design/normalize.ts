@@ -42,6 +42,10 @@ export type AreaPlan = {
   rect: { x: number; y: number; w: number; h: number };
   widthCm: number;
   heightCm: number;
+  /** Trim the layers to the garment's outline on this side (`fabricMaskKeys` of its side plan). */
+  clipToFabric: boolean;
+  /** Masks of the garment's outline on this side, for trimming (empty unless `clipToFabric`). */
+  fabricMaskKeys: string[];
   /** Bottom-to-top drawing order (array order of the spec). */
   layers: LayerOp[];
 };
@@ -78,6 +82,12 @@ function toOp(layer: DesignSpec["layers"][number]): LayerOp {
 }
 
 export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): RenderPlan {
+  // The garment's outline on each side, as drawn by the chosen style's picture: every region's mask.
+  const fabricMasks = (side: Side) => {
+    const picture = garmentPicture(template, side, spec.styleOptions);
+    return template.regions.flatMap((region) => picture.maskFor(region.id) ?? []);
+  };
+  const outline = { front: fabricMasks("front"), back: fabricMasks("back") };
   const areaPlans: AreaPlan[] = template.placementAreas.map((area) => ({
     areaId: area.id,
     label: area.label,
@@ -85,6 +95,8 @@ export function normalizeForRender(spec: DesignSpec, template: TemplateConfig): 
     rect: { x: r4(area.rect.x), y: r4(area.rect.y), w: r4(area.rect.w), h: r4(area.rect.h) },
     widthCm: area.widthCm,
     heightCm: area.heightCm,
+    clipToFabric: area.clipToFabric === true,
+    fabricMaskKeys: area.clipToFabric === true ? outline[area.side] : [],
     layers: spec.layers.filter((l) => l.areaId === area.id).map(toOp),
   }));
 

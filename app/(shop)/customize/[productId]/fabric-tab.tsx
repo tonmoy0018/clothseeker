@@ -94,7 +94,8 @@ export function FabricTab(props: {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Part to color">
+      {/* With a single part there's nothing to choose between. */}
+      <div className={cn("flex flex-wrap gap-2", regions.length < 2 && "hidden")} role="group" aria-label="Part to color">
         {[{ id: ALL, label: `Whole ${props.noun}` }, ...regions].map((r) => (
           <button
             key={r.id}

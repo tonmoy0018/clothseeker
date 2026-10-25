@@ -492,3 +492,21 @@ export function sleeveReach(parts: GarmentParts): number {
 export function lengthRatio(parts: GarmentParts): number {
   return (parts.hemY - parts.shoulderY) / parts.shoulderWidth;
 }
+
+/**
+ * The garment's full width `fraction` of the way from shoulders to hem, in shoulder widths. Long sleeves
+ * hanging beside a shirt or panjabi make it wide at mid-height (1.3 and more); short sleeves don't (≈ 0.9).
+ */
+export function widthAt(parts: GarmentParts, fraction: number): number {
+  const { garment } = parts;
+  const y = parts.shoulderY + Math.round((parts.hemY - parts.shoulderY) * fraction);
+  let first = -1;
+  let last = -1;
+  for (let x = 0; x < garment.width; x += 1) {
+    if (garment.data[y * garment.width + x]) {
+      if (first < 0) first = x;
+      last = x;
+    }
+  }
+  return first < 0 ? 0 : (last - first) / parts.shoulderWidth;
+}

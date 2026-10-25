@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { FONTS, fontUrl } from "@/lib/catalog/fonts";
 import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import { garmentPicture } from "@/lib/design/garment-variant";
+import { luminance } from "@/lib/design/shade";
 import { priceDesign, type DesignPrice } from "@/lib/design/pricing";
 import { validateDesignAgainstTemplate, type DesignIssue } from "@/lib/design/validate";
 import type { Size } from "@/lib/generated/prisma/enums";
@@ -27,7 +28,7 @@ import { DesignCanvas, type LayerBox } from "./design-canvas";
 import { RailButton, SideThumb } from "./editor-ui";
 import { FabricTab } from "./fabric-tab";
 import { PersonaliseTab } from "./personalise-tab";
-import { composeGarment, loadImage, type ClientFill } from "./recolor";
+import { composeGarment, loadImage, offFabricOverlay, type ClientFill } from "./recolor";
 import { StyleTab } from "./style-tab";
 
 const HISTORY_LIMIT = 50;
@@ -95,11 +96,12 @@ function defaultSpec(p: DesignEditorProps): DesignSpec {
 }
 
 /**
- * A box of the given aspect (width/height, in cm) sized to `fraction` of the area's shorter side,
- * centred horizontally; `anchorY` places its centre vertically (0 = top, 1 = bottom).
+ * A box of the given aspect (width/height, in cm) sized to `fraction` of the area's shorter side but at
+ * most `maxCm` (so items on a whole-front area start at a sensible size), centred horizontally;
+ * `anchorY` places its centre vertically (0 = top, 1 = bottom).
  */
-function centredBox(area: { widthCm: number; heightCm: number }, fraction: number, aspect = 1, anchorY = 0.5): LayerBox {
-  const side = fraction * Math.min(area.widthCm, area.heightCm);
+function centredBox(area: { widthCm: number; heightCm: number }, fraction: number, maxCm: number, aspect = 1, anchorY = 0.5): LayerBox {
+  const side = Math.min(fraction * Math.min(area.widthCm, area.heightCm), maxCm);
   const wCm = aspect >= 1 ? side : side * aspect;
   const hCm = aspect >= 1 ? side / aspect : side;
   const w = Math.min(wCm / area.widthCm, 1);
@@ -177,6 +179,35 @@ export function DesignEditor(props: DesignEditorProps) {
     return { front: fills("front"), back: fills("back") };
   }, [config.regions, pictures, spec.parts, props.imageUrls]);
 
+  // Over each side: the garment off the fabric, to trim items in areas that keep to the fabric. Each
+  // overlay remembers the garment picture it was made from and is only used while that one is shown.
+  type Trim = { garment: HTMLCanvasElement; overlay: HTMLCanvasElement };
+  const [trims, setTrims] = useState<{ front: Trim | null; back: Trim | null }>({ front: null, back: null });
+  useEffect(() => {
+    let cancelled = false;
+    for (const s of ["front", "back"] as const) {
+      const garment = garments[s];
+      const maskUrls = config.regions.flatMap((r) => {
+        const key = pictures[s].maskFor(r.id);
+        const url = key ? props.imageUrls[key] : undefined;
+        return url ? [url] : [];
+      });
+      if (!garment || maskUrls.length === 0 || !config.placementAreas.some((a) => a.side === s && a.clipToFabric)) continue;
+      void offFabricOverlay(garment, maskUrls)
+        .then((overlay) => {
+          if (!cancelled) setTrims((t) => ({ ...t, [s]: { garment, overlay } }));
+        })
+        .catch(() => undefined); // without it, items just aren't trimmed in the preview
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [garments, pictures, config.regions, config.placementAreas, props.imageUrls]);
+  const offFabric = (s: "front" | "back") => {
+    const trim = trims[s];
+    return trim && trim.garment === garments[s] ? trim.overlay : null;
+  };
+
   useEffect(() => {
     let cancelled = false;
     for (const s of ["front", "back"] as const) {
@@ -235,6 +266,28 @@ export function DesignEditor(props: DesignEditorProps) {
   const selectedLayer = spec.layers.find((l) => l.id === selectedLayerId) ?? null;
   const allowedColors = config.allowedColors;
   const defaultColor = allowedColors[0]?.hex.toLowerCase() ?? "#1b1b1b";
+
+  /** The allowed colour that stands out most from the garment inside an area (for new text and decorations). */
+  function contrastingColor(area: PlacementArea): string {
+    const garment = garments[area.side];
+    const ctx = garment?.getContext("2d");
+    if (!garment || !ctx) return defaultColor;
+    const x = Math.round(area.rect.x * garment.width);
+    const y = Math.round(area.rect.y * garment.height);
+    const w = Math.max(1, Math.round(area.rect.w * garment.width));
+    const h = Math.max(1, Math.round(area.rect.h * garment.height));
+    const data = ctx.getImageData(x, y, w, h).data;
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4 * 7) {
+      total += luminance(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0);
+      count += 1;
+    }
+    const under = count > 0 ? total / count : 0.5;
+    const lumOf = (hex: string) => luminance(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+    const best = [...allowedColors].sort((a, b) => Math.abs(lumOf(b.hex) - under) - Math.abs(lumOf(a.hex) - under))[0];
+    return best?.hex.toLowerCase() ?? defaultColor;
+  }
 
   function addLayer(layer: DesignLayer) {
     commit((s) => ({ ...s, layers: [...s.layers, layer] }));
@@ -355,7 +408,7 @@ export function DesignEditor(props: DesignEditorProps) {
       const img = await loadImage(url);
       const aspectCm = img.naturalWidth / img.naturalHeight;
       setUploadUrls((u) => ({ ...u, [result.key]: url }));
-      addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "image", ...centredBox(activeArea, 0.6, aspectCm), image: { assetKey: result.key } });
+      addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "image", ...centredBox(activeArea, 0.6, 25, aspectCm), image: { assetKey: result.key } });
     } catch {
       setMessage({ kind: "error", text: "That image couldn't be added. Try a different file." });
     } finally {
@@ -408,6 +461,7 @@ export function DesignEditor(props: DesignEditorProps) {
           {fontsReady ? (
             <DesignCanvas
               garment={garments[side]}
+              offFabric={offFabric(side)}
               areas={areasOnSide}
               layers={layersOnSide}
               uploadUrls={uploadUrls}
@@ -453,7 +507,10 @@ export function DesignEditor(props: DesignEditorProps) {
             We don&apos;t have a picture of this exact style yet, so the preview shows the closest one. Your dress is made in the style you chose.
           </p>
         )}
-        <p className="text-xs text-muted-foreground">Drag items to move them. Use the corner handles to resize or rotate. Items stay inside the dashed areas.</p>
+        <p className="text-xs text-muted-foreground">
+          Drag items to move them. Use the corner handles to resize or rotate.{" "}
+          {activeArea?.clipToFabric ? `Place them anywhere on the ${garment.noun}: anything off the fabric isn't printed.` : "Items stay inside the dashed area."}
+        </p>
 
         {showTryOn && (
           <TryOnPanel source={{ kind: "design", spec, designId }} signedIn={props.customerId !== null} noun={garment.noun} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
@@ -549,11 +606,11 @@ export function DesignEditor(props: DesignEditorProps) {
               }}
               onAddText={(content) => {
                 if (!activeArea || !firstFont) return;
-                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "text", ...centredBox(activeArea, 0.9, 3, 0.3), text: { content, fontId: firstFont, color: defaultColor } });
+                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "text", ...centredBox(activeArea, 0.9, 30, 3, 0.3), text: { content, fontId: firstFont, color: contrastingColor(activeArea) } });
               }}
               onAddDecoration={(id) => {
                 if (!activeArea) return;
-                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "decoration", ...centredBox(activeArea, 0.35, 1, 0.72), decoration: { id, color: defaultColor } });
+                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "decoration", ...centredBox(activeArea, 0.35, 12, 1, 0.72), decoration: { id, color: contrastingColor(activeArea) } });
               }}
               upload={{ state: uploadState, removeBackground: removeBg, setRemoveBackground: setRemoveBg, onFile: (file) => void uploadImage(file) }}
             />

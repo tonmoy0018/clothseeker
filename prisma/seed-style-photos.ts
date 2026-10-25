@@ -15,12 +15,12 @@ import type { SeedProduct } from "./seed-data";
 // Photo templates for the seeded customizable items: the catalogue photo for the style it shows, plus the
 // AI style pictures in prisma/style-photos/<slug>/ (ai-scripts/generate-style-photos.ts). Every picture is
 // lined up (lib/garment-photo/align.ts) and cut into masks: Sleeves / Bodice / Skirt for dresses, and
-// Body / Sleeves for shirts and panjabis.
+// one Body mask (the whole garment) for shirts and panjabis.
 
 export const STYLE_PHOTOS_DIR = path.join(process.cwd(), "prisma", "style-photos");
 const SEED_PHOTOS_DIR = path.join(process.cwd(), "prisma", "seed-photos");
 
-export type PhotoRegion = "straps" | "bodice" | "skirt" | "body" | "sleeves";
+export type PhotoRegion = "straps" | "bodice" | "skirt" | "body";
 
 /** The parts a photo of this garment type is cut into. */
 export function photoRegionsFor(type: GarmentType): readonly { id: PhotoRegion; label: string }[] {
@@ -30,10 +30,9 @@ export function photoRegionsFor(type: GarmentType): readonly { id: PhotoRegion; 
         { id: "bodice", label: "Bodice" },
         { id: "skirt", label: "Skirt" },
       ]
-    : [
-        { id: "body", label: "Body" },
-        { id: "sleeves", label: "Sleeves" },
-      ];
+    : // Long sleeves hang against the body in shirt and panjabi photos, so they can't be cut apart
+      // reliably: the whole garment is one part.
+      [{ id: "body", label: "Body" }];
 }
 
 export type PhotoPicture = {
@@ -76,9 +75,7 @@ async function picture(raw: Buffer, type: GarmentType, side: "front" | "back", m
     await add("bodice", aligned.masks.bodice.work, aligned.masks.bodice.png);
     await add("skirt", aligned.masks.skirt.work, aligned.masks.skirt.png);
   } else {
-    // Shirts and panjabis have no skirt: their body is bodice and skirt together.
-    await add("body", union(aligned.masks.bodice.work, aligned.masks.skirt.work));
-    await add("sleeves", aligned.masks.sleeves.work, aligned.masks.sleeves.png);
+    await add("body", union(union(aligned.masks.bodice.work, aligned.masks.skirt.work), aligned.masks.sleeves.work));
   }
   return { side, match, image: await sharp(aligned.image).webp({ quality: 88 }).toBuffer(), masks, workMasks };
 }
@@ -97,64 +94,60 @@ export async function photoPictures(product: SeedProduct & { photoStyle: NonNull
 // ─── print areas ─────────────────────────────────────────────────────────────
 
 /**
- * Print areas for the lined-up photos, as [area, region it must sit on], placed for the photo framing.
- * Dresses: shoulders at 6% and waist at 25% of the height. Shirts and panjabis: shoulders at 6% and a
- * shoulder width of 36% of the picture (about 7 px per cm at 900 px wide).
+ * Real size of the whole lined-up picture in cm, from its framing: a dress's shoulders-to-waist (19% of
+ * the height) is about 40 cm; a shirt's shoulder width (36% of the width) about 46 cm.
  */
-const PHOTO_AREAS: Record<GarmentType, readonly [PlacementArea, PhotoRegion][]> = {
-  dress: [
-    [{ id: "front-chest", label: "Front chest", side: "front", rect: { x: 0.4385, y: 0.155, w: 0.123, h: 0.071 }, widthCm: 20, heightCm: 15 }, "bodice"],
-    [{ id: "front-skirt", label: "Front skirt", side: "front", rect: { x: 0.392, y: 0.29, w: 0.216, h: 0.128 }, widthCm: 35, heightCm: 27 }, "skirt"],
-    [{ id: "back-upper", label: "Upper back", side: "back", rect: { x: 0.4075, y: 0.1, w: 0.185, h: 0.107 }, widthCm: 30, heightCm: 25 }, "bodice"],
-  ],
-  shirt: [
-    // The wearer's left chest is on the viewer's right.
-    [{ id: "chest", label: "Chest", side: "front", rect: { x: 0.54, y: 0.13, w: 0.078, h: 0.048 }, widthCm: 10, heightCm: 8 }, "body"],
-    [{ id: "back-yoke", label: "Back yoke", side: "back", rect: { x: 0.3835, y: 0.09, w: 0.233, h: 0.072 }, widthCm: 30, heightCm: 12 }, "body"],
-  ],
-  panjabi: [
-    [{ id: "placket", label: "Front placket", side: "front", rect: { x: 0.4535, y: 0.1, w: 0.093, h: 0.108 }, widthCm: 12, heightCm: 18 }, "body"],
-    [{ id: "back-upper", label: "Upper back", side: "back", rect: { x: 0.391, y: 0.1, w: 0.218, h: 0.108 }, widthCm: 28, heightCm: 18 }, "body"],
-  ],
+const PICTURE_CM: Record<"dress" | "top", { w: number; h: number }> = {
+  dress: { w: (PHOTO_WIDTH * 40) / (0.19 * PHOTO_HEIGHT), h: 40 / 0.19 },
+  top: { w: 46 / 0.36, h: (PHOTO_HEIGHT * 46) / (0.36 * PHOTO_WIDTH) },
 };
 
-function covers(mask: Mask, rect: PlacementArea["rect"]): boolean {
-  const x0 = Math.floor(rect.x * mask.width);
-  const x1 = Math.ceil((rect.x + rect.w) * mask.width) - 1;
-  const y0 = Math.floor(rect.y * mask.height);
-  const y1 = Math.ceil((rect.y + rect.h) * mask.height) - 1;
-  let inside = 0;
-  let total = 0;
-  for (let y = y0; y <= y1; y += 1) {
-    for (let x = x0; x <= x1; x += 1) {
-      total += 1;
-      inside += mask.data[y * mask.width + x] ?? 0;
-    }
-  }
-  return total > 0 && inside / total >= 0.99;
-}
+type Box = { x0: number; y0: number; x1: number; y1: number };
 
-/**
- * Each print area, shrunk around its centre (cm shrink with it) until it sits on its region in nearly
- * every picture of that side (one odd AI picture shouldn't shrink it for all). An area that can't fit
- * at 60% of its size is left out.
- */
-export function fitPrintAreas(type: GarmentType, pictures: readonly PhotoPicture[]): PlacementArea[] {
-  const fitted: PlacementArea[] = [];
-  for (const [area, region] of PHOTO_AREAS[type]) {
-    const masks = pictures.filter((p) => p.side === area.side).flatMap((p) => p.workMasks[region] ?? []);
-    if (masks.length === 0) continue;
-    const needed = Math.ceil(masks.length * 0.85);
-    for (let scale = 1; scale >= 0.6 - 1e-9; scale -= 0.05) {
-      const w = area.rect.w * scale;
-      const h = area.rect.h * scale;
-      const rect = { x: area.rect.x + (area.rect.w - w) / 2, y: area.rect.y + (area.rect.h - h) / 2, w, h };
-      if (masks.filter((m) => covers(m, rect)).length >= needed) {
-        const round = (v: number) => Math.round(v * 10_000) / 10_000;
-        fitted.push({ ...area, rect: { x: round(rect.x), y: round(rect.y), w: round(rect.w), h: round(rect.h) }, widthCm: Math.round(area.widthCm * scale), heightCm: Math.round(area.heightCm * scale) });
-        break;
+/** The bounding box (fractions of the picture) of everything on any of these masks, or null if empty. */
+function boundingBox(masks: readonly Mask[]): Box | null {
+  let box: Box | null = null;
+  for (const mask of masks) {
+    for (let y = 0; y < mask.height; y += 1) {
+      for (let x = 0; x < mask.width; x += 1) {
+        if (!mask.data[y * mask.width + x]) continue;
+        const fx = x / mask.width;
+        const fy = y / mask.height;
+        box = box ? { x0: Math.min(box.x0, fx), y0: Math.min(box.y0, fy), x1: Math.max(box.x1, fx), y1: Math.max(box.y1, fy) } : { x0: fx, y0: fy, x1: fx, y1: fy };
       }
     }
   }
-  return fitted;
+  return box;
+}
+
+/**
+ * Large print areas that cover the whole front, each part and the whole back of every style picture, and
+ * trim to the fabric: customers can place items anywhere on the garment, and whatever falls off the
+ * chosen style's outline isn't printed.
+ */
+export function printAreasFor(type: GarmentType, pictures: readonly PhotoPicture[]): PlacementArea[] {
+  const cm = PICTURE_CM[type === "dress" ? "dress" : "top"];
+  const round = (v: number) => Math.round(v * 10_000) / 10_000;
+  const area = (id: string, label: string, side: "front" | "back", regions: readonly PhotoRegion[]): PlacementArea[] => {
+    const masks = pictures.filter((p) => p.side === side).flatMap((p) => regions.flatMap((r) => p.workMasks[r] ?? []));
+    const box = boundingBox(masks);
+    if (!box) return [];
+    const pad = 0.005;
+    const x = Math.max(0, box.x0 - pad);
+    const y = Math.max(0, box.y0 - pad);
+    const w = Math.min(1, box.x1 + pad) - x;
+    const h = Math.min(1, box.y1 + pad) - y;
+    const widthCm = Math.min(100, Math.round(w * cm.w * 2) / 2);
+    const heightCm = Math.min(150, Math.round(h * cm.h * 2) / 2);
+    return [{ id, label, side, rect: { x: round(x), y: round(y), w: round(w), h: round(h) }, widthCm, heightCm, clipToFabric: true }];
+  };
+  const all = photoRegionsFor(type).map((r) => r.id);
+  return [
+    // Area ids differ from region ids (bodice, skirt…): a template's ids must be unique across both.
+    ...area("whole-front", "Whole front", "front", all),
+    ...(type === "dress"
+      ? [...area("bodice-print", "Bodice", "front", ["bodice"]), ...area("skirt-print", "Skirt", "front", ["skirt"]), ...area("sleeves-print", "Sleeves", "front", ["straps"])]
+      : []),
+    ...area("whole-back", "Whole back", "back", all),
+  ];
 }
