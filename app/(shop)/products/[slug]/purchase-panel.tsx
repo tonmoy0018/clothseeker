@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useActionState, useMemo, useState } from "react";
 
 import { DressIllustration } from "@/components/shop/dress-illustration";
+import type { GarmentType } from "@/lib/catalog/garment-types";
 import { Button } from "@/components/ui/button";
 import type { Size } from "@/lib/generated/prisma/enums";
 import { formatBDT } from "@/lib/money";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { buyNow, type BuyNowState } from "./actions";
 
 type PurchasePanelProps = {
+  garmentType: GarmentType;
   productId: string;
   slug: string;
   name: string;
@@ -30,7 +32,7 @@ const initialState: BuyNowState = {};
  * Size/color picker. Availability and prices shown here are display-only: the server
  * re-resolves the variant, price and stock when the form is submitted.
  */
-export function PurchasePanel({ productId, slug, name, variants, sizes, colors, photos }: PurchasePanelProps) {
+export function PurchasePanel({ productId, slug, name, variants, sizes, colors, photos, garmentType }: PurchasePanelProps) {
   const firstAvailable = variants.find((v) => v.available > 0);
   const [color, setColor] = useState(firstAvailable?.colorName ?? colors[0]?.name ?? "");
   const [size, setSize] = useState<Size | null>(null);
@@ -80,7 +82,7 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
           )}
         </div>
       ) : (
-        <DressIllustration colorHex={colorHex} label={`${name} in ${color}`} className="aspect-[4/5]" />
+        <DressIllustration colorHex={colorHex} label={`${name} in ${color}`} className="aspect-[4/5]" garmentType={garmentType} />
       )}
 
       <form action={formAction} className="flex flex-col gap-6">

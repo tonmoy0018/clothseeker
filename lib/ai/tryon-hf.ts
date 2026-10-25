@@ -5,21 +5,21 @@ import { AiProviderError } from "./errors";
 import type { FetchLike } from "./http";
 import type { TryOnProvider, TryOnRequest } from "./types";
 
-// Virtual try-on on free public Hugging Face Spaces (Gradio apps on ZeroGPU), with a dress mode.
+// Virtual try-on on free public Hugging Face Spaces (Gradio apps on ZeroGPU), in dress or upper-body mode.
 // Feasibility was checked on 2026-10-09 (ai-scripts/tryon-feasibility.ts, docs/developers/try-on.md):
 // results are a rough preview, and the free GPU allowance is small and shared by the whole store.
 //
 // Privacy: the photo is sent to a third-party Space. Customers are told this before they consent.
 
-type SpaceCall = { endpoint: string; args: (person: Blob, garment: Blob) => Record<string, unknown> };
+type SpaceCall = { endpoint: string; args: (person: Blob, garment: Blob, category: TryOnRequest["category"]) => Record<string, unknown> };
 
 export const TRYON_SPACES: Record<string, SpaceCall> = {
   "levihsu/OOTDiffusion": {
     endpoint: "/process_dc",
-    args: (person, garment) => ({
+    args: (person, garment, category) => ({
       vton_img: handle_file(person),
       garm_img: handle_file(garment),
-      category: "Dress",
+      category,
       n_samples: 1,
       n_steps: 20,
       image_scale: 2,
@@ -28,7 +28,7 @@ export const TRYON_SPACES: Record<string, SpaceCall> = {
   },
   "franciszzj/Leffa": {
     endpoint: "/leffa_predict_vt",
-    args: (person, garment) => ({
+    args: (person, garment, category) => ({
       src_image_path: handle_file(person),
       ref_image_path: handle_file(garment),
       ref_acceleration: false,
@@ -36,7 +36,7 @@ export const TRYON_SPACES: Record<string, SpaceCall> = {
       scale: 2.5,
       seed: 42,
       vt_model_type: "dress_code",
-      vt_garment_type: "dresses",
+      vt_garment_type: category === "Dress" ? "dresses" : "upper_body",
       vt_repaint: false,
     }),
   },
@@ -130,7 +130,7 @@ export class HuggingFaceTryOn implements TryOnProvider {
       }
       tried++;
       try {
-        return await abortable(this.callSpace(space, call, person, garment), signal);
+        return await abortable(this.callSpace(space, call, person, garment, request.category), signal);
       } catch (error) {
         if (signal.aborted || (error instanceof AiProviderError && error.code === "TIMEOUT")) {
           throw new AiProviderError("try-on timed out", true, "TIMEOUT");
@@ -145,9 +145,9 @@ export class HuggingFaceTryOn implements TryOnProvider {
     throw new AiProviderError("try-on failed on every space", true);
   }
 
-  private async callSpace(space: string, call: SpaceCall, person: Blob, garment: Blob): Promise<Buffer> {
+  private async callSpace(space: string, call: SpaceCall, person: Blob, garment: Blob, category: TryOnRequest["category"]): Promise<Buffer> {
     const app = await this.connect(space, this.token);
-    const result = await app.predict(call.endpoint, call.args(person, garment));
+    const result = await app.predict(call.endpoint, call.args(person, garment, category));
     const url = firstFileUrl(result.data);
     if (!url) {
       throw new AiProviderError("try-on space returned no image", true);

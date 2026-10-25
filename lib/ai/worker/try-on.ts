@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 import { garmentPicture } from "@/lib/design/garment-variant";
 import { cutOutGarment } from "@/lib/garment-photo/align";
 import { SegmentationError } from "@/lib/garment-photo/segment";
@@ -35,7 +36,8 @@ export function photoProblem(check: TryOnPhotoCheck): AiFailureCode {
   return "PHOTO_REJECTED";
 }
 
-async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPayload["source"], expectedHash: string): Promise<Buffer> {
+/** The garment image for the try-on model, and what kind of garment it is. */
+async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPayload["source"], expectedHash: string): Promise<{ image: Buffer; type: GarmentType }> {
   const { db, storage } = deps;
   if (source.kind === "design") {
     let checked;
@@ -54,23 +56,27 @@ async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPa
     const picture = garmentPicture(config, "front", checked.spec.styleOptions);
     const maskKeys = config.regions.flatMap((r) => picture.maskFor(r.id) ?? []);
     const flat = await renderFlatGarment(normalizeForRender(checked.spec, config), storageAssets(storage), maskKeys, GARMENT_RENDER_WIDTH);
-    return prepareGarment(flat);
+    return { image: await prepareGarment(flat), type: config.garmentType };
   }
   const imageKey = await productTryOnImageKey(db, source.productId);
   if (!imageKey || productSignature(source.productId, imageKey) !== expectedHash) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
-  const image = await storage.get(BUCKETS.productMedia, imageKey);
-  if (!image) {
+  const [image, product] = await Promise.all([
+    storage.get(BUCKETS.productMedia, imageKey),
+    db.product.findUnique({ where: { id: source.productId }, select: { garmentType: true } }),
+  ]);
+  if (!image || !product) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
+  const type = product.garmentType;
   // Try-on models want the garment alone: cut the dress out of the catalogue photo (mannequin and
   // backdrop removed). If it can't be found, the whole photo is still better than nothing.
   try {
-    return await prepareGarment(await cutOutGarment(image));
+    return { image: await prepareGarment(await cutOutGarment(image)), type };
   } catch (error) {
     if (!(error instanceof SegmentationError)) throw error;
-    return prepareGarment(image);
+    return { image: await prepareGarment(image), type };
   }
 }
 
@@ -111,12 +117,13 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
 
   // 2. The garment as try-on models expect it.
   const garment = await garmentImage(deps, job, input.source, input.garmentHash);
+  const category = GARMENT_TYPES[garment.type].tryOnCategory;
   if (signal.aborted) {
     throw new AiProviderError("job aborted", true, "TIMEOUT");
   }
 
   // 3. Try-on, then treat the returned bytes like any upload.
-  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment, mimeType: "image/png" } }, signal);
+  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment.image, mimeType: "image/png" }, category }, signal);
   let image;
   try {
     image = await processImage(raw, "tryOnResult");

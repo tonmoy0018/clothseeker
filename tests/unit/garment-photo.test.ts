@@ -1,8 +1,8 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
-import { alignPhoto, analysePhoto, cutOutGarment, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, TORSO } from "@/lib/garment-photo/align";
-import { maskArea, skirtRatio, sleeveStyle } from "@/lib/garment-photo/segment";
+import { alignPhoto, analysePhoto, cutOutGarment, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, SHOULDERS, TORSO } from "@/lib/garment-photo/align";
+import { lengthRatio, maskArea, skirtRatio, sleeveReach, sleeveStyle } from "@/lib/garment-photo/segment";
 import { luminance, shadeFactor, shadeRange } from "@/lib/design/shade";
 
 // Synthetic catalogue photos: a dress (with soft vertical folds) on a cream mannequin and stand, on a
@@ -77,6 +77,28 @@ describe("finding and splitting the dress in a photo", () => {
       expect(Math.abs(((parts.waistY - parts.shoulderY) * scale) / PHOTO_HEIGHT - TORSO)).toBeLessThan(0.025);
       expect(Math.abs((parts.centreX * scale) / PHOTO_WIDTH - 0.5)).toBeLessThan(0.02);
     }
+  });
+});
+
+/** A synthetic shirt or panjabi: straight body, sleeves out to the sides, no waist. */
+async function topPhoto({ hem, sleeveEnd }: { hem: number; sleeveEnd: number }): Promise<Buffer> {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="#dcdcda"/>
+    <path d="M160 90 L185 84 L215 84 L240 90 L240 ${hem} L160 ${hem} Z" fill="#2e3a59"/>
+    <path d="M160 92 L135 ${sleeveEnd - 30} L128 ${sleeveEnd} L146 ${sleeveEnd + 2} L162 140 Z" fill="#2e3a59"/>
+    <path d="M240 92 L265 ${sleeveEnd - 30} L272 ${sleeveEnd} L254 ${sleeveEnd + 2} L238 140 Z" fill="#2e3a59"/></svg>`;
+  return sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toBuffer();
+}
+
+describe("shirts and panjabis", () => {
+  it("reads sleeve reach and length in shoulder widths, and lines up by the shoulders", async () => {
+    const short = (await analysePhoto(await topPhoto({ hem: 250, sleeveEnd: 150 }))).parts;
+    const long = (await analysePhoto(await topPhoto({ hem: 330, sleeveEnd: 260 }))).parts;
+    expect(sleeveReach(short)).toBeLessThan(sleeveReach(long));
+    expect(lengthRatio(short)).toBeLessThan(lengthRatio(long));
+
+    const { parts, scale } = await analysePhoto(await alignPhoto(await topPhoto({ hem: 300, sleeveEnd: 200 }), "shoulders"));
+    expect(Math.abs((parts.shoulderWidth * scale) / PHOTO_WIDTH - SHOULDERS)).toBeLessThan(0.03);
+    expect(Math.abs((parts.shoulderY * scale) / PHOTO_HEIGHT - SHOULDER_Y)).toBeLessThan(0.02);
   });
 });
 

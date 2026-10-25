@@ -69,7 +69,7 @@ describe("garment preparation and fakes", () => {
   });
 
   it("the fake try-on is deterministic and keeps the photo size", async () => {
-    const request: TryOnRequest = { person: { data: await grey(600, 900, 140), mimeType: "image/webp" }, garment: { data: await prepareGarment(await grey(300, 400, 90)), mimeType: "image/png" } };
+    const request: TryOnRequest = { person: { data: await grey(600, 900, 140), mimeType: "image/webp" }, garment: { data: await prepareGarment(await grey(300, 400, 90)), mimeType: "image/png" }, category: "Dress" };
     const a = await new FakeTryOn().tryOn(request, signal);
     expect((await new FakeTryOn().tryOn(request, signal)).equals(a)).toBe(true);
     expect(await sharp(a).metadata()).toMatchObject({ width: 600, height: 900 });
@@ -80,6 +80,7 @@ describe("HuggingFaceTryOn", () => {
   const request = async (): Promise<TryOnRequest> => ({
     person: { data: await grey(600, 900, 140), mimeType: "image/webp" },
     garment: { data: await grey(768, 1024, 255), mimeType: "image/png" },
+    category: "Dress",
   });
 
   function spaces(behaviour: Record<string, () => Promise<{ data: unknown }>>) {
@@ -118,6 +119,17 @@ describe("HuggingFaceTryOn", () => {
     expect(calls.map((c) => c.space)).toEqual(["levihsu/OOTDiffusion", "franciszzj/Leffa"]);
     expect(calls[1]?.data).toMatchObject({ vt_model_type: "dress_code", vt_garment_type: "dresses", ref_acceleration: false });
     expect(calls[1]?.token).toBeUndefined();
+  });
+
+  it("asks for the upper-body mode for shirts and panjabis", async () => {
+    const fail = async () => {
+      throw new Error("Space is sleeping");
+    };
+    const { connect, calls } = spaces({ "levihsu/OOTDiffusion": fail, "franciszzj/Leffa": async () => ({ data: [{ url: "https://franciszzj-leffa.hf.space/file=out.webp" }] }) });
+    const provider = new HuggingFaceTryOn({ spaces: ["levihsu/OOTDiffusion", "franciszzj/Leffa"], connect, fetch: fetchOk });
+    await provider.tryOn({ ...(await request()), category: "Upper-body" }, signal);
+    expect(calls[0]?.data).toMatchObject({ category: "Upper-body" });
+    expect(calls[1]?.data).toMatchObject({ vt_garment_type: "upper_body" });
   });
 
   it("reports the daily GPU limit when every space is over quota, otherwise a retryable failure", async () => {

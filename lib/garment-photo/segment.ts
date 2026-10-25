@@ -15,6 +15,8 @@ export type GarmentParts = {
   waistY: number;
   hemY: number;
   centreX: number;
+  /** Width across the shoulders (5% of the way down), a size yardstick for shirts and panjabis. */
+  shoulderWidth: number;
   /** Lowest row reached by a sleeve, or null when there are no sleeves. */
   sleeveBottomY: number | null;
 };
@@ -457,7 +459,9 @@ export function splitGarment(garment: Mask): GarmentParts {
     }
     sleeveBottomY = null;
   }
-  return { garment, sleeves, bodice, skirt, shoulderY, waistY, hemY, centreX, sleeveBottomY };
+  const shoulderRow = runs(garment, shoulderY + Math.round(dressHeight * 0.05));
+  const shoulderWidth = Math.max(1, (shoulderRow.at(-1)?.to ?? centreX) - (shoulderRow[0]?.from ?? centreX));
+  return { garment, sleeves, bodice, skirt, shoulderY, waistY, hemY, centreX, shoulderWidth, sleeveBottomY };
 }
 
 // ─── reading the style back from the shape ───────────────────────────────────
@@ -477,4 +481,14 @@ export function skirtRatio(parts: GarmentParts): number {
 export function sleeveStyle(parts: GarmentParts): "sleeveless" | "short" | "long" {
   if (parts.sleeveBottomY === null) return "sleeveless";
   return parts.sleeveBottomY > parts.waistY + 0.25 * (parts.waistY - parts.shoulderY) ? "long" : "short";
+}
+
+/** How far the sleeves reach, in shoulder widths (0 when sleeveless). Shirts and panjabis. */
+export function sleeveReach(parts: GarmentParts): number {
+  return parts.sleeveBottomY === null ? 0 : (parts.sleeveBottomY - parts.shoulderY) / parts.shoulderWidth;
+}
+
+/** Shoulders-to-hem length in shoulder widths. Comparable between pictures of the same garment. */
+export function lengthRatio(parts: GarmentParts): number {
+  return (parts.hemY - parts.shoulderY) / parts.shoulderWidth;
 }

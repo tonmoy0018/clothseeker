@@ -12,6 +12,8 @@ export const PHOTO_HEIGHT = 1170; // 1200×1560 proportions, like the drawn garm
 export const SHOULDER_Y = 0.06;
 /** Shoulders-to-waist height as a fraction of the picture. */
 export const TORSO = 0.19;
+/** Shoulder width as a fraction of the picture width (shirts and panjabis are lined up by it). */
+export const SHOULDERS = 0.36;
 /** Lowest the hem may reach; a very long dress is scaled down to fit. */
 const HEM_LIMIT = 0.97;
 
@@ -57,11 +59,17 @@ export type AlignedPhoto = {
 };
 
 /**
- * Scales and moves the photo so the dress's shoulders sit at SHOULDER_Y, centred, with a shoulders-to-waist
- * height of TORSO; the photo's edges are stretched to fill the rest. The dress is found and split once,
- * on the original photo, and its part masks are moved with it.
+ * How a garment's pictures are sized: dresses by their shoulders-to-waist height, shirts and panjabis
+ * (no clear waist) by their shoulder width.
  */
-export async function alignGarmentPhoto(input: Buffer): Promise<AlignedPhoto> {
+export type AlignBy = "torso" | "shoulders";
+
+/**
+ * Scales and moves the photo so the garment's shoulders sit at SHOULDER_Y, centred, with a shoulders-to-waist
+ * height of TORSO (or a shoulder width of SHOULDERS); the photo's edges are stretched to fill the rest.
+ * The garment is found and split once, on the original photo, and its part masks are moved with it.
+ */
+export async function alignGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso"): Promise<AlignedPhoto> {
   // Finer than the default, so the mask edges are smooth at full size.
   const { parts, scale } = await analysePhoto(input, 800);
   const meta = await sharp(input).metadata();
@@ -70,7 +78,8 @@ export async function alignGarmentPhoto(input: Buffer): Promise<AlignedPhoto> {
 
   const torso = Math.max(1, (parts.waistY - parts.shoulderY) * scale);
   const dress = Math.max(1, (parts.hemY - parts.shoulderY) * scale);
-  const factor = Math.min((TORSO * PHOTO_HEIGHT) / torso, ((HEM_LIMIT - SHOULDER_Y) * PHOTO_HEIGHT) / dress);
+  const wanted = alignBy === "torso" ? (TORSO * PHOTO_HEIGHT) / torso : (SHOULDERS * PHOTO_WIDTH) / (parts.shoulderWidth * scale);
+  const factor = Math.min(wanted, ((HEM_LIMIT - SHOULDER_Y) * PHOTO_HEIGHT) / dress);
   const at: Placement = {
     scaledW: Math.max(1, Math.round(sourceW * factor)),
     scaledH: Math.max(1, Math.round(sourceH * factor)),
@@ -101,8 +110,8 @@ export async function alignGarmentPhoto(input: Buffer): Promise<AlignedPhoto> {
 }
 
 /** The lined-up picture only. */
-export async function alignPhoto(input: Buffer): Promise<Buffer> {
-  return (await alignGarmentPhoto(input)).image;
+export async function alignPhoto(input: Buffer, alignBy: AlignBy = "torso"): Promise<Buffer> {
+  return (await alignGarmentPhoto(input, alignBy)).image;
 }
 
 /** A mask as a greyscale PNG at the given size (white = inside). */

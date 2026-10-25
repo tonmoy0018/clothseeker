@@ -55,6 +55,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
         productId={product.id}
         slug={product.slug}
         name={product.name}
+        garmentType={product.garmentType}
         variants={product.variants}
         sizes={sizes}
         colors={colors}

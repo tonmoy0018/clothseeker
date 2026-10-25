@@ -33,6 +33,7 @@ export function ProductCard({ product, imageUrl }: { product: ProductCardData; i
             colorHex={firstColor?.hex ?? ""}
             label={`${product.name} in ${firstColor?.name ?? "default color"}`}
             className="aspect-[4/5] transition-transform group-hover:scale-[1.01]"
+            garmentType={product.garmentType}
           />
         )}
         {product.customizable && (

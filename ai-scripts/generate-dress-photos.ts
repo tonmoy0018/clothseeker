@@ -6,9 +6,10 @@ import { loadEnvConfig } from "@next/env";
 import sharp from "sharp";
 import { z } from "zod";
 
+import { GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 import { createPrismaClient } from "@/lib/db/client";
 
-// Generates AI sample catalog photos for the seeded dresses with Cloudflare Workers AI (FLUX.1
+// Generates AI sample catalog photos for the seeded items (dresses, shirts, panjabis) with Cloudflare Workers AI (FLUX.1
 // schnell, free tier) and saves them to prisma/seed-photos/<slug>.jpg, which `pnpm db:seed` uploads.
 // The dress is shown on an invisible "ghost" mannequin: no person, no face.
 // These are SAMPLE photos made by AI: replace them with real photos of ClothSeeker dresses.
@@ -19,11 +20,12 @@ import { createPrismaClient } from "@/lib/db/client";
 const OUT_DIR = path.join(process.cwd(), "prisma", "seed-photos");
 const MODEL = "@cf/black-forest-labs/flux-1-schnell";
 
-function prompt(name: string, description: string, color: string): string {
+function prompt(name: string, description: string, color: string, type: GarmentType): string {
+  const info = GARMENT_TYPES[type];
   return [
-    `Professional e-commerce catalog photo of a women's ${name.toLowerCase()} in ${color.toLowerCase()} colour.`,
+    `Professional e-commerce catalog photo of a ${info.audience === "men" ? "men's" : "women's"} ${name.toLowerCase()} in ${color.toLowerCase()} colour.`,
     description,
-    "One single dress only, shown on an invisible ghost mannequin, full-length front view, centred, the whole dress visible,",
+    `One single ${info.noun} only, shown on an invisible ghost mannequin, full-length front view, centred, the whole ${info.noun} visible,`,
     "plain light grey seamless studio background, soft even lighting, realistic fabric texture.",
     "No person, no face, no text, no logo, no watermark.",
   ].join(" ");
@@ -38,7 +40,7 @@ async function main() {
     const products = await db.product.findMany({
       where: { status: "ACTIVE" },
       orderBy: { slug: "asc" },
-      select: { slug: true, name: true, description: true, variants: { orderBy: { colorName: "asc" }, select: { colorName: true }, take: 1 } },
+      select: { slug: true, name: true, description: true, garmentType: true, variants: { orderBy: { colorName: "asc" }, select: { colorName: true }, take: 1 } },
     });
     for (const product of products) {
       const out = path.join(OUT_DIR, `${product.slug}.jpg`);
@@ -49,7 +51,7 @@ async function main() {
       const color = product.variants[0]?.colorName ?? "neutral";
       let saved = false;
       // The free model's safety filter occasionally refuses harmless prompts; a reworded retry helps.
-      for (const [attempt, text] of [prompt(product.name, product.description, color), prompt(product.name, "", color)].entries()) {
+      for (const [attempt, text] of [prompt(product.name, product.description, color, product.garmentType), prompt(product.name, "", color, product.garmentType)].entries()) {
         const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${MODEL}`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },

@@ -1,4 +1,4 @@
-import type { GarmentType } from "@/lib/catalog/garment-types";
+import type { GarmentType, StyleGroup } from "@/lib/catalog/garment-types";
 import type { Size } from "@/lib/generated/prisma/enums";
 
 // Demo catalog for ClothSeeker. Prices are whole taka (converted to poisha by the seed).
@@ -25,15 +25,20 @@ export type SeedProduct = {
   /** Kind of garment (lib/catalog/garment-types.ts); dresses when left out. */
   garmentType?: GarmentType;
   /**
-   * Customizable dresses: the style its catalogue photo shows (ids from the default template). The
-   * design screen shows that photo for this style and AI style pictures for the others
-   * (prisma/style-photos, made by ai-scripts/generate-style-photos.ts).
+   * Customizable items: the style its catalogue photo shows, one option id per style group of its
+   * garment type's default template. The design screen shows that photo for this style and AI style
+   * pictures for the others (prisma/style-photos, made by ai-scripts/generate-style-photos.ts).
    */
-  photoStyle?: { neckline: string; sleeveLength: string; dressLength: "mini" | "midi" | "maxi" };
+  photoStyle?: Partial<Record<StyleGroup, string>>;
   status?: "ACTIVE" | "DRAFT";
 };
 
 const C = {
+  oxfordWhite: { name: "White", hex: "#F7F7F4" },
+  oxfordBlue: { name: "Oxford Blue", hex: "#A9C8E8" },
+  lightGrey: { name: "Light Grey", hex: "#C9CBCC" },
+  bottleGreen: { name: "Bottle Green", hex: "#1E4D3B" },
+  beige: { name: "Beige", hex: "#D8C8A8" },
   sage: { name: "Sage", hex: "#9CAF88" },
   sand: { name: "Sand", hex: "#D8C3A5" },
   inkNavy: { name: "Ink Navy", hex: "#2E3A59" },
@@ -237,6 +242,77 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     priceTaka: 6900,
     customizable: false,
     status: "DRAFT",
+  },
+  // ─── Men ──────────────────────────────────────────────────────────────────
+  {
+    slug: "oxford-shirt",
+    name: "Oxford Shirt",
+    category: "formal",
+    garmentType: "shirt",
+    description: "A crisp cotton Oxford shirt with a button-down collar and long sleeves, made to your measurements.",
+    colors: [C.oxfordWhite, C.oxfordBlue, C.lightGrey],
+    sizes: S_XXL,
+    priceTaka: 2200,
+    customizable: true,
+    photoStyle: { collar: "button-down", sleeveLength: "long", fit: "regular" },
+  },
+  {
+    slug: "linen-casual-shirt",
+    name: "Linen Casual Shirt",
+    category: "summer",
+    garmentType: "shirt",
+    description: "Breathable linen shirt with a classic collar and short sleeves for warm days.",
+    colors: [C.sand, C.sage, C.navy],
+    sizes: S_XXL,
+    priceTaka: 2400,
+    customizable: true,
+    photoStyle: { collar: "classic", sleeveLength: "short", fit: "relaxed" },
+  },
+  {
+    slug: "mandarin-collar-shirt",
+    name: "Mandarin Collar Shirt",
+    category: "casual",
+    garmentType: "shirt",
+    description: "Clean-lined cotton shirt with a mandarin band collar and long sleeves.",
+    colors: [C.black, C.olive],
+    sizes: S_XL,
+    priceTaka: 2100,
+    customizable: false,
+  },
+  {
+    slug: "cotton-panjabi",
+    name: "Cotton Panjabi",
+    category: "traditional",
+    garmentType: "panjabi",
+    description: "A soft cotton panjabi with a band collar, long sleeves and side pockets, knee length.",
+    colors: [C.oxfordWhite, C.beige, C.navy],
+    sizes: S_XXL,
+    priceTaka: 2600,
+    customizable: true,
+    photoStyle: { collar: "mandarin", sleeveLength: "long", length: "knee" },
+  },
+  {
+    slug: "embroidered-eid-panjabi",
+    name: "Embroidered Eid Panjabi",
+    category: "party",
+    garmentType: "panjabi",
+    description: "Festive panjabi with tonal thread embroidery down the placket, band collar and long sleeves.",
+    colors: [C.maroon, C.bottleGreen, C.ivory],
+    sizes: S_XXL,
+    priceTaka: 4200,
+    customizable: true,
+    photoStyle: { collar: "mandarin", sleeveLength: "long", length: "long" },
+  },
+  {
+    slug: "silk-blend-panjabi",
+    name: "Silk-Blend Panjabi",
+    category: "party",
+    garmentType: "panjabi",
+    description: "A lustrous silk-blend panjabi with a round neck, long sleeves and a subtle sheen.",
+    colors: [C.champagne, C.black],
+    sizes: S_XL,
+    priceTaka: 5200,
+    customizable: false,
   },
 ];
 

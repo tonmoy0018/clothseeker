@@ -1,6 +1,6 @@
 import type { FontId } from "@/lib/catalog/fonts";
 import type { PatternId } from "@/lib/catalog/patterns";
-import type { GarmentType, StyleGroup } from "@/lib/catalog/garment-types";
+import type { GarmentType, GarmentTypeInfo, StyleGroup } from "@/lib/catalog/garment-types";
 
 // Provider interfaces. Only the worker calls providers; the app only queues jobs (lib/ai/jobs.ts).
 // Implementations: fake.ts (default, deterministic), gemini.ts (planner), cloudflare.ts (images),
@@ -92,6 +92,8 @@ export type TryOnRequest = {
   person: ProviderImage;
   /** The garment on a plain white 3:4 canvas, like a catalog product shot. */
   garment: ProviderImage;
+  /** What kind of garment it is, in try-on models' terms (lib/catalog/garment-types.ts). */
+  category: GarmentTypeInfo["tryOnCategory"];
 };
 
 export interface TryOnProvider {
