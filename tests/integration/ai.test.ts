@@ -212,6 +212,10 @@ describe("running AI jobs", () => {
         expect(storage.has(BUCKETS.designAssets, option.motifKey)).toBe(true);
       }
     }
+    // Built-in decorations where one fits (no picture needed), drawn motifs otherwise.
+    const layerIds = options.map((o) => parseDesignSpec(o.spec).layers.map((l) => l.id));
+    expect(layerIds.some((ids) => ids.includes("ai-decoration"))).toBe(true);
+    expect(options.some((o) => o.motifKey !== null)).toBe(true);
     const job = await db.aIJob.findUniqueOrThrow({ where: { id: queued.jobId } });
     expect(job).toMatchObject({ status: "SUCCEEDED", attempts: 1, lockedBy: null, result: { roundId: round.id } });
     expect(await processNextJob(deps())).toBe(false);

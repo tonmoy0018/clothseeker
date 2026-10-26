@@ -13,9 +13,9 @@ import { parseDesignSpec, type DesignSpec } from "@/types/design-spec";
 import { findBrandTerm } from "../brands";
 import { knockOutWhite } from "../image-utils";
 import { AiJobRejected, AiProviderError } from "../errors";
-import { parsePlan, planConstraints, summarizeSpec, variationToSpec, type PlannedOption } from "../plan";
+import { AI_LAYER_PREFIX, decorationInWords, parsePlan, planConstraints, summarizeSpec, variationToSpec, type PlannedOption } from "../plan";
 import { designRoundPayloadSchema, storedOptionsSchema, type StoredOption } from "../rounds";
-import type { PlanSummary, ProviderImage } from "../types";
+import type { ProviderImage } from "../types";
 
 import { leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import type { AiWorkerDeps } from "./run";
@@ -53,7 +53,8 @@ async function loadAttachments(deps: AiWorkerDeps, keys: readonly string[]): Pro
   return images;
 }
 
-async function referenceSummary(deps: AiWorkerDeps, job: ClaimedJob, reference: { roundId: string; optionIndex: number } | null): Promise<PlanSummary | null> {
+/** The option a follow-up refers to ("like option 2 but darker"), if it still exists and parses. */
+async function referenceSpec(deps: AiWorkerDeps, job: ClaimedJob, reference: { roundId: string; optionIndex: number } | null): Promise<DesignSpec | null> {
   if (!reference) {
     return null;
   }
@@ -64,11 +65,14 @@ async function referenceSummary(deps: AiWorkerDeps, job: ClaimedJob, reference: 
     return null;
   }
   try {
-    return summarizeSpec(parseDesignSpec(option.spec));
+    return parseDesignSpec(option.spec);
   } catch {
     return null;
   }
 }
+
+/** Added to a summary when the variation asked for a drawn motif that couldn't be made. */
+export const MISSING_MOTIF_NOTE = "The picture for this idea couldn't be made right now; add a decoration under Personalise.";
 
 export async function runDesignRound(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal): Promise<void> {
   const { db, storage, providers } = deps;
@@ -88,7 +92,7 @@ export async function runDesignRound(deps: AiWorkerDeps, job: ClaimedJob, signal
     }
     throw error;
   }
-  const { spec: base, context } = checked;
+  const { spec: current, context } = checked;
   const design = await db.design.findFirst({ where: { id: input.designId, customerId: job.customerId }, select: { id: true } });
   if (!context.template.aiEnabled || !design) {
     throw new AiJobRejected("NOT_AVAILABLE");
@@ -116,15 +120,26 @@ export async function runDesignRound(deps: AiWorkerDeps, job: ClaimedJob, signal
   }
   throwIfAborted(signal);
 
-  // 2. Plan. The answer is untrusted until parsePlan + variationToSpec have checked it.
+  // 2. Plan. The answer is untrusted until parsePlan + variationToSpec have checked it. A follow-up
+  // builds on the option it refers to (revalidated like the current design), in the current size.
+  let reference: DesignSpec | null = null;
+  const referenced = await referenceSpec(deps, job, input.reference);
+  if (referenced) {
+    try {
+      reference = (await checkDesign(db, storage, job.customerId, { ...referenced, size: current.size })).spec;
+    } catch (error) {
+      if (!(error instanceof DesignError)) throw error;
+    }
+  }
+  const base = reference ?? current;
   const constraints = planConstraints(context.template.config, context.template.productName);
   const raw = await providers.planner.planDesign(
     {
       instruction: input.instruction,
       images,
       constraints,
-      current: summarizeSpec(base),
-      reference: await referenceSummary(deps, job, input.reference),
+      current: summarizeSpec(current),
+      reference: reference ? summarizeSpec(reference) : null,
       seed: input.seed,
     },
     signal,
@@ -162,7 +177,9 @@ export async function runDesignRound(deps: AiWorkerDeps, job: ClaimedJob, signal
       throwIfAborted(signal);
       let motifKey: string | null = null;
       const motif = option.variation.motif;
-      if (motif && constraints.layersAllowed && !findBrandTerm(motif.prompt)) {
+      // A built-in decoration (asked for, or named in the motif's words) needs no picture.
+      const builtIn = option.variation.decoration || (motif && decorationInWords(motif.prompt, context.template.config));
+      if (motif && !builtIn && constraints.layersAllowed && !findBrandTerm(motif.prompt)) {
         let bytes: Buffer | null;
         try {
           bytes = await providers.image.generateMotif({ prompt: motif.prompt, color: motif.color, seed: motifSeed(input.seed, index) }, signal);
@@ -198,9 +215,15 @@ export async function runDesignRound(deps: AiWorkerDeps, job: ClaimedJob, signal
         continue;
       }
       const usesMotif = motifKey !== null && spec.layers.some((l) => l.kind === "image" && l.image.assetKey === motifKey);
-      const preview = await renderPreview(normalizeForRender(spec, context.template.config), "front", storageAssets(storage), OPTION_PREVIEW_WIDTH);
+      const hasOrnament = spec.layers.some((l) => l.id === `${AI_LAYER_PREFIX}motif` || l.id === `${AI_LAYER_PREFIX}decoration`);
+      const summary = motif && !hasOrnament && !option.variation.decoration ? `${option.summary} ${MISSING_MOTIF_NOTE}`.trim() : option.summary;
+      // Show the side the variation's own AI items are on (a back print shows the back).
+      const areaSide = (areaId: string) => context.template.config.placementAreas.find((a) => a.id === areaId)?.side;
+      const aiSides = spec.layers.filter((l) => l.id.startsWith(AI_LAYER_PREFIX)).map((l) => areaSide(l.areaId));
+      const side = aiSides.length > 0 && aiSides.every((s) => s === "back") ? "back" : "front";
+      const preview = await renderPreview(normalizeForRender(spec, context.template.config), side, storageAssets(storage), OPTION_PREVIEW_WIDTH);
       previewKeys.push(await put(preview, "image/png", "png"));
-      options.push({ title: option.title, summary: option.summary, spec, motifKey: usesMotif ? motifKey : null });
+      options.push({ title: option.title, summary, spec, motifKey: usesMotif ? motifKey : null });
     }
     if (options.length === 0) {
       throw new AiProviderError("no variation fitted the template", true, "INVALID_PLAN");

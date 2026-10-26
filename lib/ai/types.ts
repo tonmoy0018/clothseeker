@@ -1,3 +1,4 @@
+import type { DecorationId } from "@/lib/catalog/decorations";
 import type { FontId } from "@/lib/catalog/fonts";
 import type { PatternId } from "@/lib/catalog/patterns";
 import type { GarmentType, GarmentTypeInfo, StyleGroup } from "@/lib/catalog/garment-types";
@@ -17,16 +18,21 @@ export type PlanConstraints = {
   colors: { name: string; hex: string }[];
   patterns: PatternId[];
   fonts: FontId[];
+  /** Built-in decorations (preferred over drawn motifs). */
+  decorations: { id: DecorationId; label: string }[];
+  /** Where items can go; sizes in cm. */
+  areas: { id: string; label: string; side: "front" | "back"; widthCm: number; heightCm: number }[];
   styleOptions: Partial<Record<StyleGroup, { id: string; label: string }[]>>;
   /** False when the template has no placement area, so text and motifs can't be placed. */
   layersAllowed: boolean;
 };
 
-/** A design described in the planner's vocabulary (colors, patterns and style choices). */
+/** A design described in the planner's vocabulary (colors, patterns, style choices and the items on it). */
 export type PlanSummary = {
   parts: { regionId: string; color: string; pattern: { id: string; color: string } | null }[];
   styleOptions: Partial<Record<StyleGroup, string>>;
-  text: string | null;
+  /** Text, decorations and pictures on the design; `byAi` ones may be replaced or removed by the planner. */
+  items: { kind: "text" | "decoration" | "image" | "motif"; what: string; area: string; byAi: boolean }[];
 };
 
 export type PlanRequest = {

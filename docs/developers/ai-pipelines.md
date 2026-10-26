@@ -14,7 +14,8 @@ worker ── runDesignRound (lib/ai/worker/design-round.ts)
             2. brand-logo check (instruction + photos) → FlaggedItem on a hit
             3. PlannerProvider.planDesign → untrusted JSON
             4. parsePlan + variationToSpec → template-valid DesignSpecs only
-            5. ImageProvider.generateMotif → white knocked out → design-assets/{customer}/ai/
+            5. drawn motifs only (no built-in decoration fits): ImageProvider.generateMotif
+               → white knocked out → design-assets/{customer}/ai/
             6. renderPreview → design-assets/{customer}/ai/
             7. one transaction: ai_rounds row + job SUCCEEDED (only while holding the lease)
 browser ──getJobStatus──▶ 4 option cards ──pickOption──▶ editor layers
@@ -41,13 +42,25 @@ You can mix providers, e.g. the Gemini planner with fake images. E2E tests alway
 
 ### What we learned running them live (2026-10-09)
 
-- **Models get retired.** New Gemini keys can no longer use `gemini-2.5-flash` (HTTP 404). The default is now `gemini-3.8-flash`.
+- **Models get retired.** New Gemini keys can no longer use `gemini-2.5-flash` (HTTP 404). (The default later became `gemini-3.1-flash-lite`; see below.)
 - **Free-tier Gemini is often briefly overloaded** (HTTP 503 "high demand"), sometimes for minutes, on any single model. `GeminiPlanner` therefore tries `GEMINI_FALLBACK_MODELS` in order within the same attempt (on 429/5xx, network errors or 404) before the job-level retry kicks in. A bad request (other 4xx) never falls back.
 - **FLUX.1 schnell on Workers AI accepts only `prompt` and `steps`.** Sending `seed` gives HTTP 400, so motifs from Cloudflare aren't reproducible from a seed.
 - **Cloudflare's safety filter sometimes rejects harmless prompts** (HTTP 400 "NSFW", e.g. "simple botanical flower icon"). A refused motif costs that option its motif, not the whole round (`ai.motif_skipped` in the logs). So does **Cloudflare's free daily allowance running out** (HTTP 429 with error code 4006, back at 00:00 UTC): rounds keep coming, with colours, patterns and text but no new motif pictures. Short rate limits and outages still retry the job.
-- **The planner decides whether to add motifs.** For "delicate florals" it may choose a floral *pattern* instead. The system instruction asks for motifs in at least two of the four variations unless the customer wants a plain dress.
+- **The planner decides whether to add decorations.** For "delicate florals" it may choose a floral *pattern* instead.
 - **Timing:** a round with 4 motifs took 30–65 s end to end. Each motif takes about 2 s on Cloudflare; the rest is Gemini, including fallbacks when a model is busy.
 - **Images:** FLUX draws the motif small in the middle of a white square. `knockOutWhite` removes the white and crops the empty margin so the motif fills its box.
+
+### Following the request (changed 2026-10-26)
+
+Customers found the box "not reading the instructions": "add a logo on the left side of the chest" gave four designs with new colours, necklines and lengths, nothing on the chest, and summaries promising a star that wasn't there. Causes and fixes:
+
+- **Change only what's asked.** The schema used to require every style choice, and the instruction asked for "4 distinct variations". Now `parts` and `styleOptions` hold only what a variation changes (the rest is kept from the current design), and the variations differ only in how they carry out the request. The fake planner follows the same rule.
+- **Placement.** Items carry a `placement`: an area from `allowed.areas`, `across` (wearer-left / centre / wearer-right: the wearer's sides, so the wearer's left is the picture's right on the front and its left on the back), `down` (top / middle / bottom) and `size`. `placementBox()` turns it into a layer box; the option card shows the back when the variation's AI items are all on the back.
+- **Built-in decorations first.** The planner picks one of `allowed.decorations` (star, heart, flower…) when one fits, which needs no image service; a drawn `motif` only otherwise. A motif whose words name a built-in decoration ("a small gold star") uses it too, and so does a motif whose picture couldn't be made. If nothing could be placed, the summary says so (`MISSING_MOTIF_NOTE`).
+- **Honest summaries.** The summary is written last (`propertyOrdering`), so it describes what the variation contains instead of promising items the model then leaves out.
+- **Follow-ups keep earlier AI items.** Earlier AI text and decorations stay unless a variation replaces them or lists them in `remove`; "like option 2 but darker" builds on option 2's own spec (revalidated, in the current size), not on the editor's design.
+- **Real logos.** The planner never draws a real logo, crest or trademark (brands, clubs, teams, companies). It uses a simple decoration in the customer's colours and says in the summary that they can upload their own image under Personalise, where the clothing-brand rule still applies.
+- **Speed and model.** Gemini 3 models think deeply by default: `gemini-3.8-flash` took 77–150 s per plan (or ran past the 180 s job limit), which failed whole rounds. Requests now use `thinkingLevel: "low"` and the default is **`gemini-3.1-flash-lite`** (3–10 s, same placement and choices in tests), then `gemini-3.5-flash-lite` and `gemini-3.8-flash`. Small models occasionally ramble until the output limit: `maxOutputTokens` (4096) stops that quickly, and an unreadable or cut-off answer moves on to the next model.
 
 ### Privacy note for the real providers
 
@@ -90,7 +103,8 @@ Checked in this order, and nothing before the quota step uses quota:
   - snaps colours to the nearest allowed colour
   - drops unknown regions, patterns, style options and fonts
   - refuses brand words in text and motif prompts
-  - places AI layers in fixed boxes inside the template's areas
+  - places AI layers inside the template's areas (`placementBox`; unknown areas fall back to the default area)
+  - uses only the template's allowed decorations
   - runs the same `validateDesignAgainstTemplate` as a manual design
   
   A variation that still doesn't pass is dropped.

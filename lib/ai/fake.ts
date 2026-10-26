@@ -47,6 +47,16 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** How the fake asks for a drawn motif: in words that don't name a built-in decoration (so it is drawn). */
+const DRAWN: Record<string, string> = {
+  flower: "rose blossom",
+  star: "starry night",
+  heart: "lovebird pair",
+  butterfly: "monarch wings",
+  leaf: "botanical fern",
+  moon: "lunar crescent",
+};
+
 function bytes(seed: string): Buffer {
   return createHash("sha256").update(seed).digest();
 }
@@ -55,7 +65,7 @@ const MOTIFS = [
   { word: "flower", match: /flor|flower|bloom|rose|petal/ },
   { word: "star", match: /star|sparkl|night|galax/ },
   { word: "heart", match: /heart|love|valentin/ },
-  { word: "butterfly", match: /butterfl/ },
+  { word: "butterfly", match: /butterfl|monarch/ },
   { word: "leaf", match: /leaf|leaves|botanic|green|forest/ },
   { word: "moon", match: /moon|evening|lunar/ },
 ] as const;
@@ -178,10 +188,11 @@ export class FakePlanner implements PlannerProvider {
           pattern: region.id === mainRegion?.id && patternId && patternColor ? { id: patternId, color: patternColor.hex } : null,
         };
       });
+      // Like the real planner, style changes only when the request names an option ("long sleeves", "maxi").
       const styleOptions = Object.fromEntries(
-        styleGroupsOf(constraints.garmentType).map((group) => {
-          const options = constraints.styleOptions[group] ?? [];
-          return [group, i === 0 ? start.styleOptions[group] : (options[at(i * 3 + 17) % Math.max(options.length, 1)]?.id ?? start.styleOptions[group])];
+        styleGroupsOf(constraints.garmentType).flatMap((group) => {
+          const named = (constraints.styleOptions[group] ?? []).find((o) => new RegExp(`\\b${o.label.toLowerCase()}\\b`).test(text));
+          return named ? [[group, named.id]] : [];
         }),
       );
       const name = primary?.name ?? "Custom";
@@ -196,7 +207,10 @@ export class FakePlanner implements PlannerProvider {
         parts,
         styleOptions,
         text: quoted && constraints.layersAllowed ? { content: quoted, fontId: constraints.fonts[i % Math.max(constraints.fonts.length, 1)] ?? "inter", color: textColor } : null,
-        motif: constraints.layersAllowed ? { prompt: `${word} motif`, color: textColor } : null,
+        // Like the real planner: built-in decorations where one fits (two of the four), else a drawn motif.
+        ...(constraints.layersAllowed && i % 2 === 0 && constraints.decorations.some((d) => d.id === word)
+          ? { decoration: { id: word, color: textColor }, motif: null }
+          : { motif: constraints.layersAllowed ? { prompt: DRAWN[word] ?? `${word} motif`, color: textColor } : null }),
       };
     });
     return { variations };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { CloudflareImage, DEFAULT_CLOUDFLARE_IMAGE_MODEL, motifPrompt } from "@/lib/ai/cloudflare";
 import { AiProviderError } from "@/lib/ai/errors";
@@ -84,6 +85,13 @@ describe("GeminiPlanner", () => {
     expect(schema).not.toContain("lining");
     expect(schema).toContain('"#1f6f50"');
     expect(schema).toContain('"minItems":4');
+    // Decorations, areas and positions come from the template; nothing forces a style or colour change.
+    expect(schema).toContain('"enum":["star","heart","flower","bow","sparkle","butterfly","leaf","moon"]');
+    expect(schema).toContain('"enum":["front-chest","front-skirt","back-upper"]');
+    expect(schema).toContain('"enum":["wearer-left","centre","wearer-right"]');
+    const variation = planResponseSchema(request.constraints);
+    const items = z.object({ properties: z.object({ variations: z.object({ items: z.object({ required: z.array(z.string()) }) }) }) }).parse(variation);
+    expect(items.properties.variations.items.required).toEqual(["title", "summary"]);
   });
 
   it("parses the logo check", async () => {
@@ -142,6 +150,23 @@ describe("GeminiPlanner", () => {
 
     const allBusy = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "busy-1", fallbackModels: ["busy-2"], fetch: fetchImpl });
     expect((await providerError(allBusy.planDesign(request, signal))).retryable).toBe(true);
+  });
+
+  it("moves on to the next model when one rambles until its output limit, and caps output and thinking", async () => {
+    const urls: string[] = [];
+    const bodies: unknown[] = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      urls.push(url);
+      bodies.push(bodyOf(init));
+      return url.includes("rambling-1")
+        ? new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"variations":[{"title":"x","summary":"and so on and so on' }] }, finishReason: "MAX_TOKENS" }] }))
+        : geminiReply({ variations: [] });
+    };
+    const planner = new GeminiPlanner({ apiKey: "test-key-0123456789abcdef", model: "rambling-1", fallbackModels: ["ok-1"], fetch: fetchImpl });
+    expect(await planner.planDesign(request, signal)).toEqual({ variations: [] });
+    expect(urls.map((u) => /models\/([^:]+):/.exec(u)?.[1])).toEqual(["rambling-1", "ok-1"]);
+    expect(JSON.stringify(bodies[0])).toContain('"maxOutputTokens":4096');
+    expect(JSON.stringify(bodies[0])).toContain('"thinkingConfig":{"thinkingLevel":"low"}');
   });
 
   it("never puts response bodies or keys into error messages", async () => {

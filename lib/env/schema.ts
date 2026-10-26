@@ -33,12 +33,12 @@ const aiEnvShape = {
   PLANNER_PROVIDER: z.enum(["fake", "gemini"]).default("fake"),
   IMAGE_PROVIDER: z.enum(["fake", "cloudflare"]).default("fake"),
   GEMINI_API_KEY: z.string().min(20).optional(),
-  GEMINI_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-3.8-flash"),
-  /** Comma-separated models tried in order when GEMINI_MODEL is busy or retired. Empty = none. */
+  GEMINI_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-3.1-flash-lite"),
+  /** Comma-separated models tried in order when GEMINI_MODEL is busy, retired or answers badly. Empty = none. */
   GEMINI_FALLBACK_MODELS: z
     .string()
     .regex(/^([a-z0-9.-]{3,60}(,[a-z0-9.-]{3,60}){0,4})?$/)
-    .default("gemini-3.6-flash,gemini-3.5-flash")
+    .default("gemini-3.5-flash-lite,gemini-3.8-flash")
     .transform((v) => v.split(",").filter(Boolean)),
   CLOUDFLARE_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   CLOUDFLARE_API_TOKEN: z.string().min(20).optional(),
