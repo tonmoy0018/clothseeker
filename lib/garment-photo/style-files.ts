@@ -41,3 +41,21 @@ export function styleCombinations(type: GarmentType, options: Partial<Record<Sty
     ...combine(pictureGroups(type, "back")).map((choice) => ({ side: "back" as const, choice })),
   ];
 }
+
+/**
+ * The few pictures that add most to an item that only has its catalogue photo (`photoStyle`): its back
+ * view in the same style, then fronts that change only the sleeves (the most visible difference), then
+ * only the other groups. Never the catalogue photo's own front.
+ */
+export function mostUsefulPictures(
+  type: GarmentType,
+  photoStyle: StyleChoice,
+  options: Partial<Record<StyleGroup, readonly string[]>>,
+  count: number,
+): { side: Side; choice: StyleChoice }[] {
+  const back = { side: "back" as const, choice: Object.fromEntries(pictureGroups(type, "back").map((g) => [g, photoStyle[g] ?? ""])) };
+  const changes = (group: StyleGroup) =>
+    (options[group] ?? []).filter((id) => id !== photoStyle[group]).map((id) => ({ side: "front" as const, choice: { ...photoStyle, [group]: id } }));
+  const others = styleGroupsOf(type).filter((g) => g !== "sleeveLength");
+  return [back, ...changes("sleeveLength"), ...others.flatMap(changes)].slice(0, Math.max(0, count));
+}

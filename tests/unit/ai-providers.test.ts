@@ -181,6 +181,11 @@ describe("CloudflareImage", () => {
     expect((await providerError(limited.generateMotif({ prompt: "star", color: "#000000", seed: 1 }, signal))).retryable).toBe(true);
     const denied = new CloudflareImage({ ...options, fetch: mockFetch(() => new Response("{}", { status: 401 })).fetchImpl });
     expect((await providerError(denied.generateMotif({ prompt: "star", color: "#000000", seed: 1 }, signal))).retryable).toBe(false);
+    // The daily allowance only returns at 00:00 UTC: the round goes on without this motif instead of retrying.
+    const usedUp = JSON.stringify({ success: false, errors: [{ code: 4006, message: "you have used up your daily free allocation" }] });
+    const daily = new CloudflareImage({ ...options, fetch: mockFetch(() => new Response(usedUp, { status: 429 })).fetchImpl });
+    const error = await providerError(daily.generateMotif({ prompt: "star", color: "#000000", seed: 1 }, signal));
+    expect([error.retryable, error.status, error.message]).toEqual([false, 429, "cloudflare daily allowance used up"]);
   });
 
   it("keeps the planner's words out of the fixed guidance", () => {

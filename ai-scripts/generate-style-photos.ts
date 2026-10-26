@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -12,7 +12,7 @@ import { defaultTemplateConfig } from "@/lib/catalog/default-template";
 import { GARMENT_TYPES, STYLE_GROUP_IDS, styleGroupsOf, type GarmentType, type StyleGroup } from "@/lib/catalog/garment-types";
 import { analysePhoto } from "@/lib/garment-photo/align";
 import { lengthRatio, SegmentationError, skirtRatio, sleeveStyle, widthAt, type GarmentParts } from "@/lib/garment-photo/segment";
-import { pictureGroups, styleCombinations, styleFileName, type Side, type StyleChoice } from "@/lib/garment-photo/style-files";
+import { mostUsefulPictures, parseStyleFileName, pictureGroups, styleCombinations, styleFileName, type Side, type StyleChoice } from "@/lib/garment-photo/style-files";
 import { styleOptionsFor } from "@/types/template";
 import { photoColour, SEED_PRODUCTS, type SeedProduct } from "@/prisma/seed-data";
 
@@ -29,6 +29,8 @@ import { photoColour, SEED_PRODUCTS, type SeedProduct } from "@/prisma/seed-data
 //   pnpm tsx ai-scripts/generate-style-photos.ts oxford-shirt    one item
 //   pnpm tsx ai-scripts/generate-style-photos.ts --force          redraw everything
 //   pnpm tsx ai-scripts/generate-style-photos.ts --recheck        re-check saved pictures, redraw failures
+//   pnpm tsx ai-scripts/generate-style-photos.ts --per-item 2     at most 2 pictures per item (counting saved
+//                                                                  ones): its back view, then other sleeves
 
 const MODEL = "@cf/black-forest-labs/flux-1-schnell";
 const OUT_DIR = path.join(process.cwd(), "prisma", "style-photos");
@@ -174,7 +176,9 @@ async function main() {
   const env = z.object({ CLOUDFLARE_ACCOUNT_ID: z.string().min(10), CLOUDFLARE_API_TOKEN: z.string().min(10) }).parse(process.env);
   const force = process.argv.includes("--force");
   const recheck = process.argv.includes("--recheck");
-  const only = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const perItemAt = process.argv.indexOf("--per-item");
+  const perItem = perItemAt >= 0 ? z.coerce.number().int().min(0).max(50).parse(process.argv[perItemAt + 1]) : null;
+  const only = process.argv.slice(2).filter((a, i) => !a.startsWith("--") && !(perItemAt >= 0 && i + 2 === perItemAt + 1));
 
   for (const product of SEED_PRODUCTS) {
     const photoStyle = product.photoStyle;
@@ -191,7 +195,8 @@ async function main() {
     const colour = photoColour(product);
     const ref = referenceFor(type, (await analysePhoto(await readFile(photoPath))).parts, photoStyle);
     const options = Object.fromEntries(styleGroupsOf(type).map((g) => [g, styleOptionsFor(template, g).map((o) => o.id)]));
-    const jobs = styleCombinations(type, options);
+    const existing = (await readdir(dir)).filter((file) => parseStyleFileName(type, file) !== null).length;
+    const jobs = perItem === null ? styleCombinations(type, options) : mostUsefulPictures(type, photoStyle, options, perItem - existing);
 
     for (const { side, choice } of jobs) {
       const out = path.join(dir, styleFileName(type, side, choice));
