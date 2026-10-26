@@ -11,9 +11,39 @@ import type { TryOnProvider, TryOnRequest } from "./types";
 //
 // Privacy: the photo is sent to a third-party Space. Customers are told this before they consent.
 
-type SpaceCall = { endpoint: string; args: (person: Blob, garment: Blob, category: TryOnRequest["category"]) => Record<string, unknown> };
+type SpaceCall = {
+  endpoint: string;
+  args: (person: Blob, garment: Blob, category: TryOnRequest["category"]) => Record<string, unknown>;
+  /** Garment categories the Space handles; others skip it. Absent = all. */
+  categories?: readonly TryOnRequest["category"][];
+};
 
+/** IDM-VTON's image-editor input: the person photo with no hand-drawn mask (the Space masks automatically). */
+const editorInput = (person: Blob) => ({ background: handle_file(person), layers: [], composite: null });
+
+// Order of quality (re-tested 2026-10-26, docs/developers/try-on.md): IDM-VTON keeps the garment's
+// details and the person far better than OOTDiffusion or Leffa.
 export const TRYON_SPACES: Record<string, SpaceCall> = {
+  // IDM-VTON with a dress mode (a community copy of the official Space).
+  "jallenjia/Change-Clothes-AI": {
+    endpoint: "/tryon",
+    args: (person, garment, category) => ({
+      dict: editorInput(person),
+      garm_img: handle_file(garment),
+      garment_des: category === "Dress" ? "a dress" : "a top",
+      is_checked: true,
+      is_checked_crop: false,
+      denoise_steps: 30,
+      seed: 42,
+      category: category === "Dress" ? "dresses" : "upper_body",
+    }),
+  },
+  // The official IDM-VTON Space: tops only (a dress would come out as a top).
+  "yisol/IDM-VTON": {
+    endpoint: "/tryon",
+    args: (person, garment) => ({ dict: editorInput(person), garm_img: handle_file(garment), garment_des: "a top", is_checked: true, is_checked_crop: false, denoise_steps: 30, seed: 42 }),
+    categories: ["Upper-body"],
+  },
   "levihsu/OOTDiffusion": {
     endpoint: "/process_dc",
     args: (person, garment, category) => ({
@@ -125,7 +155,7 @@ export class HuggingFaceTryOn implements TryOnProvider {
     let tried = 0;
     for (const space of this.options.spaces) {
       const call = TRYON_SPACES[space];
-      if (!call) {
+      if (!call || (call.categories && !call.categories.includes(request.category))) {
         continue;
       }
       tried++;

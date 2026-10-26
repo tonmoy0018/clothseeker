@@ -54,8 +54,8 @@ const aiEnvShape = {
   /** Comma-separated Spaces tried in order (see lib/ai/tryon-hf.ts). */
   TRYON_SPACES: z
     .string()
-    .regex(/^(levihsu\/OOTDiffusion|franciszzj\/Leffa)(,(levihsu\/OOTDiffusion|franciszzj\/Leffa))*$/)
-    .default("levihsu/OOTDiffusion,franciszzj/Leffa")
+    .regex(/^(jallenjia\/Change-Clothes-AI|yisol\/IDM-VTON|levihsu\/OOTDiffusion|franciszzj\/Leffa)(,(jallenjia\/Change-Clothes-AI|yisol\/IDM-VTON|levihsu\/OOTDiffusion|franciszzj\/Leffa))*$/)
+    .default("jallenjia/Change-Clothes-AI,yisol/IDM-VTON,levihsu/OOTDiffusion,franciszzj/Leffa")
     .transform((v) => v.split(",")),
   /** Limit for one try-on attempt (free Spaces queue and cold-start). */
   TRYON_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(900_000).default(240_000),

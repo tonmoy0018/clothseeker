@@ -132,6 +132,26 @@ describe("HuggingFaceTryOn", () => {
     expect(calls[1]?.data).toMatchObject({ vt_garment_type: "upper_body" });
   });
 
+  it("uses IDM-VTON first: its dress mode for dresses, and the tops-only Space only for tops", async () => {
+    const idm = (space: string) => async () => ({ data: [{ url: `https://${space}.hf.space/file=out.webp` }, { url: `https://${space}.hf.space/file=mask.webp` }] });
+    const order = ["jallenjia/Change-Clothes-AI", "yisol/IDM-VTON", "levihsu/OOTDiffusion"];
+    const sleeping = async () => {
+      throw new Error("Space is sleeping");
+    };
+
+    const dress = spaces({ "jallenjia/Change-Clothes-AI": sleeping, "yisol/IDM-VTON": idm("yisol"), "levihsu/OOTDiffusion": idm("levihsu") });
+    await new HuggingFaceTryOn({ spaces: order, connect: dress.connect, fetch: fetchOk }).tryOn(await request(), signal);
+    // A dress never goes to the tops-only Space.
+    expect(dress.calls.map((c) => c.space)).toEqual(["jallenjia/Change-Clothes-AI", "levihsu/OOTDiffusion"]);
+    expect(dress.calls[0]).toMatchObject({ endpoint: "/tryon", data: { category: "dresses", garment_des: "a dress", is_checked: true } });
+    expect(dress.calls[0]?.data.dict).toMatchObject({ layers: [], composite: null });
+
+    const top = spaces({ "jallenjia/Change-Clothes-AI": sleeping, "yisol/IDM-VTON": idm("yisol") });
+    await new HuggingFaceTryOn({ spaces: order, connect: top.connect, fetch: fetchOk }).tryOn({ ...(await request()), category: "Upper-body" }, signal);
+    expect(top.calls.map((c) => c.space)).toEqual(["jallenjia/Change-Clothes-AI", "yisol/IDM-VTON"]);
+    expect(top.calls[0]?.data).toMatchObject({ category: "upper_body" });
+  });
+
   it("reports the daily GPU limit when every space is over quota, otherwise a retryable failure", async () => {
     const quota = async () => {
       throw new Error("You have exceeded your ZeroGPU quota (180s requested vs. 168s left).");

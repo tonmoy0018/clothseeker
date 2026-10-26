@@ -51,7 +51,9 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 | `fake` (default) | `FakeTryOn` lays the garment over the middle of the photo. Deterministic, instant, nothing leaves the machine. | Development, tests, CI |
 | `huggingface` | `HuggingFaceTryOn` (`lib/ai/tryon-hf.ts`) calls free public Gradio Spaces with `@gradio/client`, in the order of `TRYON_SPACES` | Real previews |
 
-**Spaces and their dress modes:**
+**Spaces and their dress modes** (default order, best first):
+- `jallenjia/Change-Clothes-AI` (IDM-VTON with a dress mode) uses `/tryon` with `category: "dresses"` or `"upper_body"`, the person photo as the editor's background and automatic masking (`is_checked: true`).
+- `yisol/IDM-VTON` (the official Space) uses the same `/tryon`, but **tops only**: dresses skip it (`categories` in `TRYON_SPACES`), because it would turn them into tops.
 - `levihsu/OOTDiffusion` uses `/process_dc` with `category: "Dress"`.
 - `franciszzj/Leffa` uses `/leffa_predict_vt` with `vt_model_type: "dress_code"` and `vt_garment_type: "dresses"`.
 
@@ -66,11 +68,15 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 
 ## Feasibility results (2026-10-09, `ai-scripts/tryon-feasibility.ts`)
 
-`pnpm tsx ai-scripts/tryon-feasibility.ts <person> <garment> <out-dir> [space…]` sends one photo and one garment to each Space and saves the outputs. Use photos you may share with a third party, e.g. the Spaces' own examples.
+`pnpm tsx ai-scripts/tryon-feasibility.ts <person> <garment> <out-dir> [--upper] [space…]` sends one photo and one garment to each Space and saves the outputs. Use photos you may share with a third party, e.g. the Spaces' own examples.
 
 - Both Spaces were **running and answered in 17–26 s**, including through the app.
 - **Quality is a rough preview.** OOTDiffusion clearly showed our dress (colours, bodice/skirt split, pattern) on the person. It also often invented extra garments where the original sleeves were (e.g. a dark "jacket" over the arms). Leffa, given a loose drawing, kept the person's own clothes and pasted the pattern on. Tight garment images (`prepareGarment`) helped noticeably. Re-tested on 2026-10-23 with cut-out catalogue photos: OOTDiffusion put the smocked dress (puff sleeves, smocked bodice, midi skirt) convincingly on the Space's example model in about 30 s; Leffa treated it as a top. The cache key includes a version (`v: 2` since the cut-out), so older results are redone.
 - **The free GPU allowance is tiny.** Anonymous ZeroGPU use allowed **one** Leffa run (180 s of GPU reserved per call) before "You have exceeded your ZeroGPU quota… try again in 23:58". The allowance belongs to the worker, i.e. **all customers share it**. A free Hugging Face account token (`HF_TOKEN`) raises it somewhat; a paid plan or a self-hosted model is needed for real traffic.
+- **Re-tested on 2026-10-26 after poor customer results** (a shirt came out as a garbled dark top with an invented belt, from OOTDiffusion). With the Spaces' own example models:
+  - **IDM-VTON is far better.** It put the linen shirt (collar, buttons, pocket, short sleeves) and the smocked dress (smocked bodice, puff sleeves, square neckline, colour) on the person realistically in about 25–30 s, so the two IDM-VTON Spaces now come first (cache key `v: 3`).
+  - **Limits:** the result follows the shape of what the person is wearing: a dress tried on someone in trousers came out as a jumpsuit, and on someone in a knee-length dress it came out knee-length. Pale or brightly lit garments can lose a sliver at the shoulder in the cut-out, which shows as a small white patch.
+  - `zhengchong/CatVTON` and `xiaozaa/catvton-flux-try-on` were down (HTTP 503); `frogleo/AI-Clothes-Changer` had no GPU free; the anonymous ZeroGPU allowance ran out after about four runs across all Spaces.
 - **Decision (with the product owner):** ship it as a clearly labelled rough preview, with a friendly message when the daily limit is reached. Fakes stay the default.
 
 ## Tests

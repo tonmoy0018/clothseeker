@@ -238,7 +238,10 @@ export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOn
             }}
           />
         </label>
-        <p className="text-xs text-muted-foreground">Best: just you, facing the camera, in good light, shoulders to knees visible.</p>
+        <p className="text-xs text-muted-foreground">
+          Best: just you, facing the camera, in good light, shoulders to knees visible. The preview follows the shape of what you&apos;re wearing, so
+          for a {noun} wear something of a similar shape and length.
+        </p>
       </div>
 
       {photos.length > 0 && (
