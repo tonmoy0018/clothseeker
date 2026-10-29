@@ -38,6 +38,7 @@ export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOn
   const [quota, setQuota] = useState<TryOnQuotaView | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [result, setResult] = useState<TryOnResultView | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -104,8 +105,19 @@ export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOn
     setUploading(true);
     setPhase({ kind: "idle" });
     try {
+      const photo = await downscalePhoto(file);
+      // Checked on this device first (nothing is uploaded for this), so an unusable photo is caught
+      // instantly with the exact reason. The worker checks it again after upload.
+      setChecking(true);
+      const { photoProblemOnDevice } = await import("@/lib/vision/check-photo");
+      const problem = await photoProblemOnDevice(photo);
+      setChecking(false);
+      if (problem) {
+        setPhase({ kind: "error", message: problem });
+        return;
+      }
       const form = new FormData();
-      form.set("photo", await downscalePhoto(file), "photo.jpg");
+      form.set("photo", photo, "photo.jpg");
       form.set("consent", agreed ? "yes" : "no");
       const response = await uploadTryOnPhotoAction(form);
       if (response.status === "signin") {
@@ -121,6 +133,7 @@ export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOn
     } catch (error) {
       setPhase({ kind: "error", message: error instanceof Error ? error.message : "That photo couldn't be added." });
     } finally {
+      setChecking(false);
       setUploading(false);
     }
   }
@@ -224,7 +237,7 @@ export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOn
           <input type="checkbox" className="size-4" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />I agree to use my photo for try-on
         </label>
         <label className={cn("inline-flex h-8 w-fit cursor-pointer items-center rounded-lg border bg-background px-3 hover:bg-muted", (!agreed || busy) && "pointer-events-none opacity-50")}>
-          {uploading ? "Uploading…" : "Upload a photo of me"}
+          {checking ? "Checking your photo on this device…" : uploading ? "Uploading…" : "Upload a photo of me"}
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"

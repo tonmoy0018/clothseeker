@@ -1,10 +1,12 @@
 import type { WorkerEnv } from "@/lib/env/schema";
 
 import { CloudflareImage } from "./cloudflare";
-import { FakeImage, FakePlanner, FakeTryOn } from "./fake";
+import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./fake";
 import { GeminiPlanner } from "./gemini";
+import { LocalPhotoChecker } from "./photo-check-local";
 import { HuggingFaceTryOn } from "./tryon-hf";
 import type { AiProviders } from "./types";
+import { nodeModelsPresent } from "@/lib/vision/node-vision";
 
 // Picks the AI providers from the worker's environment. Only the worker calls this.
 
@@ -49,10 +51,19 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
     image = new FakeImage(env.AI_FAKE_DELAY_MS);
   }
 
-  const tryOn =
-    env.TRYON_PROVIDER === "huggingface"
-      ? new HuggingFaceTryOn({ spaces: env.TRYON_SPACES, token: env.HF_TOKEN })
-      : new FakeTryOn(env.AI_FAKE_DELAY_MS);
+  // Real try-ons get the real photo check: the on-device models, run here in the worker.
+  let tryOn;
+  let photoCheck;
+  if (env.TRYON_PROVIDER === "huggingface") {
+    if (!nodeModelsPresent()) {
+      throw new AiConfigError("The on-device vision models are missing: run `pnpm vision:fetch` (needed when TRYON_PROVIDER=huggingface)");
+    }
+    tryOn = new HuggingFaceTryOn({ spaces: env.TRYON_SPACES, token: env.HF_TOKEN });
+    photoCheck = new LocalPhotoChecker();
+  } else {
+    tryOn = new FakeTryOn(env.AI_FAKE_DELAY_MS);
+    photoCheck = new FakePhotoChecker(env.AI_FAKE_DELAY_MS);
+  }
 
-  return { planner, image, tryOn };
+  return { planner, image, tryOn, photoCheck };
 }

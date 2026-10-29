@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 
@@ -6,7 +9,13 @@ import { chooseFabric, signUpFreshCustomer } from "./helpers";
 // @supabase — needs the local Supabase stack with seed data, plus the worker (started by
 // playwright.config.ts locally, with the fake providers). Fresh customers get a full try-on quota.
 
-async function portraitPhoto(): Promise<Buffer> {
+/** An AI-generated full-length photo of a person who doesn't exist (passes the on-device photo check). */
+function portraitPhoto(): Promise<Buffer> {
+  return readFile(path.join(process.cwd(), "tests", "fixtures", "tryon-woman.jpg"));
+}
+
+/** A plain picture with nobody in it. */
+function emptyPhoto(): Promise<Buffer> {
   return sharp({ create: { width: 600, height: 900, channels: 3, background: { r: 150, g: 140, b: 130 } } }).jpeg().toBuffer();
 }
 
@@ -66,6 +75,23 @@ test.describe("@supabase virtual try-on", () => {
     await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await portraitPhoto() });
     await panel.getByRole("button", { name: "Try it on" }).click();
     await expect(panel.getByRole("img", { name: "You wearing this dress (AI preview)" })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("a photo that won't work is refused on the device, with the reason, before any upload", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/products/linen-wrap-dress");
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    const panel = page.getByTestId("try-on-panel");
+    await panel.getByLabel("I agree to use my photo for try-on").check();
+    const uploads: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && (request.postData() ?? "").includes('filename="photo.jpg"')) uploads.push(request.url());
+    });
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await emptyPhoto() });
+    await expect(panel).toContainText("We can't see you from your shoulders to your knees", { timeout: 60_000 });
+    await expect(panel.getByRole("radio", { name: "Photo 1" })).toHaveCount(0);
+    expect(uploads).toEqual([]);
   });
 
   test("signed-out visitors are asked to sign in", async ({ page }) => {

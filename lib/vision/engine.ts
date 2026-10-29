@@ -3,6 +3,7 @@ import type * as Ort from "onnxruntime-web";
 import { modelPath, ORT_PATH, VISION_MODELS, type VisionModelId } from "./assets";
 import { fitSquare, type FitBox } from "./geometry";
 import { decodeMovenet, MOVENET_SIZE, movenetInput, type Pose } from "./movenet";
+import { meanBrightness } from "./photo-check";
 import { SELFIE_SIZE, selfieInput } from "./segment";
 import { decodeYunet, YUNET_SIZE, yunetInput, type Face } from "./yunet";
 
@@ -19,6 +20,8 @@ export type VisionResult = {
   height: number;
   pose: Pose | null;
   faces: Face[] | null;
+  /** Mean brightness 0–255 (measured with the body model's input). */
+  brightness: number | null;
   /** Person likelihood (SELFIE_SIZE² values, letterbox space) and how it maps to the frame. */
   mask: { alpha: Float32Array; box: FitBox } | null;
   /** Milliseconds per model, for the speed check. */
@@ -87,7 +90,7 @@ export class VisionEngine {
   }
 
   async analyse(frame: CanvasImageSource, width: number, height: number, request: VisionRequest): Promise<VisionResult> {
-    const result: VisionResult = { width, height, pose: null, faces: null, mask: null, ms: {} };
+    const result: VisionResult = { width, height, pose: null, faces: null, brightness: null, mask: null, ms: {} };
     const timed = async <T>(id: VisionModelId, work: () => Promise<T>): Promise<T> => {
       const start = performance.now();
       const value = await work();
@@ -99,6 +102,7 @@ export class VisionEngine {
     if (request.pose && pose) {
       result.pose = await timed("pose", async () => {
         const { rgba, box } = this.letterboxes.pose.read(frame, width, height);
+        result.brightness = meanBrightness(rgba, box);
         const out = await pose.run({ input: new this.ort.Tensor("int32", movenetInput(rgba), [1, MOVENET_SIZE, MOVENET_SIZE, 3]) });
         return decodeMovenet(await floats(out.output_0), box);
       });

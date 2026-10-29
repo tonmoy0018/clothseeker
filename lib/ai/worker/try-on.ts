@@ -14,9 +14,10 @@ import { productTryOnImageKey } from "@/lib/tryon/garment";
 import { tryOnPayloadSchema, type TryOnPayload } from "@/lib/tryon/payload";
 import { designSignature, productSignature } from "@/lib/tryon/rules";
 
-import { AiJobRejected, AiProviderError, type AiFailureCode } from "../errors";
+import { isUsable, photoProblem } from "@/lib/vision/photo-check";
+
+import { AiJobRejected, AiProviderError } from "../errors";
 import { prepareGarment } from "../image-utils";
-import type { TryOnPhotoCheck } from "../types";
 
 import { leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import type { AiWorkerDeps } from "./run";
@@ -26,15 +27,6 @@ import type { AiWorkerDeps } from "./run";
 //   → re-encode → one transaction: TryOnResult + job SUCCEEDED (only while holding the lease).
 
 const GARMENT_RENDER_WIDTH = 900;
-
-/** The first check a photo failed, so the customer is told exactly what to change. */
-export function photoProblem(check: TryOnPhotoCheck): AiFailureCode {
-  if (!check.onePerson) return "PHOTO_NOT_ONE_PERSON";
-  if (!check.facingForward) return "PHOTO_NOT_FACING";
-  if (!check.goodLight) return "PHOTO_TOO_DARK";
-  if (!check.bodyVisible) return "PHOTO_BODY_NOT_VISIBLE";
-  return "PHOTO_REJECTED";
-}
 
 /** The garment image for the try-on model, and what kind of garment it is. */
 async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPayload["source"], expectedHash: string): Promise<{ image: Buffer; type: GarmentType }> {
@@ -101,8 +93,8 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
 
   // 1. Photo check, once per photo: one person, facing forward, good light, body visible.
   if (!photo.checkedAt) {
-    const check = await providers.planner.checkTryOnPhoto(person, signal);
-    if (!check.onePerson || !check.facingForward || !check.goodLight || !check.bodyVisible) {
+    const check = await providers.photoCheck.checkTryOnPhoto(person, signal);
+    if (!isUsable(check)) {
       deps.log?.("ai.tryon_photo_rejected", {
         jobId: job.id,
         onePerson: check.onePerson,

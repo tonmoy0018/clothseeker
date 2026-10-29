@@ -79,8 +79,6 @@ export interface PlannerProvider {
   detectBrandLogos(images: ProviderImage[], signal: AbortSignal): Promise<BrandLogoCheck>;
   /** Returns raw JSON. It is NEVER trusted: lib/ai/plan.ts validates it and fits it to the template. */
   planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown>;
-  /** Checks a try-on photo: one person, facing forward, good light, body visible. */
-  checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck>;
   /** Picks the closest dress and its main colors. Raw JSON, validated by lib/ai/match.ts. */
   matchDress(request: DressMatchRequest, signal: AbortSignal): Promise<unknown>;
 }
@@ -108,4 +106,10 @@ export interface TryOnProvider {
   tryOn(request: TryOnRequest, signal: AbortSignal): Promise<Buffer>;
 }
 
-export type AiProviders = { planner: PlannerProvider; image: ImageProvider; tryOn: TryOnProvider };
+/** Checks a try-on photo: one person, facing forward, good light, body visible. */
+export interface TryOnPhotoChecker {
+  readonly name: string;
+  checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck>;
+}
+
+export type AiProviders = { planner: PlannerProvider; image: ImageProvider; tryOn: TryOnProvider; photoCheck: TryOnPhotoChecker };

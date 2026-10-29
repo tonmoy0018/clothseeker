@@ -225,7 +225,7 @@ docs/developers/
   - Unsaved media is deleted after 24 h by the audited, idempotent `cleanupTryOnMedia`. Deleting sets `deletedAt`; rows are never hard-deleted.
   - A design edit only marks a try-on stale (`isTryOnStale`). Never rerun automatically.
   - The limit is 5 per Dhaka day. `TryOnProvider` defaults to the fake; `huggingface` calls free public Spaces: rough preview, a tiny shared GPU allowance, and photos leave our systems.
-- `PlannerProvider` also checks try-on photos (`checkTryOnPhoto`). Per-job-type timeouts go in `AiWorkerDeps.timeoutsMs`.
+- Try-on photos are checked by `TryOnPhotoChecker` (`AiProviders.photoCheck`): with real try-on, the on-device models in the worker (`LocalPhotoChecker`); the browser runs the same rules before upload (`lib/vision/photo-check.ts`). Never send try-on photos to Gemini. Per-job-type timeouts go in `AiWorkerDeps.timeoutsMs`.
 - **Start from a photo/description** (`lib/ai/starts.ts`, worker `dress-match.ts`): the planner may only pick an offered dress (`parseDressMatch`), and its colours, pattern and style are fitted via `matchToSpec` → `variationToSpec`. The result is a DRAFT design with `startedFrom` and `referencePhotoKey`; descriptions also queue a design round (`?job=` makes the AI box poll it).
 - Motif images that are unusable or refused cost only that option's motif, never the round.
 - **Quotes** (`lib/quotes/*`, `lib/admin/quotes.ts`, [docs/admin/quotes.md](docs/admin/quotes.md)):

@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { AiProviderError } from "@/lib/ai/errors";
-import { FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FakePhotoChecker, FakeTryOn } from "@/lib/ai/fake";
 import { GARMENT_CANVAS, prepareGarment } from "@/lib/ai/image-utils";
 import { firstFileUrl, HuggingFaceTryOn, isQuotaError, type GradioConnect } from "@/lib/ai/tryon-hf";
 import type { TryOnRequest } from "@/lib/ai/types";
@@ -19,6 +19,7 @@ describe("try-on rules", () => {
       expect(consentSchema.safeParse(value).success).toBe(false);
     }
     expect(TRYON_CONSENT_POINTS.join(" ")).toMatch(/third-party AI service/);
+    expect(TRYON_CONSENT_POINTS.join(" ")).toMatch(/checked for quality on your own device/);
     expect(TRYON_CONSENT_POINTS.join(" ")).toMatch(/never uses your photos to train AI/);
     expect(TRYON_CONSENT_POINTS.join(" ")).toMatch(/deleted after 24 hours/);
   });
@@ -62,10 +63,10 @@ describe("garment preparation and fakes", () => {
   });
 
   it("the fake photo check rejects dark and landscape photos", async () => {
-    const planner = new FakePlanner();
-    expect(await planner.checkTryOnPhoto({ data: await grey(600, 900, 140), mimeType: "image/webp" }, signal)).toEqual({ onePerson: true, facingForward: true, goodLight: true, bodyVisible: true });
-    expect((await planner.checkTryOnPhoto({ data: await grey(600, 900, 30), mimeType: "image/webp" }, signal)).goodLight).toBe(false);
-    expect((await planner.checkTryOnPhoto({ data: await grey(900, 600, 140), mimeType: "image/webp" }, signal)).bodyVisible).toBe(false);
+    const checker = new FakePhotoChecker();
+    expect(await checker.checkTryOnPhoto({ data: await grey(600, 900, 140), mimeType: "image/webp" }, signal)).toEqual({ onePerson: true, facingForward: true, goodLight: true, bodyVisible: true });
+    expect((await checker.checkTryOnPhoto({ data: await grey(600, 900, 30), mimeType: "image/webp" }, signal)).goodLight).toBe(false);
+    expect((await checker.checkTryOnPhoto({ data: await grey(900, 600, 140), mimeType: "image/webp" }, signal)).bodyVisible).toBe(false);
   });
 
   it("the fake try-on is deterministic and keeps the photo size", async () => {

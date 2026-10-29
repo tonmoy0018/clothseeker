@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { averageMs, dailyCounts, failureRate, topCounts } from "@/lib/admin/ai-metrics";
 import { auditTargetHref } from "@/lib/admin/audit-log";
 import { AI_FAILURE_MESSAGES } from "@/lib/ai/errors";
-import { photoProblem } from "@/lib/ai/worker/try-on";
+import { photoProblem } from "@/lib/vision/photo-check";
 import { DISPUTE_WINDOW_DAYS, disputeDeadline, disputeIneligibility } from "@/lib/disputes/rules";
 
 const DAY = 24 * 60 * 60 * 1000;

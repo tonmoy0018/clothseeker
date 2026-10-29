@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
 import { getJobStatus } from "@/lib/ai/jobs";
 import { QUOTA_MESSAGE } from "@/lib/ai/quota";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";
@@ -35,7 +35,7 @@ async function customizable(name: string, description: string, aiEnabled = true)
 }
 
 function deps(planner: PlannerProvider = new FakePlanner()): AiWorkerDeps {
-  const providers: AiProviders = { planner, image: new FakeImage(), tryOn: new FakeTryOn() };
+  const providers: AiProviders = { planner, image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker() };
   return { db, storage, providers, workerId: "worker-a", timeoutMs: 10_000, backoffMs: () => 0 };
 }
 
@@ -126,7 +126,6 @@ describe("start from a dress photo", () => {
     const rogue: PlannerProvider = {
       name: "rogue",
       detectBrandLogos: (i, s) => inner.detectBrandLogos(i, s),
-      checkTryOnPhoto: (i, s) => inner.checkTryOnPhoto(i, s),
       planDesign: (r, s) => inner.planDesign(r, s),
       matchDress: async () => ({ productId: randomUUID(), alternatives: [] }),
     };

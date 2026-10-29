@@ -15,6 +15,7 @@ import type {
   PlanRequest,
   ProviderImage,
   TryOnPhotoCheck,
+  TryOnPhotoChecker,
   TryOnProvider,
   TryOnRequest,
 } from "./types";
@@ -24,8 +25,9 @@ import type {
 //
 // Testing conventions:
 // - FakePlanner reports a brand logo for any photo whose dominant color is the marker red #E4002B.
-// - FakePlanner rejects try-on photos that are dark (mean brightness < 60) or landscape.
-// Real checks come from Gemini (lib/ai/gemini.ts).
+// - FakePhotoChecker rejects try-on photos that are dark (mean brightness < 60) or landscape.
+// Real logo checks come from Gemini (lib/ai/gemini.ts); real photo checks from the on-device models
+// (lib/ai/photo-check-local.ts).
 
 export const FAKE_LOGO_MARKER = "#e4002b";
 
@@ -95,19 +97,6 @@ export class FakePlanner implements PlannerProvider {
       }
     }
     return { detected: false };
-  }
-
-  async checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck> {
-    await delay(Math.min(this.delayMs, 300), signal);
-    const { channels } = await sharp(image.data).greyscale().stats();
-    const meta = await sharp(image.data).metadata();
-    const brightness = channels[0]?.mean ?? 0;
-    return {
-      onePerson: true,
-      facingForward: true,
-      goodLight: brightness >= 60,
-      bodyVisible: (meta.height ?? 0) >= (meta.width ?? 1),
-    };
   }
 
   /**
@@ -231,6 +220,26 @@ function motifSvg(word: string, color: string, seed: number): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">` +
     `<g fill="${color}" transform="rotate(${rotate} 256 256)">${shapes[word] ?? shapes.flower}</g></svg>`
   );
+}
+
+/** Rejects try-on photos that are dark (mean brightness < 60) or landscape; accepts the rest. */
+export class FakePhotoChecker implements TryOnPhotoChecker {
+  readonly name = "fake";
+
+  constructor(private readonly delayMs = 0) {}
+
+  async checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck> {
+    await delay(Math.min(this.delayMs, 300), signal);
+    const { channels } = await sharp(image.data).greyscale().stats();
+    const meta = await sharp(image.data).metadata();
+    const brightness = channels[0]?.mean ?? 0;
+    return {
+      onePerson: true,
+      facingForward: true,
+      goodLight: brightness >= 60,
+      bodyVisible: (meta.height ?? 0) >= (meta.width ?? 1),
+    };
+  }
 }
 
 export class FakeImage implements ImageProvider {

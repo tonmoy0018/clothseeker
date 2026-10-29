@@ -19,6 +19,7 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 
 - **No upload without consent.** The panel lists what happens to the photo (`TRYON_CONSENT_POINTS` in `lib/tryon/rules.ts`):
   - it is used only for the preview
+  - it is checked for quality on the customer's device and on our worker, and isn't sent anywhere for that
   - it is sent to a third-party AI service (a public Hugging Face Space)
   - it is never used to train AI
   - it is deleted after 24 hours unless saved
@@ -31,12 +32,22 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
   - It's idempotent: it only touches rows not yet deleted.
   - Each run that deleted something writes one `tryon.cleanup` audit row (system actor, counts only). Tested.
 - Try-on photos are never used for training by ClothSeeker. Worker logs contain ids and pass/fail flags only, never images.
-- **Before real customers use the Hugging Face provider:** the photo goes to a public demo Space whose owner could see it, and if Gemini checks the photo, to Gemini's free tier, which may use data to improve Google's products. Use a private or paid endpoint, or keep `TRYON_PROVIDER=fake`, and say so in the privacy policy.
+- **Before real customers use the Hugging Face provider:** the photo goes to a public demo Space whose owner could see it. (Until 2026-10-29 Gemini also checked each try-on photo, which sent it to Google's free tier; the check now runs on-device, see below.) Use a private or paid endpoint, or keep `TRYON_PROVIDER=fake`, and say so in the privacy policy.
 
 ## Photo checks
 
-1. **At upload** (`photoShapeProblem`): portrait orientation, not too dark, not blown out. These are cheap and immediate.
-2. **In the worker, once per photo** (`checkTryOnPhoto`): exactly one person, roughly facing the camera, good light, body visible from shoulders to knees. Gemini does this when `PLANNER_PROVIDER=gemini`; the fake rejects dark or landscape photos. A failure ends the job with a friendly `PHOTO_REJECTED` message and doesn't count toward the limit. Passing sets `try_on_photos.checked_at`, so the photo isn't checked again.
+All checks use the same rules, `judgeTryOnPhoto` in [`lib/vision/photo-check.ts`](../../lib/vision/photo-check.ts), on the findings of the on-device body and face models ([live-try-on.md](live-try-on.md)):
+- **light:** mean brightness at least 55 of 255;
+- **one person:** at most one face;
+- **facing the camera:** one face, the person's left shoulder on the picture's right, and the shoulders at least 1.6× as wide as the face;
+- **body visible:** shoulders, hips and knees found, each at least 2.5% inside the picture's edges, so a knee guessed at the edge counts as cut off.
+
+The first failure decides the message, light first (`photoProblem`).
+
+1. **In the browser, before upload** (`photoProblemOnDevice`, `lib/vision/check-photo.ts`): the models run on the customer's device and an unusable photo is refused instantly with the exact reason ("We can't see you from your shoulders to your knees…"). Nothing is uploaded. If the models can't run on that device, the photo is uploaded and checked by the worker instead.
+2. **At upload** (`photoShapeProblem`): portrait orientation, not too dark, not blown out.
+3. **In the worker, once per photo** (`TryOnPhotoChecker`): the check customers can't skip. With `TRYON_PROVIDER=huggingface` it's `LocalPhotoChecker`, the same models run in Node on our own machine (about 0.3 s per photo); the worker refuses to start if `pnpm vision:fetch` hasn't run. With the fake try-on it's `FakePhotoChecker` (rejects dark or landscape photos). A failure ends the job with the specific message and doesn't count toward the limit. Passing sets `try_on_photos.checked_at`, so the photo isn't checked again.
+- **Test photos:** `tests/fixtures/tryon-woman.jpg` and `tryon-man.jpg` are AI-generated (FLUX.1 schnell) people who don't exist, so they can be used in tests and screenshots. The real-model tests (`tests/unit/photo-check.test.ts`) check that they pass, and that cropped, darkened and two-person versions fail with the right reason.
 
 ## Limits, cache and "Update try-on"
 

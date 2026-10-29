@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiProviderError, AI_FAILURE_MESSAGES } from "@/lib/ai/errors";
-import { FakeImage, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
 import type { AiProviders, TryOnProvider } from "@/lib/ai/types";
 import { processNextJob, runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import { ForbiddenError, type Actor } from "@/lib/auth/policy";
@@ -55,7 +55,7 @@ function deps(providers: Partial<AiProviders> = {}, overrides: Partial<AiWorkerD
   return {
     db,
     storage,
-    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), ...providers },
+    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker(), ...providers },
     workerId: "worker-a",
     timeoutMs: 10_000,
     backoffMs: () => 0,

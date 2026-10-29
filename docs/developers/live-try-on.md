@@ -2,7 +2,7 @@
 
 The live mirror (camera) and the try-on photo checks find the customer's body and face **in their own browser**. Nothing is uploaded for this: the models are downloaded once from our own site and run in a Web Worker. The realistic AI photo try-on ([try-on.md](try-on.md)) is separate.
 
-Status: **step 1 of 3 is done** (models, runtime and the speed check). Step 2 moves the try-on photo checks onto the device; step 3 is the live mirror itself.
+Status: **steps 1 and 2 of 3 are done**: models, runtime and the speed check; try-on photo checks on the device and in the worker (see [try-on.md](try-on.md#photo-checks)). Step 3 is the live mirror itself.
 
 ## Models (all from Hugging Face)
 
@@ -34,6 +34,9 @@ Status: **step 1 of 3 is done** (models, runtime and the speed check). Step 2 mo
 | `lib/vision/smooth.ts` | One Euro filter for keypoints |
 | `lib/vision/engine.ts` | Loads the models and runs them on a frame (OffscreenCanvas → tensors → decoded results) |
 | `lib/vision/vision.worker.ts`, `protocol.ts`, `client.ts` | The worker thread and the page's handle on it; frames go in as transferred `ImageBitmap`s |
+| `lib/vision/photo-check.ts` | Try-on photo rules shared by the browser and the worker |
+| `lib/vision/check-photo.ts` | The browser's check before upload |
+| `lib/vision/node-vision.ts` | The same models in Node, for the worker (`LocalPhotoChecker`) |
 | `app/(shop)/mirror/check/` | **`/mirror/check`**: the speed and accuracy check (camera or a photo from the device; not linked from the shop) |
 
 ## Measurements
