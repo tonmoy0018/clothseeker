@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import type { Keypoint, Pose } from "@/lib/vision/movenet";
-import { bodyAnchors, garmentFit, garmentMesh, garmentToBody, maskBounds, SEAM_PER_JOINTS, SHOULDER_LIFT, triangleTransform, type GarmentFit } from "@/lib/vision/mirror";
+import {
+  armChain,
+  bodyAnchors,
+  exposedArm,
+  garmentFit,
+  garmentMesh,
+  garmentToBody,
+  maskBounds,
+  SEAM_PER_JOINTS,
+  SHOULDER_LIFT,
+  sleeveFits,
+  sleeveMesh,
+  triangleTransform,
+  type GarmentFit,
+  type SleeveFit,
+} from "@/lib/vision/mirror";
+import { featherAlpha, shadeFromFrame } from "@/lib/vision/relight";
 import { splitGarment, type Mask } from "@/lib/garment-photo/segment";
 
 // Live mirror fitting: where each point of a garment picture lands on a person in the camera frame.
@@ -107,5 +123,92 @@ describe("live mirror fitting", () => {
     expect(fit.shoulderY).toBe(10);
     expect(Math.abs(fit.centreX - 50)).toBeLessThanOrEqual(1);
     expect(fit.waistY).toBeGreaterThan(fit.shoulderY);
+  });
+
+  it("finds real sleeves, not straps", () => {
+    const width = 400;
+    const height = 600;
+    const mask: Mask = { data: new Uint8Array(width * height), width, height };
+    const fill = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) mask.data[y * width + x] = 1;
+    };
+    // Sleeves hanging down outside the shoulders (centre 200, shoulders 240 wide: 80–320).
+    fill(300, 30, 340, 300);
+    fill(60, 30, 100, 300);
+    const found = sleeveFits(mask, FIT);
+    expect(found.map((f) => f.side).sort()).toEqual(["left", "right"]);
+    const left = found.find((f) => f.side === "left");
+    expect(left?.end.y).toBeGreaterThan(200);
+    // Thin straps over the shoulders, inside the trunk: not sleeves.
+    const straps: Mask = { data: new Uint8Array(width * height), width, height };
+    for (let y = 0; y < 40; y += 1) for (const x0 of [150, 240]) for (let x = x0; x < x0 + 10; x += 1) straps.data[y * width + x] = 1;
+    expect(sleeveFits(straps, FIT)).toEqual([]);
+  });
+
+  it("bends a sleeve along the arm, joined to the torso, never past the wrist", () => {
+    const sleeve: SleeveFit = { side: "left", root: { x: 320, y: 34 }, end: { x: 330, y: 400 }, halfWidth: 25, length: 366 };
+    // Left arm held straight out to the side (the picture's right).
+    const body = bodyAnchors(pose({ leftElbow: at(660, 250), leftWrist: at(760, 250) }));
+    if (!body) throw new Error("no body");
+    const mesh = sleeveMesh(FIT, sleeve, body);
+    const torso = garmentToBody(FIT, body)(sleeve.root.x, sleeve.root.y);
+    const rootCorner = mesh.find((t) => t.src.some((p) => Math.abs(p.x - sleeve.root.x) < 26 && Math.abs(p.y - sleeve.root.y) < 1));
+    expect(rootCorner).toBeDefined();
+    const ends = mesh.flatMap((t) => t.dst);
+    // It runs out to the right with the arm, and stops near the wrist (the hand is 760 + a bit).
+    expect(Math.max(...ends.map((p) => p.x))).toBeGreaterThan(700);
+    expect(Math.max(...ends.map((p) => p.x))).toBeLessThan(790);
+    expect(Math.abs(Math.min(...ends.map((p) => p.y)) - torso.y)).toBeLessThan(40);
+    expect(armChain(body, "left")).toHaveLength(4);
+  });
+
+  it("draws the arms the garment doesn't cover in front of it", () => {
+    const body = bodyAnchors(pose());
+    if (!body) throw new Error("no body");
+    const shortSleeve: SleeveFit = { side: "right", root: { x: 80, y: 34 }, end: { x: 75, y: 120 }, halfWidth: 30, length: 86 };
+    const longSleeve: SleeveFit = { ...shortSleeve, end: { x: 75, y: 900 }, length: 866 };
+    const sleeveless = exposedArm(FIT, body, "right", null);
+    const short = exposedArm(FIT, body, "right", shortSleeve);
+    // Sleeveless: almost the whole arm; short sleeve: from above the elbow; long sleeve: just the hand.
+    expect(sleeveless[0]?.y).toBeLessThan(short[0]?.y ?? 0);
+    expect(short.at(-1)?.y).toBeGreaterThan(440);
+    const long = exposedArm(FIT, body, "right", longSleeve);
+    expect(long.length === 0 || (long[0]?.y ?? 0) >= 435).toBe(true);
+  });
+});
+
+describe("relighting from the camera", () => {
+  const frame = (width: number, height: number, paint: (x: number, y: number) => [number, number, number]) => {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) rgba.set([...paint(x, y), 255], (y * width + x) * 4);
+    return rgba;
+  };
+
+  it("leaves the garment alone under even, neutral light", () => {
+    const shade = shadeFromFrame(frame(60, 40, () => [120, 120, 120]), 60, 40);
+    expect(Math.abs((shade[(20 * 60 + 30) * 4] ?? 0) - 128)).toBeLessThanOrEqual(2);
+  });
+
+  it("darkens folds, follows brighter light and takes on a warm cast", () => {
+    // A dark crease down the middle of evenly lit clothes.
+    const crease = shadeFromFrame(frame(60, 40, (x) => (x >= 29 && x <= 30 ? [60, 60, 60] : [140, 140, 140])), 60, 40);
+    expect(crease[(20 * 60 + 30) * 4] ?? 255).toBeLessThan(110);
+    // Light from the right: the right side comes out lighter than the left.
+    const sided = shadeFromFrame(frame(60, 40, (x) => [60 + x * 2.5, 60 + x * 2.5, 60 + x * 2.5]), 60, 40);
+    expect(sided[(20 * 60 + 55) * 4] ?? 0).toBeGreaterThan(sided[(20 * 60 + 4) * 4] ?? 0);
+    // Warm light: red above blue.
+    const warm = shadeFromFrame(frame(60, 40, () => [170, 130, 100]), 60, 40);
+    expect(warm[(20 * 60 + 30) * 4] ?? 0).toBeGreaterThan(warm[(20 * 60 + 30) * 4 + 2] ?? 0);
+  });
+
+  it("softens a cut-out's edge without thinning its inside", () => {
+    const alpha = new Uint8ClampedArray(10 * 10);
+    for (let y = 0; y < 10; y += 1) for (let x = 0; x < 5; x += 1) alpha[y * 10 + x] = 255;
+    featherAlpha(alpha, 10, 10, 1);
+    expect(alpha[5 * 10 + 1]).toBe(255);
+    expect(alpha[5 * 10 + 4]).toBeLessThan(255);
+    expect(alpha[5 * 10 + 4]).toBeGreaterThan(100);
+    expect(alpha[5 * 10 + 5]).toBeGreaterThan(0);
+    expect(alpha[5 * 10 + 9]).toBe(0);
   });
 });

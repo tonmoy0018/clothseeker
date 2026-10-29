@@ -68,7 +68,16 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - The garment's shoulder line is pinned 16% of the shoulder-joint distance above the shoulder joints (`SHOULDER_LIFT`), at 1.2× their width (`SEAM_PER_JOINTS`).
   - Its waist goes to the body's waist (60% of the way to the hip joints, `BODY_WAIST`); below the waist it hangs along hips→knees.
   - It is drawn as a 6×16 mesh of affine triangles (`drawMesh` in `lib/vision/draw.ts`). Turning narrows it; facing away hides it with a hint.
-- **Forearms and hands** are drawn back over the garment from the camera frame, masked by the person outline (`PersonLayer`). Upper arms stay under the garment, because its sleeves don't move with the arms.
+- **Sleeves follow the arms** (`sleeveFits`, `sleeveMesh`):
+  - Real sleeves are split from the garment picture: sleeve-mask pixels outside the torso trunk (`SLEEVE_TRUNK`) that leave the shoulder outwards or downwards. Straps stay with the body.
+  - Each sleeve is bent along shoulder → elbow → wrist, joined to the torso where the body mesh puts its root.
+  - It's compressed so it never reaches past the wrist.
+- **Arms in front:** the parts of the arms the garment doesn't cover are drawn back from the camera frame over the garment, masked by the person outline (`exposedArm`, `PersonLayer.drawArms`). That's below a short sleeve, the hand below a long one, or almost the whole arm for a sleeveless garment.
+- **Looks worn, not pasted** (`GarmentCompositor`, `lib/vision/relight.ts`):
+  - The garment pieces are drawn into their own layer.
+  - That layer is relit from the camera with a soft-light "shade" picture made from a 240-px copy of the frame. It carries the creases of the clothes underneath (fine ÷ broad brightness), the room's light falling across the body, and a mild colour cast.
+  - The layer is then laid on the frame with a soft contact shadow.
+  - Cut-out edges are feathered (`featherAlpha`).
 - **Hints** appear when the shoulders and hips aren't in view, or the person faces away.
 - **Take photo** shows the mirrored picture with the garment:
   - **Save picture** downloads it.
@@ -79,7 +88,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
 
 ### Limits
 
-- **A 2D fit guide, not a photo:** the garment is stretched onto the body's outline. Sleeves follow the torso, not the arms, and the customer's own clothes can show around the edges. The realistic photo is the AI try-on.
+- **A 2D fit guide, not a photo:** the garment is stretched onto the body's outline and relit, but it isn't regenerated. The customer's own clothes can show around a slimmer garment (e.g. a T-shirt's sleeves around a sleeveless dress), and hair isn't drawn in front. Sleeves hanging very close to a mannequin's body may not be recognised (the Embroidered Eid Panjabi's cuffs). The realistic photo is the AI try-on; a generative real-time model (e.g. Decart's Lucy VTON, paid per second) would be needed for photo-real live video.
 - **Cut-out quality:** pale or brightly lit garments can lose pieces in the cut-out (e.g. the smocked dress's left side), and the mirror shows those gaps.
 - **The camera needs a secure page:** `localhost` works; a phone on the local network needs HTTPS.
 - **Distance:** one person, about 1–4 m from the camera, facing it.

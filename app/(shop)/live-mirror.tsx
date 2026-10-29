@@ -102,8 +102,9 @@ export function LiveMirror({
   async function loop(video: HTMLVideoElement, vision: VisionClient, garment: MirrorGarment, layer: PersonLayer, mirror: typeof import("@/lib/vision/mirror")) {
     const { PoseSmoother } = await import("@/lib/vision/smooth");
     const { KEYPOINT_NAMES } = await import("@/lib/vision/movenet");
-    const { drawMesh } = await import("@/lib/vision/draw");
+    const { GarmentCompositor } = await import("@/lib/vision/draw");
     const smoother = new PoseSmoother(KEYPOINT_NAMES);
+    const compositor = new GarmentCompositor();
     let tick = 0;
     let lastHint: string | null = "";
     while (runningRef.current) {
@@ -133,8 +134,16 @@ export function LiveMirror({
       const body = pose ? mirror.bodyAnchors(pose) : null;
       centreRef.current = body ? (body.leftShoulder.x + body.rightShoulder.x + body.leftHip.x + body.rightHip.x) / 4 : null;
       if (pose && body) {
-        drawMesh(context, garment.image, mirror.garmentMesh(garment.fit, body));
-        layer.drawForearms(context, frame, width, height, pose);
+        // The body, then each sleeve bent along its arm; then the arms the garment doesn't cover, in front.
+        const pieces = [
+          { image: garment.body, triangles: mirror.garmentMesh(garment.fit, body) },
+          ...garment.sleeves.map((s) => ({ image: s.image, triangles: mirror.sleeveMesh(garment.fit, s.fit, body) })),
+        ];
+        compositor.draw(context, frame, width, height, pieces);
+        const sleeveOn = (side: "left" | "right") => garment.sleeves.find((s) => s.fit.side === side)?.fit ?? null;
+        const arms = (["left", "right"] as const).map((side) => mirror.exposedArm(garment.fit, body, side, sleeveOn(side)));
+        const span = Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y);
+        layer.drawArms(context, frame, width, height, arms, span * 0.3);
       }
       frame.close();
       const nextHint = body ? null : pose && pose.leftShoulder.score > 0.3 && pose.leftShoulder.x <= pose.rightShoulder.x ? "Turn to face the camera." : "Step back until your shoulders and hips are in view.";

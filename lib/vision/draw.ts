@@ -1,5 +1,5 @@
-import type { Pose } from "./movenet";
-import { triangleTransform, type Triangle } from "./mirror";
+import { triangleTransform, type Point, type Triangle } from "./mirror";
+import { shadeFromFrame } from "./relight";
 import { SELFIE_SIZE, type PersonMask } from "./segment";
 
 // Canvas drawing for the live mirror (browser only). The geometry comes from mirror.ts.
@@ -62,11 +62,11 @@ export class PersonLayer {
   }
 
   /**
-   * Draws the person's forearms and hands from `frame` over what's on `context`, so they show in front
-   * of the garment. Upper arms stay under it: the garment's sleeves don't move with the arms.
+   * Draws the person's arms from `frame` along `paths` (camera pixels) over what's on `context`, masked
+   * by the person outline, so arms in front of the body show in front of the garment.
    */
-  drawForearms(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, pose: Pose) {
-    if (!this.maskSet || !this.box) return;
+  drawArms(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, paths: readonly Point[][], thickness: number) {
+    if (!this.maskSet || !this.box || paths.every((p) => p.length < 2)) return;
     for (const canvas of [this.person, this.arms]) {
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
@@ -81,30 +81,74 @@ export class PersonLayer {
     person.globalCompositeOperation = "source-in";
     person.drawImage(frame, 0, 0, width, height);
 
-    const span = Math.hypot(pose.leftShoulder.x - pose.rightShoulder.x, pose.leftShoulder.y - pose.rightShoulder.y);
     arms.clearRect(0, 0, width, height);
     arms.globalCompositeOperation = "source-over";
     arms.strokeStyle = "#fff";
     arms.lineCap = "round";
-    arms.lineWidth = Math.max(8, span * 0.32);
-    let any = false;
-    for (const [elbow, wrist] of [
-      [pose.leftElbow, pose.leftWrist],
-      [pose.rightElbow, pose.rightWrist],
-    ] as const) {
-      if (elbow.score < 0.3 || wrist.score < 0.3) continue;
-      // From just below the elbow to past the wrist, where the hand is.
-      const start = { x: elbow.x + (wrist.x - elbow.x) * 0.15, y: elbow.y + (wrist.y - elbow.y) * 0.15 };
-      const end = { x: wrist.x + (wrist.x - elbow.x) * 0.45, y: wrist.y + (wrist.y - elbow.y) * 0.45 };
+    arms.lineJoin = "round";
+    arms.lineWidth = Math.max(8, thickness);
+    for (const path of paths) {
+      if (path.length < 2) continue;
       arms.beginPath();
-      arms.moveTo(start.x, start.y);
-      arms.lineTo(end.x, end.y);
+      path.forEach((point, i) => (i === 0 ? arms.moveTo(point.x, point.y) : arms.lineTo(point.x, point.y)));
       arms.stroke();
-      any = true;
     }
-    if (!any) return;
     arms.globalCompositeOperation = "source-in";
     arms.drawImage(this.person, 0, 0);
     context.drawImage(this.arms, 0, 0);
+  }
+}
+
+/**
+ * Puts the garment on the camera frame so it looks worn: its pieces are drawn into their own layer, lit
+ * by the camera's light (relight.ts, soft-light blend), and laid on the frame with a soft contact
+ * shadow.
+ */
+export class GarmentCompositor {
+  private readonly layer = document.createElement("canvas");
+  private readonly shade = document.createElement("canvas");
+  private readonly small = document.createElement("canvas");
+
+  /** `pieces`: each garment picture with its mesh. */
+  draw(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, pieces: readonly { image: CanvasImageSource; triangles: readonly Triangle[] }[]) {
+    for (const canvas of [this.layer, this.shade]) {
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+    }
+    const layer = this.layer.getContext("2d");
+    const shade = this.shade.getContext("2d");
+    if (!layer || !shade) return;
+    layer.globalCompositeOperation = "source-over";
+    layer.clearRect(0, 0, width, height);
+    for (const piece of pieces) drawMesh(layer, piece.image, piece.triangles);
+
+    // The camera's light, worked out on a small copy of the frame, then stretched over the garment only.
+    const smallWidth = 240;
+    const smallHeight = Math.max(1, Math.round((height * smallWidth) / width));
+    if (this.small.width !== smallWidth) this.small.width = smallWidth;
+    if (this.small.height !== smallHeight) this.small.height = smallHeight;
+    const small = this.small.getContext("2d", { willReadFrequently: true });
+    if (small) {
+      small.drawImage(frame, 0, 0, smallWidth, smallHeight);
+      const lit = shadeFromFrame(small.getImageData(0, 0, smallWidth, smallHeight).data, smallWidth, smallHeight);
+      small.putImageData(new ImageData(lit, smallWidth, smallHeight), 0, 0);
+      shade.globalCompositeOperation = "source-over";
+      shade.clearRect(0, 0, width, height);
+      shade.imageSmoothingQuality = "high";
+      shade.drawImage(this.small, 0, 0, width, height);
+      shade.globalCompositeOperation = "destination-in";
+      shade.drawImage(this.layer, 0, 0);
+      layer.globalCompositeOperation = "soft-light";
+      layer.drawImage(this.shade, 0, 0);
+      layer.globalCompositeOperation = "source-over";
+    }
+
+    // Resting on the body: a soft shadow just below and around the garment.
+    context.save();
+    context.shadowColor = "rgba(0, 0, 0, 0.32)";
+    context.shadowBlur = Math.max(4, width * 0.012);
+    context.shadowOffsetY = Math.max(1, height * 0.004);
+    context.drawImage(this.layer, 0, 0);
+    context.restore();
   }
 }
