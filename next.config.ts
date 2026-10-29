@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**": ["./public/fonts/*.ttf"],
   },
+  // On-device vision files (pnpm vision:fetch): their paths contain the runtime version or the model's
+  // hash, so browsers may keep them forever and download the ~7–14 MB only once.
+  async headers() {
+    return [{ source: "/vision/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] }];
+  },
 };
 
 export default nextConfig;

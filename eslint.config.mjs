@@ -24,6 +24,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "lib/generated/**",
+    // Third-party runtime files and models copied in by `pnpm vision:fetch`.
+    "public/vision/**",
     "playwright-report/**",
     "test-results/**",
     "coverage/**",

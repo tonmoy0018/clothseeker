@@ -54,3 +54,6 @@ next-env.d.ts
 # supabase local state
 /supabase/.temp/
 /supabase/.branches/
+
+# on-device vision files (models from Hugging Face, ONNX Runtime): pnpm vision:fetch
+/public/vision/

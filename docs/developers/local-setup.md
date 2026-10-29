@@ -18,7 +18,7 @@ Node 26 works, but Prisma 7 prints an "unsupported Node.js version" warning on i
 pnpm install
 ```
 
-`postinstall` runs `prisma generate`, which writes the client to `lib/generated/prisma/` (gitignored). `pnpm-workspace.yaml` allows build scripts only for `esbuild`, `prisma`, `@prisma/engines` and `supabase`.
+`postinstall` runs `prisma generate`, which writes the client to `lib/generated/prisma/` (gitignored). `pnpm dev` and `pnpm build` first run `pnpm vision:fetch`, which downloads the on-device vision models from Hugging Face (about 10 MB, checked by SHA-256) into `public/vision/` (gitignored); see [live-try-on.md](live-try-on.md). `pnpm-workspace.yaml` allows build scripts only for `esbuild`, `prisma`, `@prisma/engines` and `supabase`.
 
 ## 3. Start local Supabase
 
@@ -130,3 +130,5 @@ pnpm build
 | Integration tests: `TEST_DATABASE_URL is missing` | `pnpm env:local --force`, or add it from `.env.example` |
 | Demo sign-in fails | `pnpm db:seed` (resets demo passwords) |
 | Playwright: browser not found | `pnpm exec playwright install chromium` |
+| Port 3000 is used by another project | Run on another port with a matching app URL, e.g. `NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm build && NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm start --port 3002` (and the same `NEXT_PUBLIC_APP_URL` for `pnpm worker`). For E2E: `E2E_PORT=3002 NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm test:e2e` |
+| `vision.fetch` fails: SHA-256 mismatch | A model changed on Hugging Face. Check it, then update its hash in `lib/vision/assets.ts` |
