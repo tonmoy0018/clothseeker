@@ -34,6 +34,8 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
   const chartRows = chart.rows.filter((row) => sizes.includes(row.size));
   const garment = GARMENT_TYPES[product.garmentType];
   const [signed, user, tryOnImage] = await Promise.all([signCatalogImages(product.imageKeys), getCurrentUser(), productTryOnImageKey(getPrisma(), product.id)]);
+  // The live mirror cuts the garment out of the same picture the try-on uses (signed for this viewer).
+  const mirrorImageUrl = tryOnImage ? (signed.get(tryOnImage) ?? (await signCatalogImages([tryOnImage])).get(tryOnImage) ?? null) : null;
   const photos = product.imageKeys.flatMap((key) => {
     const url = signed.get(key);
     return url ? [url] : [];
@@ -75,7 +77,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
                 Customize this {garment.noun}
               </Link>
             )}
-            {tryOnImage && <TryOnButton productId={product.id} slug={product.slug} signedIn={user?.role === "CUSTOMER"} noun={garment.noun} />}
+            {tryOnImage && <TryOnButton productId={product.id} slug={product.slug} signedIn={user?.role === "CUSTOMER"} noun={garment.noun} mirrorImageUrl={mirrorImageUrl} />}
           </div>
         </div>
 

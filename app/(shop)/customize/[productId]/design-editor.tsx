@@ -1,10 +1,10 @@
 "use client";
 
-import { Redo2, Shirt, Undo2 } from "lucide-react";
+import { Redo2, ScanFace, Shirt, Undo2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FONTS, fontUrl } from "@/lib/catalog/fonts";
@@ -23,6 +23,7 @@ import { designSpecSchema, type DesignLayer, type DesignSpec } from "@/types/des
 import { styleOptionsFor, templateStyleGroups, type PlacementArea, type TemplateConfig } from "@/types/template";
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
+import { LiveMirror } from "../../live-mirror";
 import { TryOnPanel } from "../../try-on-panel";
 
 import { AiBox } from "./ai-box";
@@ -135,6 +136,10 @@ export function DesignEditor(props: DesignEditorProps) {
   const [fontsReady, setFontsReady] = useState(false);
   const [pending, startTransition] = useTransition();
   const [showTryOn, setShowTryOn] = useState(false);
+  const [showMirror, setShowMirror] = useState(false);
+  const [mirrorPhoto, setMirrorPhoto] = useState<Blob | null>(null);
+  /** The front garment with its items printed on it, as last drawn by the canvas. */
+  const printedRef = useRef<{ garment: HTMLCanvasElement; printed: HTMLCanvasElement } | null>(null);
 
   // ── fonts ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -536,6 +541,9 @@ export function DesignEditor(props: DesignEditorProps) {
               }}
               onLayerChange={(id, box) => updateLayer(id, (l) => ({ ...l, ...box }))}
               onRejected={(text) => setMessage({ kind: "error", text })}
+              onPrinted={(drawn, printed) => {
+                if (drawn === garments.front) printedRef.current = { garment: drawn, printed };
+              }}
             />
           ) : (
             <div className="flex aspect-[1200/1560] w-full max-w-[560px] items-center justify-center text-sm text-muted-foreground">Loading fonts…</div>
@@ -552,6 +560,11 @@ export function DesignEditor(props: DesignEditorProps) {
             <RailButton label="See it on me" pressed={showTryOn} onClick={() => setShowTryOn((v) => !v)}>
               <Shirt className="size-4" />
             </RailButton>
+            {pictures.front.garmentKey !== null && (
+              <RailButton label="Live mirror" pressed={showMirror} onClick={() => setShowMirror(true)}>
+                <ScanFace className="size-4" />
+              </RailButton>
+            )}
           </div>
           <div className="absolute right-3 bottom-3 flex flex-col gap-2" role="group" aria-label="Garment side">
             {(["front", "back"] as const).filter((s) => pictures[s].garmentKey !== null).map((s) => (
@@ -570,7 +583,35 @@ export function DesignEditor(props: DesignEditorProps) {
         </p>
 
         {showTryOn && (
-          <TryOnPanel source={{ kind: "design", spec, designId }} signedIn={props.customerId !== null} noun={garment.noun} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+          <TryOnPanel
+            source={{ kind: "design", spec, designId }}
+            signedIn={props.customerId !== null}
+            noun={garment.noun}
+            offeredPhoto={mirrorPhoto}
+            onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+          />
+        )}
+        {showMirror && (
+          <LiveMirror
+            noun={garment.noun}
+            loadGarment={async () => {
+              const front = garments.front;
+              if (!front) throw new Error("The garment picture isn't ready yet");
+              // The design as drawn on the front, with its printed items when the canvas has made them.
+              const drawn = printedRef.current?.garment === front ? printedRef.current.printed : front;
+              const maskUrls = config.regions.flatMap((r) => {
+                const key = pictures.front.maskFor(r.id);
+                const url = key ? props.imageUrls[key] : undefined;
+                return url ? [url] : [];
+              });
+              return (await import("@/lib/vision/garment-source")).garmentFromDesign(drawn, maskUrls);
+            }}
+            onClose={() => setShowMirror(false)}
+            onUsePhoto={(photo) => {
+              setMirrorPhoto(photo);
+              setShowTryOn(true);
+            }}
+          />
         )}
 
         {(props.initialDesign?.referencePhotoUrl || (props.alternatives && props.alternatives.length > 0)) && (

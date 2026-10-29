@@ -5,7 +5,7 @@ export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const MAX_PHOTO_EDGE = 2000;
 const SEND_AS_IS_BYTES = 3.5 * 1024 * 1024;
 
-export async function downscalePhoto(file: File): Promise<Blob> {
+export async function downscalePhoto(file: Blob): Promise<Blob> {
   if (file.size > MAX_PHOTO_BYTES) {
     throw new Error("Photos can be up to 10 MB.");
   }

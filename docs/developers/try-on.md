@@ -25,6 +25,7 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
   - it is deleted after 24 hours unless saved
 - The upload control stays disabled until the box is ticked. The server refuses any upload whose `consent` isn't exactly `"yes"` (tested), and stores `consentAt` on each photo.
 - **Uploads** are re-encoded to WebP by `processImage("tryOnPhoto")`, which strips EXIF/GPS. They go in the private `tryon-private` bucket, and browsers only get short-lived signed URLs.
+- **From the live mirror:** a photo taken there can be offered to the panel ("Use my photo from the live mirror"). It still needs the consent box and goes through the same checks and upload ([live-try-on.md](live-try-on.md#the-live-mirror)).
 - **Saving** is explicit: "Keep this photo" and "Keep this try-on". Everything else is deleted 24 hours after it was made.
 - **Deleting a photo** ("Delete photo now") removes it and every try-on made from it immediately, and writes an `AuditLog` row (`tryon.photo_deleted`, ids and counts only).
 - **The 24-hour cleanup** (`cleanupTryOnMedia`, run by the worker on every poll):

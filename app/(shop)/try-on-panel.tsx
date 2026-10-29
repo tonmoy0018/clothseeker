@@ -31,8 +31,24 @@ export type TryOnSource = { kind: "design"; spec: DesignSpec; designId: string |
 
 type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; running: boolean } | { kind: "error"; message: string };
 
-/** `noun` names the garment in messages: "Putting the shirt on you…". */
-export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOnSource; signedIn: boolean; onSignIn: () => void; noun: string }) {
+/**
+ * `noun` names the garment in messages: "Putting the shirt on you…". `offeredPhoto` is a photo taken in
+ * the live mirror, offered for upload (still only after consent).
+ */
+export function TryOnPanel({
+  source,
+  signedIn,
+  onSignIn,
+  noun,
+  offeredPhoto = null,
+}: {
+  source: TryOnSource;
+  signedIn: boolean;
+  onSignIn: () => void;
+  noun: string;
+  offeredPhoto?: Blob | null;
+}) {
+  const [usedOffer, setUsedOffer] = useState<Blob | null>(null);
   const [photos, setPhotos] = useState<TryOnPhotoView[]>([]);
   const [photoId, setPhotoId] = useState<string | null>(null);
   const [quota, setQuota] = useState<TryOnQuotaView | null>(null);
@@ -97,7 +113,7 @@ export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOn
     };
   }, [waitingJob]);
 
-  async function upload(file: File) {
+  async function upload(file: File | Blob) {
     if (!signedIn) {
       onSignIn();
       return;
@@ -251,6 +267,20 @@ export function TryOnPanel({ source, signedIn, onSignIn, noun }: { source: TryOn
             }}
           />
         </label>
+        {offeredPhoto && usedOffer !== offeredPhoto && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-fit"
+            disabled={!agreed || busy}
+            onClick={() => {
+              setUsedOffer(offeredPhoto);
+              void upload(offeredPhoto);
+            }}
+          >
+            Use my photo from the live mirror
+          </Button>
+        )}
         <p className="text-xs text-muted-foreground">
           Best: just you, facing the camera, in good light, shoulders to knees visible. The preview follows the shape of what you&apos;re wearing, so
           for a {noun} wear something of a similar shape and length.

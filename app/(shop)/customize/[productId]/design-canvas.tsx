@@ -30,6 +30,8 @@ type DesignCanvasProps = {
   onLayerChange: (layerId: string, box: LayerBox) => void;
   /** Called when a move/resize/rotate would leave the area; the layer snaps back. */
   onRejected: (message: string) => void;
+  /** The garment as drawn, with its items printed on it (for the live mirror). */
+  onPrinted?: (garment: HTMLCanvasElement, printed: HTMLCanvasElement) => void;
 };
 
 type FabricModule = typeof import("fabric");
@@ -288,6 +290,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
           printed.getContext("2d")?.putImageData(shaped, 0, 0);
           ctx.drawImage(garment, 0, 0);
           ctx.drawImage(printed, 0, 0);
+          propsRef.current.onPrinted?.(garment, composite);
           canvas.backgroundImage = new module.FabricImage(composite, { originX: "left", originY: "top", left: 0, top: 0, scaleX: scale, scaleY: scale, selectable: false, evented: false });
           for (const object of objects) object.set({ opacity: 0 });
           const showWhileMoving = ({ target }: { target: FabricObject }) => {
