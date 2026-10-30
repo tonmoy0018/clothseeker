@@ -35,6 +35,7 @@ Either way it disappears from the shop immediately. Customers who already ordere
 4. **Recolorable regions:** the parts customers can color separately, such as Bodice or Skirt. Each region needs a **mask**: an image the same size as the garment image, black everywhere except the region, which is painted white. Upload a **front mask** and/or **back mask** for each region. Customers can only recolor regions that have masks, and the template can't go live until every recolorable region has one.
 5. **Style options:** neckline, sleeve length and dress length, each with an optional **Add-on ৳** price and a **reference image**.
 6. **Allowed colors**, **Patterns**, **Fonts** and **Add-on prices**.
+7. **Finishes:** whether customers may choose **embroidery** (text, decorations and decorations taken from other dresses) and **sequins** (decorations and cut-outs), and the price of each per item. A finished item costs this price instead of its print price; in a border, each motif counts. Photos and logos are always printed. The order's files then include a separate placement file per area for embroidered and sequinned items, and the spec sheet names each item's finish.
 7. Click **Save template**, then tick **Live for customers**.
 
 **If going live is refused**, the template needs a front garment image (and a back image if it has back areas), and at least one recolorable region.

@@ -1,4 +1,5 @@
 import { hasDetail, motifCount } from "@/lib/catalog/decorations";
+import { FINISH_LABEL, finishesFor, type FinishedKind } from "@/lib/catalog/finishes";
 import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import type { Size } from "@/lib/generated/prisma/enums";
 import { MAX_LAYERS_PER_AREA, MAX_MOTIFS_TOTAL, type DesignLayer, type DesignSpec } from "@/types/design-spec";
@@ -49,6 +50,11 @@ export function isCustomerImageKey(key: string, customerId: string): boolean {
 /** Whether an image file is a cut-out decoration (priced and made like a decoration). Keys are owner-checked separately. */
 export function isCutoutKey(key: string): boolean {
   return /^[0-9a-f-]{36}\/cutouts\//.test(key);
+}
+
+/** What kind of item a layer is, for finishes and pricing. */
+export function finishedKind(layer: DesignLayer): FinishedKind {
+  return layer.kind === "image" ? (isCutoutKey(layer.image.assetKey) ? "cutout" : "image") : layer.kind;
 }
 
 /** Motifs a layer prints: a border counts each repeat; text is not a motif. */
@@ -171,6 +177,13 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
     }
     if (!layerFitsArea(layer, area)) {
       add(path, `An item sticks out of “${area.label}”. Move or shrink it so it fits inside the area.`);
+    }
+    if (layer.finish) {
+      if (!finishesFor(finishedKind(layer)).includes(layer.finish)) {
+        add(`${path}.finish`, `This item can't be made with ${FINISH_LABEL[layer.finish].toLowerCase()}.`);
+      } else if (template.finishes[layer.finish] === null) {
+        add(`${path}.finish`, `${FINISH_LABEL[layer.finish]} isn't available on this ${noun}.`);
+      }
     }
 
     switch (layer.kind) {

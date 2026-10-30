@@ -29,7 +29,7 @@ describe("template config", () => {
 
   it("upgrades v1 configs all the way to v6 with default rects, fonts, add-ons and empty masks", () => {
     const upgraded = parseTemplateConfig(v1);
-    expect(upgraded.schemaVersion).toBe(6);
+    expect(upgraded.schemaVersion).toBe(7);
     expect(upgraded.styleVariants).toEqual([]);
     expect(upgraded.recolor).toBe("multiply");
     expect(upgraded.garmentType).toBe("dress");
@@ -45,27 +45,34 @@ describe("template config", () => {
   });
 
   it("rejects unknown versions and configs without a version", () => {
-    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 7 })).toThrow(TemplateConfigError);
+    expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 8 })).toThrow(TemplateConfigError);
     expect(() => parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 0 })).toThrow(TemplateConfigError);
     expect(() => parseTemplateConfig({ regions: [] })).toThrow(TemplateConfigError);
+  });
+
+  it("upgrades v6 configs by offering embroidery and sequins at the default prices", () => {
+    const { finishes: _f, ...v6 } = DEFAULT_TEMPLATE_CONFIG;
+    expect(parseTemplateConfig({ ...v6, schemaVersion: 6 }).finishes).toEqual({ embroidery: 25_000, sequins: 35_000 });
+    // null switches a finish off.
+    expect(parseTemplateConfig({ ...DEFAULT_TEMPLATE_CONFIG, finishes: { embroidery: null, sequins: 35_000 } }).finishes.embroidery).toBeNull();
   });
 
   it("upgrades v2 configs by adding masks and decorations", () => {
     const { allowedDecorations: _d, styleVariants: _s, recolor: _r, garmentType: _g, ...v2 } = DEFAULT_TEMPLATE_CONFIG;
     const raw = { ...v2, schemaVersion: 2, regions: v2.regions.map(({ masks: _m, ...r }) => r) };
     const upgraded = parseTemplateConfig(raw);
-    expect(upgraded.schemaVersion).toBe(6);
+    expect(upgraded.schemaVersion).toBe(7);
     expect(upgraded.regions.every((r) => JSON.stringify(r.masks) === "{}")).toBe(true);
   });
 
   it("upgrades v3 configs by adding an empty list of style pictures", () => {
-    const { styleVariants: _s, recolor: _r, garmentType: _g, ...v3 } = DEFAULT_TEMPLATE_CONFIG;
+    const { styleVariants: _s, recolor: _r, garmentType: _g, finishes: _f, ...v3 } = DEFAULT_TEMPLATE_CONFIG;
     const upgraded = parseTemplateConfig({ ...v3, schemaVersion: 3 });
-    expect(upgraded).toEqual({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 6, styleVariants: [], recolor: "multiply" });
+    expect(upgraded).toEqual({ ...DEFAULT_TEMPLATE_CONFIG, schemaVersion: 7, styleVariants: [], recolor: "multiply" });
   });
 
   it("upgrades v4 configs to multiply recolouring, and accepts photo templates with a starting style", () => {
-    const { recolor: _r, garmentType: _g, ...v4 } = DEFAULT_TEMPLATE_CONFIG;
+    const { recolor: _r, garmentType: _g, finishes: _f, ...v4 } = DEFAULT_TEMPLATE_CONFIG;
     expect(parseTemplateConfig({ ...v4, schemaVersion: 4 }).recolor).toBe("multiply");
     const photo = { ...DEFAULT_TEMPLATE_CONFIG, recolor: "shade", defaultStyle: { neckline: "v-neck", sleeveLength: "short", dressLength: "midi" } };
     expect(parseTemplateConfig(photo)).toEqual(photo);

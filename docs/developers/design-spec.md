@@ -18,7 +18,7 @@ Schema: [`types/design-spec.ts`](../../types/design-spec.ts) (Zod; TypeScript ty
 
 ### Layers
 
-Every layer has `id`, `areaId`, `x`, `y`, `w`, `h` (fractions of its **placement area**; `x`/`y` is the top-left of the unrotated box) and `rotation` (degrees about the box centre). Then one of:
+Every layer has `id`, `areaId`, `x`, `y`, `w`, `h` (fractions of its **placement area**; `x`/`y` is the top-left of the unrotated box), `rotation` (degrees about the box centre) and an optional **`finish`**: `embroidery` or `sequins` (absent = printed; no version bump). Text may be embroidered; decorations and cut-outs embroidered or sequinned; uploads and AI images only printed (`finishesFor`), and only finishes the template offers (`finishes[f] !== null`). Then one of:
 
 - `text`: `{ content (≤ 60 printable characters), fontId, color }`
 - `image`: `{ assetKey, mirror?, repeat? }`, a file of the customer's own in the `design-assets` bucket: an upload (`uploads/`), an AI motif (`ai/`) or a **decoration cut out of a ClothSeeker dress** (`cutouts/`, see [Cut-outs](#decorations-taken-from-other-dresses)). `mirror` and `repeat` work as for decorations (optional, no version bump).
@@ -49,6 +49,7 @@ The browser builds a spec, but the server **always**:
 | **Layers stay inside their area, including after rotation** (checked in centimetres, ±0.05 cm) | "An item sticks out of “Front chest”…" |
 | Image layers reference **the design owner's own** files (`{customerId}/uploads/`, `ai/` or `cutouts/`) | "That image isn't one of your uploads." |
 | No duplicate layer ids; ≤ 12 layers per area | |
+| A finish suits the item and the garment offers it | "This item can't be made with sequins." / "Embroidery isn't available on this dress." |
 
 ## Pricing
 
@@ -57,7 +58,8 @@ The browser builds a spec, but the server **always**:
 - **Base:** the cheapest active ready-made variant of the dress in the chosen size (`basePriceForSize`).
 - **Style options:** each chosen option's add-on, if any.
 - **Pattern:** `addOns.patternMinor` × the number of patterned parts.
-- **Layers:** `textMinor` per text; `imageMinor` per image motif; `decorationMinor` per decoration motif. A border counts each repeat ("Decoration × 8"; decided 2026-10-30). A cut-out (`cutouts/` key, `isCutoutKey`) is made like a decoration, so it's priced as one.
+- **Finishes:** an embroidered or sequinned item costs `finishes.embroidery` / `finishes.sequins` per item (per motif in a border: "Embroidery × 5") **instead of** its print price.
+- **Layers (printed):** `textMinor` per text; `imageMinor` per image motif; `decorationMinor` per decoration motif. A border counts each repeat ("Decoration × 8"; decided 2026-10-30). A cut-out (`cutouts/` key, `isCutoutKey`) is made like a decoration, so it's priced as one.
 
 The browser uses the same function for the live price. The server's result is the one that counts.
 

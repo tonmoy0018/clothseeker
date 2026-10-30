@@ -251,6 +251,7 @@ docs/developers/
 
 - **Decorations** may be customised (second colour, outline, mirror, a curved border priced per motif) and **taken from other ClothSeeker dresses** (`lib/cutouts/*`): a box on a live product photo is cut out on the server (fabric learned from the box edges, garment outline removes the backdrop) and stored losslessly under `design-assets/{customerId}/cutouts/`, 30 per Dhaka day under an advisory lock.
 - A cut-out is an **image layer** whose key is under `cutouts/` (`isCutoutKey`): priced and described for production as a decoration; under 150 dpi at its printed size it's a reference to recreate, not a print file. Image layers may be mirrored or repeated as a border like decorations; plain layers keep their old render plan (renderer hashes must not change).
+- **Finishes** (`lib/catalog/finishes.ts`, template v7 `finishes`): a layer's optional `finish` (`embroidery`/`sequins`, absent = print) is priced at the finish's own price per item/motif instead of the print price. Text: print or embroidery; decorations and cut-outs: all three; uploads/AI images: print only. Previews texture finished items; production gets a separate placement file per area and finish.
 
 ## Mapping the original build guide
 

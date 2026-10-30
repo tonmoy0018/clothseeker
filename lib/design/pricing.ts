@@ -2,6 +2,8 @@ import type { DesignSpec } from "@/types/design-spec";
 import { GARMENT_TYPES, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
 import { styleOptionsFor, templateStyleGroups, type TemplateConfig } from "@/types/template";
 
+import { FINISH_LABEL, FINISH_IDS } from "@/lib/catalog/finishes";
+
 import { isCutoutKey, layerMotifs } from "./validate";
 
 // Price of a custom design from the template's rules. Pure: the browser uses it for the live
@@ -42,11 +44,14 @@ export function priceDesign(spec: DesignSpec, template: TemplateConfig, basePric
 
   const patterned = Object.values(spec.parts).filter((p) => p.pattern).length;
   const printed = Object.values(spec.parts).filter((p) => p.print).length;
-  const count = (kind: DesignSpec["layers"][number]["kind"]) => spec.layers.filter((l) => l.kind === kind).length;
+  // Embroidered or sequinned items are priced by their finish instead (per motif in a border).
+  const printLayers = spec.layers.filter((l) => !l.finish);
+  const count = (kind: DesignSpec["layers"][number]["kind"]) => printLayers.filter((l) => l.kind === kind).length;
   // A decoration cut out of one of our dresses is made like a decoration; other images are printed.
   const isCutout = (l: DesignSpec["layers"][number]) => l.kind === "image" && isCutoutKey(l.image.assetKey);
-  const motifs = spec.layers.reduce((sum, l) => sum + (l.kind === "decoration" || isCutout(l) ? layerMotifs(l) : 0), 0);
-  const images = spec.layers.reduce((sum, l) => sum + (l.kind === "image" && !isCutout(l) ? layerMotifs(l) : 0), 0);
+  const motifs = printLayers.reduce((sum, l) => sum + (l.kind === "decoration" || isCutout(l) ? layerMotifs(l) : 0), 0);
+  const images = printLayers.reduce((sum, l) => sum + (l.kind === "image" && !isCutout(l) ? layerMotifs(l) : 0), 0);
+  const finished = (finish: (typeof FINISH_IDS)[number]) => spec.layers.reduce((sum, l) => sum + (l.finish === finish ? Math.max(1, layerMotifs(l)) : 0), 0);
   for (const line of [
     countLine("Pattern", patterned, template.addOns.patternMinor),
     // An all-over print is printed fabric: priced like a pattern.
@@ -55,6 +60,7 @@ export function priceDesign(spec: DesignSpec, template: TemplateConfig, basePric
     countLine("Image", images, template.addOns.imageMinor),
     // A border is priced per motif (each repeat is made like one decoration).
     countLine("Decoration", motifs, template.addOns.decorationMinor),
+    ...FINISH_IDS.map((finish) => countLine(FINISH_LABEL[finish], finished(finish), template.finishes[finish] ?? 0)),
   ]) {
     if (line) {
       lines.push(line);

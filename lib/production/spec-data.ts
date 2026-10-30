@@ -2,6 +2,7 @@ import sharp from "sharp";
 
 import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
 import { borderMotifSize, DECORATIONS, type DecorationId, type DecorationRepeat } from "@/lib/catalog/decorations";
+import { FINISH_LABEL } from "@/lib/catalog/finishes";
 import { printDpi, PRINTABLE_DPI } from "@/lib/cutouts/rules";
 import { cutoutsByKey } from "@/lib/cutouts/service";
 import { FONTS } from "@/lib/catalog/fonts";
@@ -102,12 +103,14 @@ export async function specSheetData(
     })),
     layers: spec.data.layers.map((layer) => ({
       area: areaLabel(layer.areaId),
+      // Embroidered and sequinned items say so first; their artwork is in the area's placement file.
       description:
-        layer.kind === "text"
+        (layer.finish ? `${FINISH_LABEL[layer.finish]} (see placement file): ` : "") +
+        (layer.kind === "text"
           ? `Text "${layer.text.content}" - ${FONTS.find((f) => f.id === layer.text.fontId)?.label ?? layer.text.fontId}, ${colourName(layer.text.color, template)}`
           : layer.kind === "decoration"
             ? decorationDescription(layer.decoration, (hex) => colourName(hex, template))
-            : imageDescription(layer, cutouts.get(layer.image.assetKey) ?? null, template?.placementAreas.find((a) => a.id === layer.areaId) ?? null),
+            : imageDescription(layer, cutouts.get(layer.image.assetKey) ?? null, template?.placementAreas.find((a) => a.id === layer.areaId) ?? null)),
     })),
   };
 }

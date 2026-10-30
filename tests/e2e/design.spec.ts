@@ -148,6 +148,32 @@ test.describe("@supabase design screen", () => {
     await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 6");
   });
 
+  test("text can be embroidered and a decoration sequinned, each priced by its finish", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signUpFreshCustomer(page);
+    await openLinenDesigner(page);
+    await openDesignTab(page, "Personalise");
+    await page.getByLabel("New text").fill("Ava");
+    await page.getByRole("button", { name: /^Add text/ }).click();
+    const selected = page.getByTestId("selected-layer");
+    const finish = selected.getByRole("group", { name: "Finish" });
+    // Text can't be sequinned.
+    await expect(finish.getByRole("button", { name: /^Sequins/ })).toHaveCount(0);
+    await finish.getByRole("button", { name: /^Embroidery/ }).click();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Embroidery");
+
+    await page.getByRole("button", { name: "Decorations" }).click();
+    await page.getByRole("button", { name: "Add Star" }).click();
+    await selected.getByRole("group", { name: "Finish" }).getByRole("button", { name: /^Sequins/ }).click();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Sequins");
+    await page.getByRole("button", { name: "Save design" }).click();
+    await expect(page.getByRole("status")).toContainText("Design saved");
+    await expect(page).toHaveURL(/[?&]design=[0-9a-f-]{36}/);
+    await page.reload();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Embroidery");
+    await expect(page.getByTestId("price-breakdown")).toContainText("Sequins");
+  });
+
   test("dresses without a live template show a friendly page", async ({ page }) => {
     await page.goto("/customize/11111111-1111-4111-8111-111111111111");
     await expect(page.getByTestId("not-customizable")).toContainText("This item can't be customized");

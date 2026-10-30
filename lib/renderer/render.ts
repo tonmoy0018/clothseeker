@@ -1,6 +1,7 @@
 import sharp, { type OverlayOptions, type Sharp } from "sharp";
 
 import { decorationLayerSvg, decorationSvg, repeatLayout, type DecorationId, type DecorationRepeat } from "@/lib/catalog/decorations";
+import { FINISH_LABEL, finishTextureSvg, type Finish, type FinishId } from "@/lib/catalog/finishes";
 import { patternSvg } from "@/lib/catalog/patterns";
 import type { AreaPlan, LayerOp, RenderPlan, Side, SidePlan } from "@/lib/design/normalize";
 import { applyFabricField, fabricField } from "@/lib/design/fabric-warp";
@@ -113,7 +114,30 @@ async function imageBorder(source: Buffer, repeat: DecorationRepeat, mirror: boo
   return png(sharp(canvas).extract({ left: pad, top: pad, width: boxW, height: boxH }));
 }
 
-/** Composite operations placing an area's layers onto a canvas region of areaW×areaH at (offsetX, offsetY). */
+/**
+ * How an embroidered or sequinned item looks in a preview: the finish's texture laid over the item
+ * (only where it's drawn), and a soft shadow because it stands up from the fabric.
+ */
+async function withFinish(image: Buffer, finish: FinishId, boxW: number, boxH: number, pxPerCm: number): Promise<Buffer> {
+  const texture = await png(sharp(Buffer.from(finishTextureSvg(finish, boxW, boxH, pxPerCm))).resize(boxW, boxH, { fit: "fill" }));
+  const textured = await png(sharp(image).composite([{ input: texture, blend: "atop" }]));
+  const alpha = await sharp(image).ensureAlpha().extractChannel(3).raw().toBuffer();
+  const shadowAlpha = Buffer.from(alpha.map((a) => Math.round(a * 0.45)));
+  const shadow = await png(sharp(await rgbaFrom(Buffer.alloc(boxW * boxH * 3), shadowAlpha, boxW, boxH)).blur(Math.max(0.6, pxPerCm * 0.05)));
+  const offset = Math.max(1, Math.round(pxPerCm * 0.04));
+  return png(
+    sharp({ create: { width: boxW, height: boxH, channels: 4, background: CLEAR } }).composite([
+      { input: shadow, left: offset, top: offset },
+      { input: textured, left: 0, top: 0 },
+    ]),
+  );
+}
+
+/**
+ * Composite operations placing an area's layers onto a canvas region of areaW×areaH at (offsetX, offsetY).
+ * `finishes: "look"` draws embroidery/sequins as they'll look (previews); "flat" draws only the artwork
+ * (production files). `only` keeps the layers of one finish.
+ */
 async function layerOverlays(
   area: AreaPlan,
   areaW: number,
@@ -123,12 +147,18 @@ async function layerOverlays(
   canvasW: number,
   canvasH: number,
   assets: Assets,
+  options: { finishes: "look" | "flat"; only?: Finish } = { finishes: "look" },
 ): Promise<OverlayOptions[]> {
   const overlays: OverlayOptions[] = [];
+  const pxPerCm = areaW / Math.max(0.1, area.widthCm);
   for (const op of area.layers) {
+    if (options.only && (op.finish ?? "print") !== options.only) continue;
     const boxW = Math.max(1, Math.round(op.w * areaW));
     const boxH = Math.max(1, Math.round(op.h * areaH));
     let image = await renderLayerBox(op, boxW, boxH, assets);
+    if (op.finish && options.finishes === "look") {
+      image = await withFinish(image, op.finish, boxW, boxH, pxPerCm);
+    }
     let width = boxW;
     let height = boxH;
     if (op.rotation !== 0) {
@@ -365,12 +395,21 @@ export function printPixels(widthCm: number, heightCm: number): { width: number;
 /** Width of the garment outline used to trim print files (cropped to the area, then scaled up). */
 const OUTLINE_WIDTH = 1200;
 
-/** 3. One transparent PNG per placement area that has layers (300 DPI, less for very large areas). */
+/**
+ * 3. One transparent PNG per placement area with printed items (300 DPI, less for very large areas), and
+ * one placement file per area and finish for embroidered or sequinned items (the artwork at real size,
+ * for the embroidery or sequin work; labelled with the finish).
+ */
 export async function renderPrintFiles(plan: RenderPlan, assets: Assets): Promise<PrintFile[]> {
   const files: PrintFile[] = [];
-  for (const area of plan.printAreas) {
+  const jobs = plan.printAreas.flatMap((area) =>
+    (["print", "embroidery", "sequins"] as const)
+      .filter((finish) => area.layers.some((l) => (l.finish ?? "print") === finish))
+      .map((finish) => ({ area, finish })),
+  );
+  for (const { area, finish } of jobs) {
     const { width, height, dpi } = printPixels(area.widthCm, area.heightCm);
-    const overlays = await layerOverlays(area, width, height, 0, 0, width, height, assets);
+    const overlays = await layerOverlays(area, width, height, 0, 0, width, height, assets, { finishes: "flat", only: finish });
     let data: Buffer;
     if (area.clipToFabric && area.fabricMaskKeys.length > 0) {
       // The garment outline inside the area, at print size: only what lands on fabric is printed.
@@ -395,7 +434,10 @@ export async function renderPrintFiles(plan: RenderPlan, assets: Assets): Promis
       const canvas = sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
       data = await canvas.composite(overlays).withMetadata({ density: dpi }).png({ compressionLevel: 9 }).toBuffer();
     }
-    files.push({ areaId: area.areaId, label: area.label, widthPx: width, heightPx: height, widthCm: area.widthCm, heightCm: area.heightCm, png: data });
+    // Printed items keep the area's own id and label, as before finishes existed.
+    const areaId = finish === "print" ? area.areaId : `${area.areaId}-${finish}`;
+    const label = finish === "print" ? area.label : `${area.label}: ${FINISH_LABEL[finish].toLowerCase()} placement`;
+    files.push({ areaId, label, widthPx: width, heightPx: height, widthCm: area.widthCm, heightCm: area.heightCm, png: data });
   }
   // All-over prints: one repeat at real size; the print shop repeats it across the part's fabric.
   for (const tile of plan.printTiles) {

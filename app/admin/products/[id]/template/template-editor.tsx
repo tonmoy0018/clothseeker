@@ -12,6 +12,7 @@ import { PATTERNS } from "@/lib/catalog/patterns";
 import { MINOR_PER_MAJOR } from "@/lib/money";
 import { uniqueSlug } from "@/lib/text/slug";
 import { cn } from "@/lib/utils";
+import { DEFAULT_FINISH_PRICES, FINISH_IDS, FINISH_LABEL } from "@/lib/catalog/finishes";
 import { GARMENT_TYPES, STYLE_GROUP_IDS, STYLE_GROUP_LABEL, type StyleGroup } from "@/lib/catalog/garment-types";
 import { styleOptionsFor, templateStyleGroups, type StyleOption, type TemplateConfig } from "@/types/template";
 
@@ -474,6 +475,39 @@ export function TemplateEditor(props: TemplateEditorProps) {
           {(Object.keys(ADD_ON_LABEL) as (keyof TemplateConfig["addOns"])[]).map((key) => (
             <LabeledNumber key={key} label={`${ADD_ON_LABEL[key]} (৳)`} value={toTaka(config.addOns[key])} step={50} onChange={(v) => update((c) => ({ ...c, addOns: { ...c.addOns, [key]: toMinor(String(v)) } }))} />
           ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Finishes"
+        description="Besides print, text can be embroidered, and decorations and cut-outs embroidered or sequinned. A finished item costs this price instead of its print price (per motif in a border). Photos and logos are always printed."
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {FINISH_IDS.map((finish) => {
+            const price = config.finishes[finish];
+            return (
+              <div key={finish} className="flex items-end gap-3">
+                <label className="flex items-center gap-2 pb-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={price !== null}
+                    onChange={(e) => update((c) => ({ ...c, finishes: { ...c.finishes, [finish]: e.target.checked ? DEFAULT_FINISH_PRICES[finish] : null } }))}
+                  />
+                  Offer {FINISH_LABEL[finish].toLowerCase()}
+                </label>
+                {price !== null && (
+                  <LabeledNumber
+                    label={`${FINISH_LABEL[finish]} per item (৳)`}
+                    value={toTaka(price)}
+                    step={50}
+                    className="w-40"
+                    onChange={(v) => update((c) => ({ ...c, finishes: { ...c.finishes, [finish]: toMinor(String(v)) } }))}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </Section>
     </div>

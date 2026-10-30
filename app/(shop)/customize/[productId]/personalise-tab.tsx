@@ -7,8 +7,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DECORATIONS, decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
+import { FINISH_LABEL, finishesFor, type Finish } from "@/lib/catalog/finishes";
 import { FONTS, type FontId } from "@/lib/catalog/fonts";
-import { isCutoutKey } from "@/lib/design/validate";
+import { finishedKind, isCutoutKey } from "@/lib/design/validate";
 import { formatBDT } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { DesignLayer } from "@/types/design-spec";
@@ -120,6 +121,7 @@ export function PersonaliseTab(props: {
               ))}
             </div>
           )}
+          <FinishChoice layer={selectedLayer} config={config} onChange={(finish) => props.onUpdateLayer(selectedLayer.id, (l) => withFinish(l, finish))} />
           {selectedLayer.kind === "decoration" && (
             <DecorationControls
               layer={selectedLayer}
@@ -254,6 +256,33 @@ export function PersonaliseTab(props: {
       </div>
     </div>
   );
+}
+
+/** Print, embroidery or sequins, for the kinds of item and finishes this garment offers, with their prices. */
+function FinishChoice({ layer, config, onChange }: { layer: DesignLayer; config: TemplateConfig; onChange: (finish: Finish) => void }) {
+  const kind = finishedKind(layer);
+  const offered = finishesFor(kind).filter((f) => f === "print" || config.finishes[f] !== null);
+  if (offered.length < 2) return null;
+  const printPrice = kind === "text" ? config.addOns.textMinor : kind === "image" ? config.addOns.imageMinor : config.addOns.decorationMinor;
+  const price = (f: Finish) => (f === "print" ? printPrice : (config.finishes[f] ?? 0));
+  const current = layer.finish ?? "print";
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground">Finish</span>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Finish">
+        {offered.map((f) => (
+          <Button key={f} size="sm" variant={current === f ? "default" : "outline"} aria-pressed={current === f} onClick={() => onChange(f)}>
+            {FINISH_LABEL[f]} ({formatBDT(price(f))})
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function withFinish(layer: DesignLayer, finish: Finish): DesignLayer {
+  const { finish: _old, ...rest } = layer;
+  return finish === "print" ? { ...rest } : { ...rest, finish };
 }
 
 function DecorationIcon({ id }: { id: DecorationId }) {

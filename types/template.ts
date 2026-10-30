@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DECORATION_IDS } from "@/lib/catalog/decorations";
+import { DEFAULT_FINISH_PRICES } from "@/lib/catalog/finishes";
 import { GARMENT_TYPE_IDS, GARMENT_TYPES, STYLE_GROUP_IDS, STYLE_GROUP_LABEL, styleGroupsOf, type StyleGroup } from "@/lib/catalog/garment-types";
 import { FONT_IDS } from "@/lib/catalog/fonts";
 import { PATTERN_IDS } from "@/lib/catalog/patterns";
@@ -12,7 +13,7 @@ import { isSafeObjectKey } from "@/lib/storage/object-key";
 // `parseTemplateConfig()`, which upgrades older versions to the current one.
 // To change the shape: add a new version schema, an upgrade step, and bump TEMPLATE_CONFIG_VERSION.
 
-export const TEMPLATE_CONFIG_VERSION = 6;
+export const TEMPLATE_CONFIG_VERSION = 7;
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "Use lowercase letters, numbers and hyphens");
 const label = z.string().trim().min(1, "Required").max(40);
@@ -114,7 +115,7 @@ export const MAX_STYLE_VARIANTS = 256;
 
 export const templateConfigSchema = z
   .object({
-    schemaVersion: z.literal(6),
+    schemaVersion: z.literal(7),
     garmentType: z.enum(GARMENT_TYPE_IDS),
     garmentImages: z.object({ front: storageKey.optional(), back: storageKey.optional() }),
     regions: z.array(templateRegionSchema).min(1, "Add at least one region").max(12),
@@ -134,6 +135,11 @@ export const templateConfigSchema = z
       patternMinor: priceMinor,
       decorationMinor: priceMinor,
     }),
+    /**
+     * Price per item (per motif in a border) of each finish besides print, or null when this garment
+     * doesn't offer it. A finished item costs this instead of its print price.
+     */
+    finishes: z.object({ embroidery: priceMinor.nullable(), sequins: priceMinor.nullable() }),
     styleVariants: z.array(styleVariantSchema).max(MAX_STYLE_VARIANTS),
     recolor: z.enum(["multiply", "shade"]),
     /** Style a new design starts with (e.g. the one the dress's photo shows). Defaults to each group's first option. */
@@ -241,6 +247,13 @@ function upgradeV5(v5: z.infer<typeof templateConfigV5Shape>): unknown {
   return { ...v5, schemaVersion: 6, garmentType: "dress" };
 }
 
+/** v6 → v7: every template offers embroidery and sequins at the default prices. */
+const templateConfigV6Shape = z.looseObject({ schemaVersion: z.literal(6) });
+
+function upgradeV6(v6: z.infer<typeof templateConfigV6Shape>): unknown {
+  return { ...v6, schemaVersion: 7, finishes: { ...DEFAULT_FINISH_PRICES } };
+}
+
 /** v4 → v5: existing templates recolour by multiplying. */
 const templateConfigV4Shape = z.looseObject({ schemaVersion: z.literal(4) });
 
@@ -277,6 +290,9 @@ export function parseTemplateConfig(raw: unknown): TemplateConfig {
   }
   if (v <= 5) {
     candidate = upgradeV5(templateConfigV5Shape.parse(candidate));
+  }
+  if (v <= 6) {
+    candidate = upgradeV6(templateConfigV6Shape.parse(candidate));
   }
   return templateConfigSchema.parse(candidate);
 }

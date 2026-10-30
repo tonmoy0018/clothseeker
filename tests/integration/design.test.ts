@@ -42,6 +42,18 @@ async function expectDesignError(promise: Promise<unknown>, code: DesignError["c
 }
 
 describe("saveDesign", () => {
+  it("prices embroidered items by their finish, and refuses a finish the team switched off", async () => {
+    const { product, template } = await customizableProduct();
+    const customer = await createUser();
+    const base = specFor(product, template);
+    const spec = { ...base, layers: base.layers.map((l) => (l.kind === "text" ? { ...l, finish: "embroidery" as const } : l)) };
+    const saved = await saveDesign(db, storage, customer, { spec });
+    expect(saved.price.lines).toContainEqual({ label: "Embroidery", amountMinor: TEMPLATE.finishes.embroidery ?? 0 });
+
+    await db.customizationTemplate.update({ where: { id: template.id }, data: { config: { ...TEMPLATE, finishes: { embroidery: null, sequins: 35_000 } } } });
+    await expectDesignError(saveDesign(db, storage, customer, { designId: saved.designId, spec }), "INVALID");
+  });
+
   it("saves a valid design, stamps the current template version, prices it and stores a preview", async () => {
     const customer = await createUser();
     const { product, template } = await customizableProduct();

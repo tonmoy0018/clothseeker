@@ -1,4 +1,5 @@
 import type { DecorationId, DecorationLook, DecorationRepeat } from "@/lib/catalog/decorations";
+import type { FinishId } from "@/lib/catalog/finishes";
 import type { FontId } from "@/lib/catalog/fonts";
 import type { PatternId } from "@/lib/catalog/patterns";
 import type { DesignSpec } from "@/types/design-spec";
@@ -40,6 +41,8 @@ export type LayerOp = {
   h: number;
   /** Degrees, rounded to 0.1. */
   rotation: number;
+  /** Embroidered or sequinned; absent for printed items (so their plan is unchanged). */
+  finish?: FinishId;
 } & (
   | { kind: "text"; content: string; fontId: FontId; color: string }
   | { kind: "image"; assetKey: string; mirror?: true; repeat?: DecorationRepeat }
@@ -95,7 +98,7 @@ const r4 = (v: number) => Math.round(v * 10_000) / 10_000;
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
 function toOp(layer: DesignSpec["layers"][number]): LayerOp {
-  const box = { id: layer.id, x: r4(layer.x), y: r4(layer.y), w: r4(layer.w), h: r4(layer.h), rotation: r1(layer.rotation) };
+  const box = { id: layer.id, x: r4(layer.x), y: r4(layer.y), w: r4(layer.w), h: r4(layer.h), rotation: r1(layer.rotation), ...(layer.finish ? { finish: layer.finish } : {}) };
   switch (layer.kind) {
     case "text":
       return { ...box, kind: "text", content: layer.text.content, fontId: layer.text.fontId, color: layer.text.color.toLowerCase() };

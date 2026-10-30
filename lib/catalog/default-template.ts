@@ -1,4 +1,5 @@
 import { DECORATION_IDS } from "@/lib/catalog/decorations";
+import { DEFAULT_FINISH_PRICES } from "@/lib/catalog/finishes";
 import type { GarmentType } from "@/lib/catalog/garment-types";
 import { DEFAULT_ADD_ONS, TEMPLATE_CONFIG_VERSION, type TemplateConfig } from "@/types/template";
 
@@ -76,6 +77,7 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
   allowedFonts: ["inter", "playfair-display", "dancing-script", "montserrat"],
   allowedDecorations: [...DECORATION_IDS],
   addOns: DEFAULT_ADD_ONS,
+  finishes: { ...DEFAULT_FINISH_PRICES },
   styleVariants: [],
   recolor: "multiply",
 };

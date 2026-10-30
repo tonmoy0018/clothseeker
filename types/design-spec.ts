@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DECORATION_IDS, OUTLINE_WIDTH, REPEAT_COUNT } from "@/lib/catalog/decorations";
+import { FINISH_IDS } from "@/lib/catalog/finishes";
 import { FONT_IDS } from "@/lib/catalog/fonts";
 import { STYLE_GROUP_IDS } from "@/lib/catalog/garment-types";
 import { PATTERN_IDS } from "@/lib/catalog/patterns";
@@ -42,6 +43,8 @@ const layerBox = {
   w: fraction.positive(),
   h: fraction.positive(),
   rotation: z.number().min(-180).max(180),
+  /** How it's made: embroidered or sequinned; absent = printed. Allowed finishes depend on the kind (validate.ts). */
+  finish: z.enum(FINISH_IDS).optional(),
 };
 
 export const textLayerSchema = z.object({

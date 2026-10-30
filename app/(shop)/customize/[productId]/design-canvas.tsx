@@ -4,6 +4,7 @@ import type { Canvas as FabricCanvas, FabricObject } from "fabric";
 import { useEffect, useRef, useState } from "react";
 
 import { decorationLayerSvg, decorationSvg, isPlainDecoration, repeatLayout, type DecorationRepeat } from "@/lib/catalog/decorations";
+import { finishTextureSvg, type FinishId } from "@/lib/catalog/finishes";
 import { FONTS } from "@/lib/catalog/fonts";
 import { applyFabricField, type FabricField } from "@/lib/design/fabric-warp";
 import { layerFitsArea } from "@/lib/design/validate";
@@ -151,6 +152,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
           } else {
             object = new module.FabricImage(picture);
           }
+        }
+        if (layer.finish) {
+          const box = areaPx(area);
+          object = await finishedObject(module, object, layer.finish, box.width / area.widthCm, layer.w * box.width, layer.h * box.height);
         }
         const px = areaPx(area);
         const boxW = layer.w * px.width;
@@ -354,4 +359,26 @@ function imageLayerCanvas(picture: HTMLImageElement, look: { mirror?: boolean; r
     context.restore();
   }
   return canvas;
+}
+
+/**
+ * An embroidered or sequinned item as the renderer draws it: the finish's texture over the item (only
+ * where it's drawn) and a soft shadow, at the stitch and sequin sizes it will have on the garment.
+ */
+async function finishedObject(module: FabricModule, object: FabricObject, finish: FinishId, pxPerCm: number, boxW: number, boxH: number): Promise<FabricObject> {
+  const source = object.toCanvasElement({ multiplier: 1, enableRetinaScaling: false, withoutTransform: true, withoutShadow: true });
+  const fit = Math.min(boxW / Math.max(1, source.width), boxH / Math.max(1, source.height));
+  // The item is drawn at `fit` on the canvas, so its own pixels per cm are pxPerCm / fit.
+  const ownPxPerCm = pxPerCm / Math.max(fit, 1e-6);
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext("2d");
+  if (!context) return object;
+  context.drawImage(source, 0, 0);
+  context.globalCompositeOperation = "source-atop";
+  context.drawImage(await loadImage(decorationDataUrl(finishTextureSvg(finish, canvas.width, canvas.height, ownPxPerCm))), 0, 0);
+  const finished = new module.FabricImage(canvas);
+  finished.shadow = new module.Shadow({ color: "rgba(0,0,0,0.4)", blur: ownPxPerCm * 0.1, offsetX: ownPxPerCm * 0.04, offsetY: ownPxPerCm * 0.04 });
+  return finished;
 }
