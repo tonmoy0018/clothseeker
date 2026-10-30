@@ -106,6 +106,48 @@ test.describe("@supabase design screen", () => {
     await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 9");
   });
 
+  test("a decoration taken from another dress is cut out, recoloured and used as a priced border", async ({ page }) => {
+    test.setTimeout(120_000);
+    await signUpFreshCustomer(page);
+    await openLinenDesigner(page);
+    await openDesignTab(page, "Personalise");
+    await page.getByRole("button", { name: "From another dress" }).click();
+    await page.getByRole("button", { name: "Take a decoration from a dress" }).click();
+    const dialog = page.getByTestId("cutout-dialog");
+    await dialog.getByRole("button", { name: "Embroidered Eid Panjabi" }).click();
+    // Draw a box around the embroidered placket.
+    const picture = dialog.getByTestId("cutout-photo");
+    await expect(picture.getByRole("img")).toBeVisible();
+    const area = await picture.boundingBox();
+    if (!area) throw new Error("no photo");
+    await page.mouse.move(area.x + area.width * 0.43, area.y + area.height * 0.23);
+    await page.mouse.down();
+    await page.mouse.move(area.x + area.width * 0.57, area.y + area.height * 0.52, { steps: 8 });
+    await page.mouse.up();
+    await dialog.getByRole("button", { name: "Cut out", exact: true }).click();
+    const result = dialog.getByTestId("cutout-result");
+    await expect(result.getByRole("img", { name: "Decoration cut out of Embroidered Eid Panjabi" })).toBeVisible({ timeout: 30_000 });
+    await expect(dialog).toContainText("29 cut-outs left today");
+    // Swap its first colour for one of this dress's colours.
+    await result.getByLabel("New colour for colour 1").selectOption({ index: 1 });
+    await result.getByRole("button", { name: "Apply colours" }).click();
+    await expect(dialog).toContainText("28 cut-outs left today");
+    await result.getByRole("button", { name: "Use on my design" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const selected = page.getByTestId("selected-layer");
+    await expect(selected).toContainText("Selected decoration (from a dress)");
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration");
+    await selected.getByTestId("image-controls").getByRole("button", { name: "Mirror" }).click();
+    await selected.getByLabel("Repeat as a border").check();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 6");
+    await page.getByRole("button", { name: "Save design" }).click();
+    await expect(page.getByRole("status")).toContainText("Design saved");
+    await expect(page).toHaveURL(/[?&]design=[0-9a-f-]{36}/);
+    await page.reload();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 6");
+  });
+
   test("dresses without a live template show a friendly page", async ({ page }) => {
     await page.goto("/customize/11111111-1111-4111-8111-111111111111");
     await expect(page.getByTestId("not-customizable")).toContainText("This item can't be customized");

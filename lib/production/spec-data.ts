@@ -1,7 +1,9 @@
 import sharp from "sharp";
 
 import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
-import { DECORATIONS, type DecorationId } from "@/lib/catalog/decorations";
+import { borderMotifSize, DECORATIONS, type DecorationId, type DecorationRepeat } from "@/lib/catalog/decorations";
+import { printDpi, PRINTABLE_DPI } from "@/lib/cutouts/rules";
+import { cutoutsByKey } from "@/lib/cutouts/service";
 import { FONTS } from "@/lib/catalog/fonts";
 import { PATTERNS } from "@/lib/catalog/patterns";
 import type { PrismaClient } from "@/lib/db/client";
@@ -80,6 +82,7 @@ export async function specSheetData(
 
   const regionLabel = (id: string) => template?.regions.find((r) => r.id === id)?.label ?? id;
   const areaLabel = (id: string) => template?.placementAreas.find((a) => a.id === id)?.label ?? id;
+  const cutouts = await cutoutsByKey(db, spec.data.layers.flatMap((l) => (l.kind === "image" ? [l.image.assetKey] : [])));
 
   return {
     ...base,
@@ -104,9 +107,33 @@ export async function specSheetData(
           ? `Text "${layer.text.content}" - ${FONTS.find((f) => f.id === layer.text.fontId)?.label ?? layer.text.fontId}, ${colourName(layer.text.color, template)}`
           : layer.kind === "decoration"
             ? decorationDescription(layer.decoration, (hex) => colourName(hex, template))
-            : "Customer image (see print file)",
+            : imageDescription(layer, cutouts.get(layer.image.assetKey) ?? null, template?.placementAreas.find((a) => a.id === layer.areaId) ?? null),
     })),
   };
+}
+
+/**
+ * An image layer for production: the customer's image, or a decoration cut out of one of our dresses
+ * (named, so the team can look at the original). A cut-out too coarse for its printed size is a
+ * reference to recreate (e.g. embroider), not a file to print.
+ */
+export function imageDescription(
+  layer: { w: number; h: number; image: { mirror?: boolean; repeat?: DecorationRepeat } },
+  cutout: { productName: string; width: number; height: number } | null,
+  area: { widthCm: number; heightCm: number } | null,
+): string {
+  const { mirror, repeat } = layer.image;
+  const parts = [cutout ? `Decoration taken from "${cutout.productName}"` : "Customer image"];
+  if (repeat) parts.push(`× ${repeat.count} border${Math.abs(repeat.curve) >= 0.05 ? (repeat.curve > 0 ? ", curved down" : ", curved up") : ""}`);
+  if (mirror) parts.push("mirrored");
+  if (cutout && area) {
+    const motifCm = repeat ? borderMotifSize(layer.h * area.heightCm, repeat.curve) : null;
+    const dpi = printDpi(cutout, motifCm ? { width: motifCm, height: motifCm } : { width: layer.w * area.widthCm, height: layer.h * area.heightCm });
+    parts.push(dpi < PRINTABLE_DPI ? `reference only (${dpi} dpi): recreate it from the original dress, don't print` : "see print file");
+  } else {
+    parts.push("see print file");
+  }
+  return parts.join(", ");
 }
 
 /** e.g. "Flower × 12 border, curved down, Gold with Ivory centre detail, outline, mirrored". */

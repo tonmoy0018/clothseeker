@@ -1,7 +1,8 @@
-import { motifCount } from "@/lib/catalog/decorations";
 import type { DesignSpec } from "@/types/design-spec";
 import { GARMENT_TYPES, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
 import { styleOptionsFor, templateStyleGroups, type TemplateConfig } from "@/types/template";
+
+import { isCutoutKey, layerMotifs } from "./validate";
 
 // Price of a custom design from the template's rules. Pure: the browser uses it for the live
 // price, and the server recomputes it from trusted data at every save, add-to-cart and checkout.
@@ -42,13 +43,16 @@ export function priceDesign(spec: DesignSpec, template: TemplateConfig, basePric
   const patterned = Object.values(spec.parts).filter((p) => p.pattern).length;
   const printed = Object.values(spec.parts).filter((p) => p.print).length;
   const count = (kind: DesignSpec["layers"][number]["kind"]) => spec.layers.filter((l) => l.kind === kind).length;
-  const motifs = spec.layers.reduce((sum, l) => sum + (l.kind === "decoration" ? motifCount(l.decoration.repeat) : 0), 0);
+  // A decoration cut out of one of our dresses is made like a decoration; other images are printed.
+  const isCutout = (l: DesignSpec["layers"][number]) => l.kind === "image" && isCutoutKey(l.image.assetKey);
+  const motifs = spec.layers.reduce((sum, l) => sum + (l.kind === "decoration" || isCutout(l) ? layerMotifs(l) : 0), 0);
+  const images = spec.layers.reduce((sum, l) => sum + (l.kind === "image" && !isCutout(l) ? layerMotifs(l) : 0), 0);
   for (const line of [
     countLine("Pattern", patterned, template.addOns.patternMinor),
     // An all-over print is printed fabric: priced like a pattern.
     countLine("All-over print", printed, template.addOns.patternMinor),
     countLine("Text", count("text"), template.addOns.textMinor),
-    countLine("Image", count("image"), template.addOns.imageMinor),
+    countLine("Image", images, template.addOns.imageMinor),
     // A border is priced per motif (each repeat is made like one decoration).
     countLine("Decoration", motifs, template.addOns.decorationMinor),
   ]) {

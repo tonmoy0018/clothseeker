@@ -36,6 +36,7 @@ model User {
   tryOnPhotos   TryOnPhoto[]
   tryOnResults  TryOnResult[]
   aiLimitHits   AiLimitHit[]
+  cutouts       DecorationCutout[]
   notifications Notification[]
   quoteRequests QuoteRequest[]
   reviews       Review[]
@@ -103,6 +104,7 @@ model Product {
   designs  Design[]
   reviews  Review[]
   tryOns   TryOnResult[]
+  cutouts  DecorationCutout[]
 
   @@index([status, categoryId])
   @@index([status, garmentType])
@@ -772,6 +774,7 @@ enum AiLimitFeature {
   DESIGN_ROUND
   TRY_ON
   SUBMISSIONS
+  CUTOUT
 }
 
 /// A customer was refused because a daily AI limit was reached (for the AI metrics page).
@@ -785,6 +788,31 @@ model AiLimitHit {
 
   @@index([createdAt])
   @@map("ai_limit_hits")
+}
+
+/// A decoration a customer cut out of a ClothSeeker product photo, to use as an image layer.
+/// The file is design-assets `{customerId}/cutouts/…`; designs reference it by `imageKey`.
+model DecorationCutout {
+  id          String   @id @default(uuid()) @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  /// The dress it was taken from (kept by name if the product is deleted).
+  productId   String?  @map("product_id") @db.Uuid
+  productName String   @map("product_name")
+  imageIndex  Int      @map("image_index")
+  /// The box on the photo, as fractions {x, y, w, h}, plus strength and colour swaps.
+  settings    Json
+  imageKey    String   @unique @map("image_key")
+  width       Int
+  height      Int
+  /// Main colours of the cut-out (hex), before swaps.
+  palette     String[]
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  customer User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt])
+  @@map("decoration_cutouts")
 }
 
 /// Last sign of life of each worker process, with the providers it runs (for the AI metrics page).

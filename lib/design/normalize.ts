@@ -42,7 +42,7 @@ export type LayerOp = {
   rotation: number;
 } & (
   | { kind: "text"; content: string; fontId: FontId; color: string }
-  | { kind: "image"; assetKey: string }
+  | { kind: "image"; assetKey: string; mirror?: true; repeat?: DecorationRepeat }
   | { kind: "decoration"; decorationId: DecorationId; color: string; look?: DecorationLook; repeat?: DecorationRepeat }
 );
 
@@ -99,8 +99,12 @@ function toOp(layer: DesignSpec["layers"][number]): LayerOp {
   switch (layer.kind) {
     case "text":
       return { ...box, kind: "text", content: layer.text.content, fontId: layer.text.fontId, color: layer.text.color.toLowerCase() };
-    case "image":
-      return { ...box, kind: "image", assetKey: layer.image.assetKey };
+    case "image": {
+      // Plain images keep their old plan exactly; mirror and border only when chosen.
+      const op: LayerOp = { ...box, kind: "image", assetKey: layer.image.assetKey };
+      const repeat = layer.image.repeat ? { count: layer.image.repeat.count, curve: Math.round(layer.image.repeat.curve * 100) / 100 } : null;
+      return { ...op, ...(layer.image.mirror ? { mirror: true as const } : {}), ...(repeat ? { repeat } : {}) };
+    }
     case "decoration": {
       const d = layer.decoration;
       const color = d.color.toLowerCase();

@@ -247,6 +247,11 @@ docs/developers/
   - The worker sends them (`sendQueuedEmails`). The payload holds ids only; templates never include address, phone or images.
   - Locally emails go to Mailpit (http://127.0.0.1:55424).
 
+## Implementation conventions (decorations, after Phase 8)
+
+- **Decorations** may be customised (second colour, outline, mirror, a curved border priced per motif) and **taken from other ClothSeeker dresses** (`lib/cutouts/*`): a box on a live product photo is cut out on the server (fabric learned from the box edges, garment outline removes the backdrop) and stored losslessly under `design-assets/{customerId}/cutouts/`, 30 per Dhaka day under an advisory lock.
+- A cut-out is an **image layer** whose key is under `cutouts/` (`isCutoutKey`): priced and described for production as a decoration; under 150 dpi at its printed size it's a reference to recreate, not a print file. Image layers may be mirrored or repeated as a border like decorations; plain layers keep their old render plan (renderer hashes must not change).
+
 ## Mapping the original build guide
 
 The phase prompts in *Enhanced_Claude_Code_Build_Prompts.pdf* were written for a marketplace. When following them, apply this file instead:
@@ -292,6 +297,7 @@ Run everything and fix all errors. Write or update tests for the changed busines
 
 - **Missed 24-hour acceptance deadline → full automatic refund** of the custom item (confirmed 2026-10-09). Same outcome when the team declines a custom item.
 - **Quotes stay valid for 7 days** after the team sends a price (confirmed 2026-10-09). An unaccepted quote then expires automatically, and the customer can request a new one.
+- **Borders are priced per motif** (decided 2026-10-30): a repeated decoration costs one decoration add-on for each motif, because each is printed or stitched separately.
 
 ## Open decisions (resolve before the phase that needs them)
 

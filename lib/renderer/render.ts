@@ -1,6 +1,6 @@
 import sharp, { type OverlayOptions, type Sharp } from "sharp";
 
-import { decorationLayerSvg, decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
+import { decorationLayerSvg, decorationSvg, repeatLayout, type DecorationId, type DecorationRepeat } from "@/lib/catalog/decorations";
 import { patternSvg } from "@/lib/catalog/patterns";
 import type { AreaPlan, LayerOp, RenderPlan, Side, SidePlan } from "@/lib/design/normalize";
 import { applyFabricField, fabricField } from "@/lib/design/fabric-warp";
@@ -81,13 +81,36 @@ async function renderLayerBox(op: LayerOp, boxW: number, boxH: number, assets: A
     }
     case "image": {
       const source = await assets.upload(op.assetKey);
-      return png(
-        sharp(source)
-          .ensureAlpha()
-          .resize(boxW, boxH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }),
-      );
+      if (op.repeat) {
+        return imageBorder(source, op.repeat, op.mirror === true, boxW, boxH);
+      }
+      const image = sharp(source)
+        .ensureAlpha()
+        .resize(boxW, boxH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } });
+      return png(op.mirror ? image.flop() : image);
     }
   }
+}
+
+const CLEAR = { r: 0, g: 0, b: 0, alpha: 0 };
+
+/** An image repeated along a (curved) row, like a decoration border: same layout as decorationLayerSvg. */
+async function imageBorder(source: Buffer, repeat: DecorationRepeat, mirror: boolean, boxW: number, boxH: number): Promise<Buffer> {
+  const places = repeatLayout(repeat.count, repeat.curve, boxW, boxH);
+  const size = Math.max(1, Math.round(places[0]?.size ?? 1));
+  let motif = sharp(source).ensureAlpha().resize(size, size, { fit: "contain", background: CLEAR });
+  if (mirror) motif = motif.flop();
+  const one = await png(motif);
+  // Drawn on a canvas with a margin (rotated motifs can reach past the box), then cut to the box.
+  const pad = size;
+  const overlays: OverlayOptions[] = [];
+  for (const p of places) {
+    const angle = Math.round(p.angle * 10) / 10;
+    const turned = angle === 0 ? { data: one, info: { width: size, height: size } } : await sharp(one).rotate(angle, { background: CLEAR }).png().toBuffer({ resolveWithObject: true });
+    overlays.push({ input: turned.data, left: Math.round(pad + p.x - turned.info.width / 2), top: Math.round(pad + p.y - turned.info.height / 2) });
+  }
+  const canvas = await png(sharp({ create: { width: boxW + 2 * pad, height: boxH + 2 * pad, channels: 4, background: CLEAR } }).composite(overlays));
+  return png(sharp(canvas).extract({ left: pad, top: pad, width: boxW, height: boxH }));
 }
 
 /** Composite operations placing an area's layers onto a canvas region of areaW×areaH at (offsetX, offsetY). */

@@ -118,6 +118,7 @@ export async function getAiMetrics(db: PrismaClient, actor: Actor, now: Date = n
       DESIGN_ROUND: hitsToday.filter((h) => h.feature === "DESIGN_ROUND").length,
       TRY_ON: hitsToday.filter((h) => h.feature === "TRY_ON").length,
       SUBMISSIONS: hitsToday.filter((h) => h.feature === "SUBMISSIONS").length,
+      CUTOUT: hitsToday.filter((h) => h.feature === "CUTOUT").length,
     },
     limitHitSeries: dailyCounts(hits.map((h) => h.createdAt), now),
     workers: workers.map((w) => ({ workerId: w.workerId, planner: w.planner, image: w.image, tryOn: w.tryOn, lastSeenAt: w.lastSeenAt, startedAt: w.startedAt })),

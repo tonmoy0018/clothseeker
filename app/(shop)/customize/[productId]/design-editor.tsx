@@ -23,6 +23,7 @@ import { designSpecSchema, type DesignLayer, type DesignSpec } from "@/types/des
 import { styleOptionsFor, templateStyleGroups, type PlacementArea, type TemplateConfig } from "@/types/template";
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
+import { CutoutDialog } from "./cutout-dialog";
 import { LiveMirror } from "../../live-mirror";
 import { TryOnPanel } from "../../try-on-panel";
 
@@ -477,6 +478,9 @@ export function DesignEditor(props: DesignEditorProps) {
     }
   }
 
+  // ── decorations taken from other dresses ──────────────────────────────────
+  const [cutoutsOpen, setCutoutsOpen] = useState(false);
+
   // ── layout state ───────────────────────────────────────────────────────────
   // A design started from a description opens on its AI round.
   const [tab, setTab] = useState<TabId>(props.initialAiJobId ? "ai" : "fabric");
@@ -715,8 +719,26 @@ export function DesignEditor(props: DesignEditorProps) {
                 const box = centredBox(activeArea, 0.35, 12, 1, activeArea.clipToFabric ? 0.38 : 0.72);
                 addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "decoration", ...box, decoration: { id, color: contrastingColor(activeArea, box) } });
               }}
+              onOpenCutouts={() => (props.customerId ? setCutoutsOpen(true) : handleResult({ status: "signin" }, () => undefined))}
               upload={{ state: uploadState, removeBackground: removeBg, setRemoveBackground: setRemoveBg, onFile: (file) => void uploadImage(file) }}
             />
+            {cutoutsOpen && (
+              <CutoutDialog
+                config={config}
+                designProductId={props.productId}
+                onClose={() => setCutoutsOpen(false)}
+                onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+                onUse={(cutout) => {
+                  setCutoutsOpen(false);
+                  if (!activeArea || !cutout.url) return;
+                  const url = cutout.url;
+                  setUploadUrls((u) => ({ ...u, [cutout.key]: url }));
+                  // Like a decoration: below the waist on a whole-garment area, low in a small one.
+                  const box = centredBox(activeArea, 0.35, 12, cutout.width / Math.max(1, cutout.height), activeArea.clipToFabric ? 0.38 : 0.72);
+                  addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "image", ...box, image: { assetKey: cutout.key } });
+                }}
+              />
+            )}
           </div>
           <div role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" hidden={tab !== "ai"}>
             {props.aiEnabled ? (

@@ -36,9 +36,24 @@ export function customerReferencePrefix(customerId: string): string {
   return `${customerId.toLowerCase()}/references/`;
 }
 
-/** Whether an image layer's file is the customer's own upload or AI motif. */
+/** Decorations the customer cut out of ClothSeeker dresses live under `{customerId}/cutouts/`. */
+export function customerCutoutPrefix(customerId: string): string {
+  return `${customerId.toLowerCase()}/cutouts/`;
+}
+
+/** Whether an image layer's file is the customer's own upload, AI motif or cut-out. */
 export function isCustomerImageKey(key: string, customerId: string): boolean {
-  return key.startsWith(customerUploadPrefix(customerId)) || key.startsWith(customerAiPrefix(customerId));
+  return key.startsWith(customerUploadPrefix(customerId)) || key.startsWith(customerAiPrefix(customerId)) || key.startsWith(customerCutoutPrefix(customerId));
+}
+
+/** Whether an image file is a cut-out decoration (priced and made like a decoration). Keys are owner-checked separately. */
+export function isCutoutKey(key: string): boolean {
+  return /^[0-9a-f-]{36}\/cutouts\//.test(key);
+}
+
+/** Motifs a layer prints: a border counts each repeat; text is not a motif. */
+export function layerMotifs(layer: DesignLayer): number {
+  return layer.kind === "decoration" ? motifCount(layer.decoration.repeat) : layer.kind === "image" ? motifCount(layer.image.repeat) : 0;
 }
 
 /**
@@ -132,9 +147,9 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
 
   const areas = new Map(template.placementAreas.map((a) => [a.id, a]));
   const perArea = new Map<string, number>();
-  const motifs = spec.layers.reduce((sum, l) => sum + (l.kind === "decoration" ? motifCount(l.decoration.repeat) : 0), 0);
+  const motifs = spec.layers.reduce((sum, l) => sum + layerMotifs(l), 0);
   if (motifs > MAX_MOTIFS_TOTAL) {
-    add("layers", `A design can have at most ${MAX_MOTIFS_TOTAL} decoration motifs (borders count each one).`);
+    add("layers", `A design can have at most ${MAX_MOTIFS_TOTAL} decorations and images (borders count each one).`);
   }
   const seenIds = new Set<string>();
   spec.layers.forEach((layer, index) => {

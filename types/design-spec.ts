@@ -50,11 +50,17 @@ export const textLayerSchema = z.object({
   text: z.object({ content: textContent, fontId: z.enum(FONT_IDS), color: hex }),
 });
 
+/** A row of repeats across the box (a border); `curve` > 0 sags in the middle, < 0 arches. */
+const repeatSchema = z.object({ count: z.number().int().min(REPEAT_COUNT.min).max(REPEAT_COUNT.max), curve: z.number().min(-1).max(1) });
+
 export const imageLayerSchema = z.object({
   ...layerBox,
   kind: z.literal("image"),
-  /** design-assets key; must belong to the design's customer (checked in validate.ts). */
-  image: z.object({ assetKey: storageKey }),
+  /**
+   * design-assets key; must belong to the design's customer (checked in validate.ts). A key under
+   * `{customerId}/cutouts/` is a decoration cut out of a ClothSeeker dress (lib/cutouts).
+   */
+  image: z.object({ assetKey: storageKey, mirror: z.boolean().optional(), repeat: repeatSchema.optional() }),
 });
 
 export const decorationLayerSchema = z.object({
@@ -68,8 +74,7 @@ export const decorationLayerSchema = z.object({
     style: z.enum(["filled", "outline"]).optional(),
     outline: z.number().int().min(OUTLINE_WIDTH.min).max(OUTLINE_WIDTH.max).optional(),
     mirror: z.boolean().optional(),
-    /** A row of repeats across the box (a border); `curve` > 0 sags in the middle, < 0 arches. */
-    repeat: z.object({ count: z.number().int().min(REPEAT_COUNT.min).max(REPEAT_COUNT.max), curve: z.number().min(-1).max(1) }).optional(),
+    repeat: repeatSchema.optional(),
   }),
 });
 

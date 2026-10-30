@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, Sparkles, Type } from "lucide-react";
+import { ImagePlus, Scissors, Sparkles, Type } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 
@@ -8,19 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DECORATIONS, decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
 import { FONTS, type FontId } from "@/lib/catalog/fonts";
+import { isCutoutKey } from "@/lib/design/validate";
 import { formatBDT } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { DesignLayer } from "@/types/design-spec";
 import type { PlacementArea, TemplateConfig } from "@/types/template";
 
-import { DecorationControls } from "./decoration-controls";
+import { DecorationControls, ImageControls } from "./decoration-controls";
 import { AccordionRow, Swatch, Tile } from "./editor-ui";
 import { decorationDataUrl } from "./recolor";
 
 // Personalise tab: where on the dress, then text, decorations and the customer's own image,
 // plus the controls for whichever item is selected on the canvas.
 
-type Row = "text" | "decorations" | "image";
+type Row = "text" | "decorations" | "cutout" | "image";
 
 export type UploadControls = {
   state: string | null;
@@ -41,6 +42,8 @@ export function PersonaliseTab(props: {
   onDeleteLayer: (id: string) => void;
   onAddText: (content: string) => void;
   onAddDecoration: (id: DecorationId) => void;
+  /** Opens "Take a decoration from a dress". */
+  onOpenCutouts: () => void;
   upload: UploadControls;
 }) {
   const { config, activeArea, selectedLayer } = props;
@@ -58,7 +61,16 @@ export function PersonaliseTab(props: {
     <div className="flex flex-col gap-4">
       {selectedLayer && (
         <section className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3 text-sm" data-testid="selected-layer">
-          <h3 className="font-medium">Selected {selectedLayer.kind === "text" ? "text" : selectedLayer.kind === "image" ? "image" : "decoration"}</h3>
+          <h3 className="font-medium">
+            Selected{" "}
+            {selectedLayer.kind === "text"
+              ? "text"
+              : selectedLayer.kind === "image"
+                ? isCutoutKey(selectedLayer.image.assetKey)
+                  ? "decoration (from a dress)"
+                  : "image"
+                : "decoration"}
+          </h3>
           {selectedLayer.kind === "text" && (
             <>
               <Input
@@ -113,6 +125,15 @@ export function PersonaliseTab(props: {
               layer={selectedLayer}
               config={config}
               onUpdate={(patch) => props.onUpdateLayer(selectedLayer.id, (l) => (l.kind === "decoration" ? patch(l) : l))}
+            />
+          )}
+          {selectedLayer.kind === "image" && (
+            <ImageControls
+              layer={selectedLayer}
+              config={config}
+              unitPriceMinor={isCutoutKey(selectedLayer.image.assetKey) ? config.addOns.decorationMinor : config.addOns.imageMinor}
+              unitLabel={isCutoutKey(selectedLayer.image.assetKey) ? "decoration" : "image"}
+              onUpdate={(patch) => props.onUpdateLayer(selectedLayer.id, (l) => (l.kind === "image" ? patch(l) : l))}
             />
           )}
           <div className="flex flex-wrap gap-2">
@@ -189,6 +210,22 @@ export function PersonaliseTab(props: {
             </div>
           </AccordionRow>
         )}
+
+        <AccordionRow
+          id="add-cutout"
+          title="From another dress"
+          value={`+${formatBDT(config.addOns.decorationMinor)} each`}
+          icon={<Scissors className="size-5" />}
+          open={open === "cutout"}
+          onToggle={() => toggle("cutout")}
+        >
+          <div className="flex flex-col gap-2 text-sm">
+            <p className="text-xs text-muted-foreground">Take embroidery, lace or a print from one of our dresses: draw a box around it and we cut it out.</p>
+            <Button variant="outline" className="self-start" disabled={!activeArea} onClick={props.onOpenCutouts}>
+              Take a decoration from a dress
+            </Button>
+          </div>
+        </AccordionRow>
 
         <AccordionRow id="add-image" title="Your image or logo" value={`+${formatBDT(config.addOns.imageMinor)}`} icon={<ImagePlus className="size-5" />} open={open === "image"} onToggle={() => toggle("image")}>
           <div className="flex flex-col gap-2 text-sm">

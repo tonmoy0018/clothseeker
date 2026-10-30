@@ -3,7 +3,7 @@
 import type { Canvas as FabricCanvas, FabricObject } from "fabric";
 import { useEffect, useRef, useState } from "react";
 
-import { decorationLayerSvg, decorationSvg, isPlainDecoration } from "@/lib/catalog/decorations";
+import { decorationLayerSvg, decorationSvg, isPlainDecoration, repeatLayout, type DecorationRepeat } from "@/lib/catalog/decorations";
 import { FONTS } from "@/lib/catalog/fonts";
 import { applyFabricField, type FabricField } from "@/lib/design/fabric-warp";
 import { layerFitsArea } from "@/lib/design/validate";
@@ -142,7 +142,15 @@ export function DesignCanvas(props: DesignCanvasProps) {
           if (!url) {
             continue;
           }
-          object = new module.FabricImage(await loadImage(url));
+          const picture = await loadImage(url);
+          if (layer.image.mirror || layer.image.repeat) {
+            // Drawn at the box's own shape like a customised decoration, about 400 px on its long side.
+            const px = areaPx(area);
+            const k = 400 / Math.max(layer.w * px.width, layer.h * px.height, 1);
+            object = new module.FabricImage(imageLayerCanvas(picture, layer.image, layer.w * px.width * k, layer.h * px.height * k));
+          } else {
+            object = new module.FabricImage(picture);
+          }
         }
         const px = areaPx(area);
         const boxW = layer.w * px.width;
@@ -322,4 +330,28 @@ export function DesignCanvas(props: DesignCanvasProps) {
       {!props.garment && <div className="flex aspect-[1200/1560] w-full items-center justify-center rounded-xl bg-muted text-sm text-muted-foreground">Loading…</div>}
     </div>
   );
+}
+
+/** A mirrored image, or a border of it, drawn into a canvas of the box's size (as the renderer does). */
+function imageLayerCanvas(picture: HTMLImageElement, look: { mirror?: boolean; repeat?: DecorationRepeat }, width: number, height: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  const context = canvas.getContext("2d");
+  if (!context) return canvas;
+  const places = look.repeat
+    ? repeatLayout(look.repeat.count, look.repeat.curve, canvas.width, canvas.height).map((p) => ({ ...p, w: p.size, h: p.size }))
+    : [{ x: canvas.width / 2, y: canvas.height / 2, w: canvas.width, h: canvas.height, angle: 0 }];
+  for (const p of places) {
+    const fit = Math.min(p.w / picture.naturalWidth, p.h / picture.naturalHeight);
+    const w = picture.naturalWidth * fit;
+    const h = picture.naturalHeight * fit;
+    context.save();
+    context.translate(p.x, p.y);
+    context.rotate((p.angle * Math.PI) / 180);
+    if (look.mirror) context.scale(-1, 1);
+    context.drawImage(picture, -w / 2, -h / 2, w, h);
+    context.restore();
+  }
+  return canvas;
 }
