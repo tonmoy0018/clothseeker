@@ -1,6 +1,6 @@
 # Virtual try-on
 
-Customers can see a dress on a photo of themselves. It's available as "See it on me" (the shirt button beside the preview) on the design screen (it uses the design as currently edited) and as "Try on" on product pages (it uses the ready-made dress). It is **optional** and **labelled as a rough AI preview**.
+Customers can see a dress on a photo of themselves. It's available as "See it on me" (the shirt button beside the preview) on the design screen (it uses the design as currently edited) and as "Try on" on product pages (it uses the ready-made dress). It is **optional** and **labelled as a rough AI preview**. The live mirror's **Make it real** uses the same flow with a photo of the customer's current pose ([live-try-on.md](live-try-on.md#make-it-real)).
 
 ```
 browser: consent ✓ → upload photo ──▶ uploadTryOnPhoto (lib/tryon/service.ts)
@@ -70,6 +70,12 @@ The first failure decides the message, light first (`photoProblem`).
 - `franciszzj/Leffa` uses `/leffa_predict_vt` with `vt_model_type: "dress_code"` and `vt_garment_type: "dresses"`.
 
 **Garment preparation.** Each garment is cropped and centred on a white 768×1024 canvas (`prepareGarment`). For designs this is the flat garment from `renderFlatGarment`; for ready-made dresses it's the first product photo, or else the template's garment image (`productTryOnImageKey`), with the dress cut out of it first (`cutOutGarment` in `lib/garment-photo/align.ts`: no mannequin, stand or backdrop; the whole photo if no dress is found). For photo templates the flat garment is already cut out by the region masks. "Try on" is hidden on dresses that have neither.
+
+**Garment description.** IDM-VTON also reads a text, `garment_des`, as "model is wearing …". Without it the model guesses the cut and often draws the wrong length or sleeves. `garmentDescription` (`lib/tryon/describe.ts`, pure and unit-tested) builds it, at most 120 characters, **only from catalogue words, never from text a customer typed**:
+- designs: the main colour's name, the product name and each chosen style (`stylePhrase`: "v-neck neckline", "short sleeves", "sleeveless", "midi length"), e.g. "a navy linen wrap dress, v-neck neckline, short sleeves";
+- ready-made items: the product name and the first sentence of the team's description.
+
+The other Spaces have no text input and ignore it. The cache key is `v: 4` since descriptions were added, so older results are redone.
 
 **Failures:**
 - A space that errors or sleeps → the next space is tried.

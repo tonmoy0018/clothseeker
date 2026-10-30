@@ -607,6 +607,7 @@ export function DesignEditor(props: DesignEditorProps) {
               return (await import("@/lib/vision/garment-source")).garmentFromDesign(drawn, maskUrls);
             }}
             onClose={() => setShowMirror(false)}
+            realistic={{ source: { kind: "design", spec, designId }, signedIn: props.customerId !== null, onSignIn: () => handleResult({ status: "signin" }, () => undefined) }}
             onUsePhoto={(photo) => {
               setMirrorPhoto(photo);
               setShowTryOn(true);

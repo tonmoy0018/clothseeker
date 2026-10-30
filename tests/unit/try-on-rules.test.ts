@@ -6,6 +6,7 @@ import { FakePhotoChecker, FakeTryOn } from "@/lib/ai/fake";
 import { GARMENT_CANVAS, prepareGarment } from "@/lib/ai/image-utils";
 import { firstFileUrl, HuggingFaceTryOn, isQuotaError, type GradioConnect } from "@/lib/ai/tryon-hf";
 import type { TryOnRequest } from "@/lib/ai/types";
+import { garmentDescription, stylePhrase } from "@/lib/tryon/describe";
 import { consentSchema, designSignature, isTryOnStale, photoShapeProblem, productSignature, TRYON_CONSENT_POINTS } from "@/lib/tryon/rules";
 
 import { validSpec } from "../fixtures/design";
@@ -151,6 +152,22 @@ describe("HuggingFaceTryOn", () => {
     await new HuggingFaceTryOn({ spaces: order, connect: top.connect, fetch: fetchOk }).tryOn({ ...(await request()), category: "Upper-body" }, signal);
     expect(top.calls.map((c) => c.space)).toEqual(["jallenjia/Change-Clothes-AI", "yisol/IDM-VTON"]);
     expect(top.calls[0]?.data).toMatchObject({ category: "upper_body" });
+  });
+
+  it("describes the garment to IDM-VTON in catalogue words", async () => {
+    const idm = async () => ({ data: [{ url: "https://jallenjia.hf.space/file=out.webp" }] });
+    const { connect, calls } = spaces({ "jallenjia/Change-Clothes-AI": idm });
+    const description = garmentDescription({ name: "Linen Wrap Dress", noun: "dress", colour: "Navy", styles: [stylePhrase("neckline", "V-neck"), stylePhrase("sleeveLength", "Short")] });
+    expect(description).toBe("a navy linen wrap dress, v-neck neckline, short sleeves");
+    await new HuggingFaceTryOn({ spaces: ["jallenjia/Change-Clothes-AI"], connect, fetch: fetchOk }).tryOn({ ...(await request()), description }, signal);
+    expect(calls[0]?.data).toMatchObject({ garment_des: description, category: "dresses" });
+    // Shop items: name plus the first sentence of the team's description; customer words never appear.
+    expect(garmentDescription({ name: "Smocked Cotton Dress", noun: "dress", details: "Smocked bodice, puff sleeves and a midi skirt in soft breathable cotton. Fully lined." })).toBe(
+      "a smocked cotton dress, smocked bodice, puff sleeves and a midi skirt in soft breathable cotton",
+    );
+    expect(garmentDescription({ name: "Oxford Shirt", noun: "shirt" })).toBe("an oxford shirt");
+    expect(stylePhrase("sleeveLength", "Sleeveless")).toBe("sleeveless");
+    expect(garmentDescription({ name: "<b>x</b> dress", noun: "dress", details: "a".repeat(300) }).length).toBeLessThanOrEqual(120);
   });
 
   it("reports the daily GPU limit when every space is over quota, otherwise a retryable failure", async () => {

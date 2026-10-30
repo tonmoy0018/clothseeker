@@ -98,6 +98,8 @@ export type TryOnRequest = {
   garment: ProviderImage;
   /** What kind of garment it is, in try-on models' terms (lib/catalog/garment-types.ts). */
   category: GarmentTypeInfo["tryOnCategory"];
+  /** A short description of the garment from catalogue words (lib/tryon/describe.ts), when known. */
+  description?: string;
 };
 
 export interface TryOnProvider {

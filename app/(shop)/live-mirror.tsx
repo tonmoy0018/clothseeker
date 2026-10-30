@@ -1,15 +1,20 @@
 "use client";
 
-import { Camera, X } from "lucide-react";
+import { Camera, Sparkles, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
+import { downscalePhoto } from "@/lib/media/client-resize";
+import { TRYON_CONSENT_POINTS } from "@/lib/tryon/rules";
 import type { VisionClient } from "@/lib/vision/client";
 import type { PersonLayer } from "@/lib/vision/draw";
 import type { MirrorGarment } from "@/lib/vision/garment-source";
 import type { Pose } from "@/lib/vision/movenet";
+
+import { getTryOnStatusAction, startTryOnAction, uploadTryOnPhotoAction } from "./try-on-actions";
+import type { TryOnSource } from "./try-on-panel";
 
 // Live mirror: the camera, shown like a mirror, with the garment drawn on the customer as they move.
 // Everything runs on this device: the body and outline models run in a worker in this tab, the garment
@@ -21,6 +26,16 @@ const MASK_EVERY = 2;
 
 type Phase = { kind: "intro" } | { kind: "starting" } | { kind: "running" } | { kind: "error"; message: string };
 type Capture = { mirroredUrl: string; plain: Blob; width: number; height: number };
+/** "Make it real": the realistic AI try-on of the current pose, shown in the mirror. */
+type Real =
+  | { kind: "off" }
+  | { kind: "consent" }
+  | { kind: "working"; step: string }
+  | { kind: "done"; imageUrl: string; left: number | null }
+  | { kind: "error"; message: string };
+
+const POLL_MS = 2000;
+const POLL_GIVE_UP_MS = 12 * 60 * 1000;
 
 const clock = () => performance.now();
 
@@ -29,6 +44,7 @@ export function LiveMirror({
   noun,
   onClose,
   onUsePhoto,
+  realistic,
 }: {
   /** Prepares the garment picture (cut out and measured); called when the camera starts. */
   loadGarment: () => Promise<MirrorGarment>;
@@ -36,6 +52,8 @@ export function LiveMirror({
   onClose: () => void;
   /** Hands the plain camera frame (without the garment) to the realistic try-on. */
   onUsePhoto?: (photo: Blob) => void;
+  /** Enables "Make it real": what to try on, and the customer's sign-in state. */
+  realistic?: { source: TryOnSource; signedIn: boolean; onSignIn: () => void };
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,6 +65,8 @@ export function LiveMirror({
   const [phase, setPhase] = useState<Phase>({ kind: "intro" });
   const [hint, setHint] = useState<string | null>(null);
   const [capture, setCapture] = useState<Capture | null>(null);
+  const [real, setReal] = useState<Real>({ kind: "off" });
+  const [agreed, setAgreed] = useState(false);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -154,10 +174,11 @@ export function LiveMirror({
     }
   }
 
-  async function takePhoto() {
+  /** The mirror as seen (flipped, with the garment) and a plain 3:4 portrait of the person. */
+  async function frames(): Promise<{ mirrored: Blob; plain: Blob; width: number; height: number } | null> {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !video) return;
+    if (!canvas || !video) return null;
     // As seen in the mirror (flipped), and the plain camera frame for the realistic try-on.
     const flipped = document.createElement("canvas");
     flipped.width = canvas.width;
@@ -168,7 +189,7 @@ export function LiveMirror({
     plainCanvas.height = video.videoHeight;
     plainCanvas.width = Math.min(video.videoWidth, Math.round((video.videoHeight * 3) / 4));
     const pc = plainCanvas.getContext("2d");
-    if (!fc || !pc) return;
+    if (!fc || !pc) return null;
     fc.translate(flipped.width, 0);
     fc.scale(-1, 1);
     fc.drawImage(canvas, 0, 0);
@@ -177,8 +198,87 @@ export function LiveMirror({
     pc.drawImage(video, left, 0, plainCanvas.width, plainCanvas.height, 0, 0, plainCanvas.width, plainCanvas.height);
     const toBlob = (c: HTMLCanvasElement) => new Promise<Blob | null>((resolve) => c.toBlob(resolve, "image/jpeg", 0.9));
     const [mirrored, plain] = await Promise.all([toBlob(flipped), toBlob(plainCanvas)]);
-    if (!mirrored || !plain) return;
-    setCapture({ mirroredUrl: URL.createObjectURL(mirrored), plain, width: flipped.width, height: flipped.height });
+    if (!mirrored || !plain) return null;
+    return { mirrored, plain, width: flipped.width, height: flipped.height };
+  }
+
+  async function takePhoto() {
+    const shot = await frames();
+    if (shot) setCapture({ mirroredUrl: URL.createObjectURL(shot.mirrored), plain: shot.plain, width: shot.width, height: shot.height });
+  }
+
+  /**
+   * The realistic try-on of this pose: the plain frame is checked on the device, uploaded (after consent)
+   * and tried on by the same AI try-on as "See it on me"; the result shows in the mirror.
+   */
+  async function makeItReal() {
+    if (!realistic) return;
+    if (!realistic.signedIn) {
+      realistic.onSignIn();
+      return;
+    }
+    if (!agreed) {
+      setReal({ kind: "consent" });
+      return;
+    }
+    setReal({ kind: "working", step: "Checking your pose on this device…" });
+    const shot = await frames();
+    if (!shot) {
+      setReal({ kind: "error", message: "The camera picture couldn't be captured. Try again." });
+      return;
+    }
+    const { photoProblemOnDevice } = await import("@/lib/vision/check-photo");
+    const problem = await photoProblemOnDevice(shot.plain);
+    if (problem) {
+      setReal({ kind: "error", message: problem });
+      return;
+    }
+    setReal({ kind: "working", step: "Sending your photo…" });
+    const form = new FormData();
+    form.set("photo", await downscalePhoto(shot.plain), "photo.jpg");
+    form.set("consent", "yes");
+    const uploaded = await uploadTryOnPhotoAction(form);
+    if (uploaded.status !== "ok") {
+      if (uploaded.status === "signin") realistic.onSignIn();
+      setReal({ kind: "error", message: uploaded.status === "error" ? uploaded.message : "Please sign in first." });
+      return;
+    }
+    const source = realistic.source;
+    const started = await startTryOnAction({
+      photoId: uploaded.photo.id,
+      source: source.kind === "design" ? { kind: "design", spec: source.spec, designId: source.designId } : { kind: "product", productId: source.productId },
+    });
+    if (started.status !== "ok") {
+      setReal({ kind: "error", message: started.status === "error" ? started.message : "Please sign in first." });
+      return;
+    }
+    const begin = clock();
+    for (;;) {
+      const status = await getTryOnStatusAction(started.jobId).catch(() => null);
+      if (!status || status.status !== "ok") {
+        setReal({ kind: "error", message: status?.status === "error" ? status.message : "We lost track of that try-on. Please try again." });
+        return;
+      }
+      const job = status.job;
+      if (job.state === "done") {
+        if (!job.result.imageUrl) {
+          setReal({ kind: "error", message: "The result couldn't be shown. Please try again." });
+          return;
+        }
+        setReal({ kind: "done", imageUrl: job.result.imageUrl, left: started.quota.remaining });
+        return;
+      }
+      if (job.state === "failed") {
+        setReal({ kind: "error", message: job.message });
+        return;
+      }
+      if (clock() - begin > POLL_GIVE_UP_MS) {
+        setReal({ kind: "error", message: "The try-on service is very busy right now. Please try again later." });
+        return;
+      }
+      setReal({ kind: "working", step: job.position === "running" ? `Putting the ${noun} on you… usually under a minute.` : "Waiting for the try-on service…" });
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
   }
 
   // Rendered at the top of the page, above any sticky panels of the screen that opened it.
@@ -220,7 +320,69 @@ export function LiveMirror({
 
       {phase.kind === "running" && (
         <div className="flex flex-wrap items-center justify-center gap-3 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+16px)]">
-          <Button onClick={() => void takePhoto()}>Take photo</Button>
+          {realistic && (
+            <Button onClick={() => void makeItReal()} disabled={real.kind === "working"}>
+              <Sparkles className="size-4" />
+              Make it real
+            </Button>
+          )}
+          <Button variant={realistic ? "secondary" : "default"} onClick={() => void takePhoto()}>
+            Take photo
+          </Button>
+        </div>
+      )}
+
+      {real.kind !== "off" && (
+        <div
+          className="absolute top-16 right-4 bottom-24 flex w-[min(92vw,360px)] flex-col gap-3 overflow-y-auto rounded-xl bg-white p-4 text-foreground shadow-lg"
+          data-testid="make-it-real"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-medium">Make it real</h3>
+            <Button variant="ghost" size="sm" onClick={() => setReal({ kind: "off" })} disabled={real.kind === "working"}>
+              Back to live
+            </Button>
+          </div>
+          {real.kind === "consent" && (
+            <>
+              <p className="text-sm">An AI makes a realistic photo of you wearing this {noun}, from your current pose.</p>
+              <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                {TRYON_CONSENT_POINTS.map((point) => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="size-4" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />I agree to use my photo for try-on
+              </label>
+              <Button disabled={!agreed} onClick={() => void makeItReal()}>
+                Make it real
+              </Button>
+            </>
+          )}
+          {real.kind === "working" && (
+            <p className="text-sm" role="status" data-testid="make-it-real-progress">
+              {real.step} Hold your pose until it&apos;s captured; then you can move.
+            </p>
+          )}
+          {real.kind === "error" && (
+            <p className="text-sm text-destructive" role="alert">
+              {real.message}
+            </p>
+          )}
+          {real.kind === "done" && (
+            <>
+              <Image
+                src={real.imageUrl}
+                alt={`You wearing this ${noun} (AI try-on)`}
+                width={384}
+                height={512}
+                unoptimized
+                className="h-auto w-full rounded-lg object-contain"
+              />
+              <p className="text-xs text-muted-foreground">AI preview: the real {noun} will fit and look a little different.{real.left !== null ? ` ${real.left} left today.` : ""}</p>
+              <Button onClick={() => void makeItReal()}>Make it real again</Button>
+            </>
+          )}
         </div>
       )}
 

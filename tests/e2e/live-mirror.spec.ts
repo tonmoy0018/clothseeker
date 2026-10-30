@@ -55,4 +55,29 @@ test.describe("@supabase live mirror", () => {
     // Models, runtime and the garment picture came only from our own site and storage.
     expect(outside).toEqual([]);
   });
+
+  test("Make it real turns the current pose into an AI try-on, after consent", async ({ page }) => {
+    test.setTimeout(180_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/products/linen-wrap-dress");
+    await page.getByRole("button", { name: "Live mirror" }).click();
+    const mirror = page.getByTestId("live-mirror");
+    await mirror.getByRole("button", { name: "Start camera" }).click();
+    await expect(page.getByTestId("live-mirror-canvas")).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(3000);
+
+    await mirror.getByRole("button", { name: "Make it real" }).click();
+    const real = page.getByTestId("make-it-real");
+    // Nothing is captured or uploaded before the customer agrees.
+    const go = real.getByRole("button", { name: "Make it real" });
+    await expect(go).toBeDisabled();
+    await real.getByLabel("I agree to use my photo for try-on").check();
+    await go.click();
+    await expect(real.getByRole("img", { name: "You wearing this dress (AI try-on)" })).toBeVisible({ timeout: 120_000 });
+    await expect(real).toContainText("left today");
+    // The live view comes back.
+    await real.getByRole("button", { name: "Back to live" }).click();
+    await expect(real).toHaveCount(0);
+    await expect(page.getByTestId("live-mirror-canvas")).toBeVisible();
+  });
 });

@@ -13,7 +13,7 @@ import type { TryOnProvider, TryOnRequest } from "./types";
 
 type SpaceCall = {
   endpoint: string;
-  args: (person: Blob, garment: Blob, category: TryOnRequest["category"]) => Record<string, unknown>;
+  args: (person: Blob, garment: Blob, category: TryOnRequest["category"], description?: string) => Record<string, unknown>;
   /** Garment categories the Space handles; others skip it. Absent = all. */
   categories?: readonly TryOnRequest["category"][];
 };
@@ -27,10 +27,10 @@ export const TRYON_SPACES: Record<string, SpaceCall> = {
   // IDM-VTON with a dress mode (a community copy of the official Space).
   "jallenjia/Change-Clothes-AI": {
     endpoint: "/tryon",
-    args: (person, garment, category) => ({
+    args: (person, garment, category, description) => ({
       dict: editorInput(person),
       garm_img: handle_file(garment),
-      garment_des: category === "Dress" ? "a dress" : "a top",
+      garment_des: description || (category === "Dress" ? "a dress" : "a top"),
       is_checked: true,
       is_checked_crop: false,
       denoise_steps: 30,
@@ -41,7 +41,7 @@ export const TRYON_SPACES: Record<string, SpaceCall> = {
   // The official IDM-VTON Space: tops only (a dress would come out as a top).
   "yisol/IDM-VTON": {
     endpoint: "/tryon",
-    args: (person, garment) => ({ dict: editorInput(person), garm_img: handle_file(garment), garment_des: "a top", is_checked: true, is_checked_crop: false, denoise_steps: 30, seed: 42 }),
+    args: (person, garment, _category, description) => ({ dict: editorInput(person), garm_img: handle_file(garment), garment_des: description || "a top", is_checked: true, is_checked_crop: false, denoise_steps: 30, seed: 42 }),
     categories: ["Upper-body"],
   },
   "levihsu/OOTDiffusion": {
@@ -160,7 +160,7 @@ export class HuggingFaceTryOn implements TryOnProvider {
       }
       tried++;
       try {
-        return await abortable(this.callSpace(space, call, person, garment, request.category), signal);
+        return await abortable(this.callSpace(space, call, person, garment, request.category, request.description), signal);
       } catch (error) {
         if (signal.aborted || (error instanceof AiProviderError && error.code === "TIMEOUT")) {
           throw new AiProviderError("try-on timed out", true, "TIMEOUT");
@@ -175,9 +175,9 @@ export class HuggingFaceTryOn implements TryOnProvider {
     throw new AiProviderError("try-on failed on every space", true);
   }
 
-  private async callSpace(space: string, call: SpaceCall, person: Blob, garment: Blob, category: TryOnRequest["category"]): Promise<Buffer> {
+  private async callSpace(space: string, call: SpaceCall, person: Blob, garment: Blob, category: TryOnRequest["category"], description?: string): Promise<Buffer> {
     const app = await this.connect(space, this.token);
-    const result = await app.predict(call.endpoint, call.args(person, garment, category));
+    const result = await app.predict(call.endpoint, call.args(person, garment, category, description));
     const url = firstFileUrl(result.data);
     if (!url) {
       throw new AiProviderError("try-on space returned no image", true);

@@ -40,6 +40,7 @@ export function TryOnButton({ productId, slug, signedIn, noun, mirrorImageUrl }:
           noun={noun}
           loadGarment={async () => (await import("@/lib/vision/garment-source")).garmentFromPhoto(mirrorImageUrl)}
           onClose={() => setMirror(false)}
+          realistic={{ source: { kind: "product", productId }, signedIn, onSignIn: () => router.push(`/login?next=${encodeURIComponent(`/products/${slug}`)}`) }}
           onUsePhoto={(photo) => {
             setMirrorPhoto(photo);
             setOpen(true);

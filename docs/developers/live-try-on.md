@@ -84,7 +84,18 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - **Use for the realistic try-on** passes the plain camera frame, cropped to a 3:4 portrait around the person, to the try-on panel. There it's offered as "Use my photo from the live mirror", only after consent, and goes through the usual on-device check and upload.
 - **Tests:**
   - `tests/unit/mirror.test.ts`: the fitting.
-  - `tests/e2e/live-mirror.spec.ts` (`@supabase`): Chromium's fake camera plays `tests/fixtures/mirror-woman.mjpeg` (an AI-generated person). It checks that the body is found, a photo is taken and handed to the try-on, and nothing goes to another site.
+  - `tests/e2e/live-mirror.spec.ts` (`@supabase`): Chromium's fake camera plays `tests/fixtures/mirror-woman.mjpeg` (an AI-generated person). It checks that the body is found, a photo is taken and handed to the try-on, nothing goes to another site, and "Make it real" works only after consent.
+
+### Make it real
+
+The mirror is instant but 2D. **Make it real** (beside "Take photo", when the mirror is opened from a product page or the design screen) turns the customer's current pose into the realistic AI try-on, in a panel inside the mirror, without leaving it:
+
+1. Signed-out visitors are sent to sign in. The first time, the panel shows the try-on consent points (`TRYON_CONSENT_POINTS`) and nothing is captured until the customer ticks "I agree".
+2. The current camera frame is cropped to a 3:4 portrait around the person and checked on the device (`photoProblemOnDevice`); a problem is shown with its reason and nothing is uploaded.
+3. The photo is downscaled and uploaded with consent (`uploadTryOnPhotoAction`), then the usual try-on job starts (`startTryOnAction`, same 5-a-day limit and cache) and is polled every 2 s.
+4. The result appears in the panel, with how many try-ons are left today. "Back to live" returns to the mirror.
+
+It's a delay of about 25–60 s with the free IDM-VTON Spaces (instant with the fake provider), not live video. The photo is an ordinary try-on photo: private, deleted after 24 h unless saved.
 
 ### Limits
 
