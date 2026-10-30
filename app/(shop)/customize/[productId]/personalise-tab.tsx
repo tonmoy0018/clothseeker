@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { DesignLayer } from "@/types/design-spec";
 import type { PlacementArea, TemplateConfig } from "@/types/template";
 
+import { DecorationControls } from "./decoration-controls";
 import { AccordionRow, Swatch, Tile } from "./editor-ui";
 import { decorationDataUrl } from "./recolor";
 
@@ -106,6 +107,13 @@ export function PersonaliseTab(props: {
                 />
               ))}
             </div>
+          )}
+          {selectedLayer.kind === "decoration" && (
+            <DecorationControls
+              layer={selectedLayer}
+              config={config}
+              onUpdate={(patch) => props.onUpdateLayer(selectedLayer.id, (l) => (l.kind === "decoration" ? patch(l) : l))}
+            />
           )}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => props.onMoveLayer(selectedLayer.id, 1)}>

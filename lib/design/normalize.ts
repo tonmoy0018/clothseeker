@@ -1,4 +1,4 @@
-import type { DecorationId } from "@/lib/catalog/decorations";
+import type { DecorationId, DecorationLook, DecorationRepeat } from "@/lib/catalog/decorations";
 import type { FontId } from "@/lib/catalog/fonts";
 import type { PatternId } from "@/lib/catalog/patterns";
 import type { DesignSpec } from "@/types/design-spec";
@@ -43,7 +43,7 @@ export type LayerOp = {
 } & (
   | { kind: "text"; content: string; fontId: FontId; color: string }
   | { kind: "image"; assetKey: string }
-  | { kind: "decoration"; decorationId: DecorationId; color: string }
+  | { kind: "decoration"; decorationId: DecorationId; color: string; look?: DecorationLook; repeat?: DecorationRepeat }
 );
 
 export type AreaPlan = {
@@ -101,8 +101,20 @@ function toOp(layer: DesignSpec["layers"][number]): LayerOp {
       return { ...box, kind: "text", content: layer.text.content, fontId: layer.text.fontId, color: layer.text.color.toLowerCase() };
     case "image":
       return { ...box, kind: "image", assetKey: layer.image.assetKey };
-    case "decoration":
-      return { ...box, kind: "decoration", decorationId: layer.decoration.id, color: layer.decoration.color.toLowerCase() };
+    case "decoration": {
+      const d = layer.decoration;
+      const color = d.color.toLowerCase();
+      const op: LayerOp = { ...box, kind: "decoration", decorationId: d.id, color };
+      // Only customised decorations carry a look/repeat, so plain ones render exactly as before.
+      const look: DecorationLook = { color };
+      if (d.detail) look.detail = d.detail.toLowerCase();
+      if (d.style) look.style = d.style;
+      if (d.outline !== undefined) look.outline = d.outline;
+      if (d.mirror) look.mirror = true;
+      if (d.repeat) return { ...op, look, repeat: { count: d.repeat.count, curve: Math.round(d.repeat.curve * 100) / 100 } };
+      if (d.detail || d.style === "outline" || d.mirror) return { ...op, look };
+      return op;
+    }
   }
 }
 

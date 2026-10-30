@@ -1,7 +1,7 @@
 import sharp from "sharp";
 
 import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
-import { DECORATIONS } from "@/lib/catalog/decorations";
+import { DECORATIONS, type DecorationId } from "@/lib/catalog/decorations";
 import { FONTS } from "@/lib/catalog/fonts";
 import { PATTERNS } from "@/lib/catalog/patterns";
 import type { PrismaClient } from "@/lib/db/client";
@@ -103,8 +103,22 @@ export async function specSheetData(
         layer.kind === "text"
           ? `Text "${layer.text.content}" - ${FONTS.find((f) => f.id === layer.text.fontId)?.label ?? layer.text.fontId}, ${colourName(layer.text.color, template)}`
           : layer.kind === "decoration"
-            ? `${DECORATIONS.find((d) => d.id === layer.decoration.id)?.label ?? layer.decoration.id} decoration, ${colourName(layer.decoration.color, template)}`
+            ? decorationDescription(layer.decoration, (hex) => colourName(hex, template))
             : "Customer image (see print file)",
     })),
   };
+}
+
+/** e.g. "Flower × 12 border, curved down, Gold with Ivory centre detail, outline, mirrored". */
+export function decorationDescription(
+  decoration: { id: DecorationId; color: string; detail?: string; style?: "filled" | "outline"; repeat?: { count: number; curve: number }; mirror?: boolean },
+  colour: (hex: string) => string,
+): string {
+  const label = DECORATIONS.find((d) => d.id === decoration.id)?.label ?? decoration.id;
+  const parts = [decoration.repeat ? `${label} × ${decoration.repeat.count} border` : `${label} decoration`];
+  if (decoration.repeat && Math.abs(decoration.repeat.curve) >= 0.05) parts.push(decoration.repeat.curve > 0 ? "curved down" : "curved up");
+  parts.push(decoration.detail ? `${colour(decoration.color)} with ${colour(decoration.detail)} detail` : colour(decoration.color));
+  if (decoration.style === "outline") parts.push("outline");
+  if (decoration.mirror) parts.push("mirrored");
+  return parts.join(", ");
 }

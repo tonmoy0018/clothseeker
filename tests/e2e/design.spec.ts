@@ -82,6 +82,30 @@ test.describe("@supabase design screen", () => {
     await expect(page.getByText("Unsaved changes").or(page.getByRole("button", { name: "Save design" }))).toBeVisible();
   });
 
+  test("a decoration gets a second colour, an outline and becomes a priced border that saves", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signUpFreshCustomer(page);
+    await openLinenDesigner(page);
+    await openDesignTab(page, "Personalise");
+    await page.getByRole("button", { name: "Decorations" }).click();
+    await page.getByRole("button", { name: "Add Flower" }).click();
+    const controls = page.getByTestId("decoration-controls");
+    await expect(controls).toBeVisible();
+    await controls.getByRole("group", { name: "Second color" }).getByRole("button").nth(2).click();
+    await controls.getByRole("button", { name: "Outline" }).click();
+    await controls.getByRole("button", { name: "Mirror" }).click();
+    await controls.getByLabel("Repeat as a border").check();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 6");
+    await controls.getByLabel("How many").fill("9");
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 9");
+    await page.getByRole("button", { name: "Save design" }).click();
+    await expect(page.getByRole("status")).toContainText("Design saved");
+    // Saved and re-checked by the server: reloading the saved design keeps the border.
+    await expect(page).toHaveURL(/[?&]design=[0-9a-f-]{36}/);
+    await page.reload();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 9");
+  });
+
   test("dresses without a live template show a friendly page", async ({ page }) => {
     await page.goto("/customize/11111111-1111-4111-8111-111111111111");
     await expect(page.getByTestId("not-customizable")).toContainText("This item can't be customized");

@@ -1,6 +1,6 @@
 import sharp, { type OverlayOptions, type Sharp } from "sharp";
 
-import { decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
+import { decorationLayerSvg, decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
 import { patternSvg } from "@/lib/catalog/patterns";
 import type { AreaPlan, LayerOp, RenderPlan, Side, SidePlan } from "@/lib/design/normalize";
 import { applyFabricField, fabricField } from "@/lib/design/fabric-warp";
@@ -67,6 +67,10 @@ async function renderLayerBox(op: LayerOp, boxW: number, boxH: number, assets: A
       return png(sharp(Buffer.from(svg)).resize(boxW, boxH, { fit: "fill" }));
     }
     case "decoration": {
+      if (op.look) {
+        // Customised (second colour, outline, mirror or a border): drawn at the box's own size.
+        return png(sharp(Buffer.from(decorationLayerSvg(op.decorationId, op.look, op.repeat, boxW, boxH))).resize(boxW, boxH, { fit: "fill" }));
+      }
       const size = Math.min(boxW, boxH);
       const icon = await png(sharp(Buffer.from(decorationSvg(op.decorationId, op.color, size))));
       return png(

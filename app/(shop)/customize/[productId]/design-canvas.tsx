@@ -3,7 +3,7 @@
 import type { Canvas as FabricCanvas, FabricObject } from "fabric";
 import { useEffect, useRef, useState } from "react";
 
-import { decorationSvg } from "@/lib/catalog/decorations";
+import { decorationLayerSvg, decorationSvg, isPlainDecoration } from "@/lib/catalog/decorations";
 import { FONTS } from "@/lib/catalog/fonts";
 import { applyFabricField, type FabricField } from "@/lib/design/fabric-warp";
 import { layerFitsArea } from "@/lib/design/validate";
@@ -125,7 +125,18 @@ export function DesignCanvas(props: DesignCanvasProps) {
         if (layer.kind === "text") {
           object = new module.FabricText(layer.text.content, { fontFamily: familyOf(layer.text.fontId), fill: layer.text.color, fontSize: 64 });
         } else if (layer.kind === "decoration") {
-          object = new module.FabricImage(await loadImage(decorationDataUrl(decorationSvg(layer.decoration.id, layer.decoration.color, 200))));
+          const d = layer.decoration;
+          const look = { color: d.color, detail: d.detail, style: d.style, outline: d.outline, mirror: d.mirror };
+          if (isPlainDecoration(look, d.repeat)) {
+            object = new module.FabricImage(await loadImage(decorationDataUrl(decorationSvg(d.id, d.color, 200))));
+          } else {
+            // Drawn at the box's own shape (a border is wide), about 400 px on its long side.
+            const px = areaPx(area);
+            const boxW = layer.w * px.width;
+            const boxH = layer.h * px.height;
+            const k = 400 / Math.max(boxW, boxH, 1);
+            object = new module.FabricImage(await loadImage(decorationDataUrl(decorationLayerSvg(d.id, look, d.repeat, boxW * k, boxH * k))));
+          }
         } else {
           const url = props.uploadUrls[layer.image.assetKey];
           if (!url) {

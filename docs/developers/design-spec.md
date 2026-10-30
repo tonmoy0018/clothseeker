@@ -22,7 +22,11 @@ Every layer has `id`, `areaId`, `x`, `y`, `w`, `h` (fractions of its **placement
 
 - `text`: `{ content (≤ 60 printable characters), fontId, color }`
 - `image`: `{ assetKey }`, the customer's own upload in the `design-assets` bucket
-- `decoration`: `{ id, color }`, from the curated library ([`lib/catalog/decorations.ts`](../../lib/catalog/decorations.ts))
+- `decoration`: `{ id, color }`, from the curated library ([`lib/catalog/decorations.ts`](../../lib/catalog/decorations.ts)). Optional settings (no version bump: absent = the plain look):
+  - `detail`: a second colour for the shape's detail (flower centre, bow knot, butterfly body, leaf vein; `hasDetail`); refused on shapes without one.
+  - `style: "outline"` with `outline` thickness 2–14, and `mirror: true`.
+  - `repeat: { count: 2–24, curve: -1…1 }`: a border of repeats across the box; `curve` > 0 sags into a U (necklines, hems), < 0 arches. The box's own proportions set the spacing (`borderBox`/`borderSpacing`).
+  - A design holds at most 80 motifs in total (`MAX_MOTIFS_TOTAL`; a border counts each repeat).
 
 Limits: 30 layers in total, 12 per area.
 
@@ -53,7 +57,7 @@ The browser builds a spec, but the server **always**:
 - **Base:** the cheapest active ready-made variant of the dress in the chosen size (`basePriceForSize`).
 - **Style options:** each chosen option's add-on, if any.
 - **Pattern:** `addOns.patternMinor` × the number of patterned parts.
-- **Layers:** `textMinor`, `imageMinor`, `decorationMinor` per layer.
+- **Layers:** `textMinor`, `imageMinor` per layer; `decorationMinor` per motif (a border of 8 is "Decoration × 8"; a default the team can revisit).
 
 The browser uses the same function for the live price. The server's result is the one that counts.
 

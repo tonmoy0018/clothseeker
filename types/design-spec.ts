@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { DECORATION_IDS } from "@/lib/catalog/decorations";
+import { DECORATION_IDS, OUTLINE_WIDTH, REPEAT_COUNT } from "@/lib/catalog/decorations";
 import { FONT_IDS } from "@/lib/catalog/fonts";
 import { STYLE_GROUP_IDS } from "@/lib/catalog/garment-types";
 import { PATTERN_IDS } from "@/lib/catalog/patterns";
@@ -60,7 +60,17 @@ export const imageLayerSchema = z.object({
 export const decorationLayerSchema = z.object({
   ...layerBox,
   kind: z.literal("decoration"),
-  decoration: z.object({ id: z.enum(DECORATION_IDS), color: hex }),
+  decoration: z.object({
+    id: z.enum(DECORATION_IDS),
+    color: hex,
+    /** Colour of the shape's detail (flower centre, bow knot, butterfly body, leaf vein). */
+    detail: hex.optional(),
+    style: z.enum(["filled", "outline"]).optional(),
+    outline: z.number().int().min(OUTLINE_WIDTH.min).max(OUTLINE_WIDTH.max).optional(),
+    mirror: z.boolean().optional(),
+    /** A row of repeats across the box (a border); `curve` > 0 sags in the middle, < 0 arches. */
+    repeat: z.object({ count: z.number().int().min(REPEAT_COUNT.min).max(REPEAT_COUNT.max), curve: z.number().min(-1).max(1) }).optional(),
+  }),
 });
 
 /** All-over print tile size: the motif repeats every `tileCm` across the part. */
@@ -78,6 +88,8 @@ export type PartPrint = z.infer<typeof partPrintSchema>;
 export const designLayerSchema = z.discriminatedUnion("kind", [textLayerSchema, imageLayerSchema, decorationLayerSchema]);
 
 export const MAX_LAYERS_TOTAL = 30;
+/** Decoration motifs across the whole design (a border counts each repeat), to keep rendering quick. */
+export const MAX_MOTIFS_TOTAL = 80;
 export const MAX_LAYERS_PER_AREA = 12;
 
 export const designSpecSchema = z.object({

@@ -1,6 +1,7 @@
+import { hasDetail, motifCount } from "@/lib/catalog/decorations";
 import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import type { Size } from "@/lib/generated/prisma/enums";
-import { MAX_LAYERS_PER_AREA, type DesignLayer, type DesignSpec } from "@/types/design-spec";
+import { MAX_LAYERS_PER_AREA, MAX_MOTIFS_TOTAL, type DesignLayer, type DesignSpec } from "@/types/design-spec";
 import { styleOptionsFor, templateStyleGroups, type PlacementArea, type TemplateConfig } from "@/types/template";
 
 // Business rules a DesignSpec must satisfy against the CURRENT template. Pure, so the browser can
@@ -131,6 +132,10 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
 
   const areas = new Map(template.placementAreas.map((a) => [a.id, a]));
   const perArea = new Map<string, number>();
+  const motifs = spec.layers.reduce((sum, l) => sum + (l.kind === "decoration" ? motifCount(l.decoration.repeat) : 0), 0);
+  if (motifs > MAX_MOTIFS_TOTAL) {
+    add("layers", `A design can have at most ${MAX_MOTIFS_TOTAL} decoration motifs (borders count each one).`);
+  }
   const seenIds = new Set<string>();
   spec.layers.forEach((layer, index) => {
     const path = `layers.${index}`;
@@ -168,6 +173,13 @@ export function validateDesignAgainstTemplate(spec: DesignSpec, template: Templa
         }
         if (!allowedColors.has(layer.decoration.color)) {
           add(`${path}.decoration.color`, `That decoration color isn't available for this ${noun}.`);
+        }
+        if (layer.decoration.detail !== undefined) {
+          if (!hasDetail(layer.decoration.id)) {
+            add(`${path}.decoration.detail`, "This decoration has no second color.");
+          } else if (!allowedColors.has(layer.decoration.detail)) {
+            add(`${path}.decoration.detail`, `That decoration color isn't available for this ${noun}.`);
+          }
         }
         break;
       case "image":
