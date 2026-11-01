@@ -1,6 +1,7 @@
 import { findGarment, splitGarment, type GarmentParts, type Mask } from "@/lib/garment-photo/segment";
 
-import { garmentFit, inSleeve, sleeveFits, type GarmentFit, type SleeveFit } from "./mirror";
+import { recoverGarment } from "./garment-fill";
+import { garmentFit, inSleeve, sleeveFits, withLooseSleeves, type GarmentFit, type SleeveFit } from "./mirror";
 import { featherAlpha } from "./relight";
 
 // The garment picture for the live mirror, prepared in the browser: cut out on a transparent background
@@ -36,16 +37,25 @@ function canvasOf(width: number, height: number): [HTMLCanvasElement, CanvasRend
   return [canvas, context];
 }
 
-/** The picture's pixels inside `keep` only, with a softened edge. */
-function cutOut(source: HTMLCanvasElement, keep: (p: number) => boolean): HTMLCanvasElement {
+/**
+ * The picture's pixels inside `keep` only. Only the edge against the backdrop (outside `garment`) is
+ * softened, after its outermost pixel ring is dropped: that ring blends the garment with the photo's
+ * backdrop and would show as a pale fringe. Edges between pieces (sleeve and body) stay hard, so no
+ * background shows through where they join.
+ */
+function cutOut(source: HTMLCanvasElement, keep: (p: number) => boolean, garment: (p: number) => boolean): HTMLCanvasElement {
   const { width, height } = source;
   const [canvas, context] = canvasOf(width, height);
   context.drawImage(source, 0, 0);
   const pixels = context.getImageData(0, 0, width, height);
   const alpha = new Uint8ClampedArray(width * height);
-  for (let p = 0; p < width * height; p += 1) alpha[p] = keep(p) ? 255 : 0;
+  for (let p = 0; p < width * height; p += 1) {
+    const x = p % width;
+    const inner = garment(p) && (x === 0 || garment(p - 1)) && (x === width - 1 || garment(p + 1)) && (p < width || garment(p - width)) && (p + width >= width * height || garment(p + width));
+    alpha[p] = inner ? 255 : 0;
+  }
   featherAlpha(alpha, width, height, 1);
-  for (let p = 0; p < width * height; p += 1) pixels.data[p * 4 + 3] = alpha[p] ?? 0;
+  for (let p = 0; p < width * height; p += 1) pixels.data[p * 4 + 3] = keep(p) ? (alpha[p] ?? 0) : 0;
   context.putImageData(pixels, 0, 0);
   return canvas;
 }
@@ -53,17 +63,20 @@ function cutOut(source: HTMLCanvasElement, keep: (p: number) => boolean): HTMLCa
 /** Splits the picture into the body and its real sleeves (straps stay with the body). */
 function prepare(picture: HTMLCanvasElement, parts: GarmentParts): MirrorGarment {
   const fit = garmentFit(parts);
-  const sleeves = sleeveFits(parts.sleeves, fit);
   const { garment } = parts;
-  const sleeveSide = (p: number) => {
-    if (!parts.sleeves.data[p]) return null;
+  const sleeveMask = withLooseSleeves(garment, parts.sleeves, fit);
+  const sleeves = sleeveFits(sleeveMask, fit);
+  const sleeveSide = (p: number, overlap = 0) => {
+    if (!sleeveMask.data[p]) return null;
     const x = p % garment.width;
-    return sleeves.find((s) => inSleeve(x, s.side, fit)) ?? null;
+    return sleeves.find((s) => inSleeve(x, s.side, fit, overlap)) ?? null;
   };
+  const inGarment = (p: number) => !!garment.data[p];
   return {
     fit,
-    body: cutOut(picture, (p) => !!garment.data[p] && sleeveSide(p) === null),
-    sleeves: sleeves.map((sleeve) => ({ fit: sleeve, image: cutOut(picture, (p) => sleeveSide(p) === sleeve) })),
+    body: cutOut(picture, (p) => inGarment(p) && sleeveSide(p) === null, inGarment),
+    // Each sleeve reaches 2 px into the body, so the two overlap where they join.
+    sleeves: sleeves.map((sleeve) => ({ fit: sleeve, image: cutOut(picture, (p) => sleeveSide(p, 2) === sleeve, inGarment) })),
   };
 }
 
@@ -81,7 +94,23 @@ export async function garmentFromPhoto(url: string): Promise<MirrorGarment> {
     rgb[p * 3 + 1] = rgba[p * 4 + 1] ?? 0;
     rgb[p * 3 + 2] = rgba[p * 4 + 2] ?? 0;
   }
-  return prepare(canvas, splitGarment(findGarment({ data: rgb, width, height })));
+  // The garment finder keeps only the garment's main colour; a pale placket or an embroidered collar is
+  // added back, or the person's own clothes would show through them.
+  const pixels = { data: rgb, width, height };
+  const found = findGarment(pixels);
+  const parts = splitGarment(found);
+  // Down to a torso's length below the waist: plackets and embroidery can run past it. Only the pixels
+  // drawn change: the shoulders, waist and sleeves are measured on the garment's main colour, or a
+  // collar band would be taken for the shoulders.
+  // Recovery also recolours the backdrop caught at the garment's edge; those colours go back into the picture.
+  const garment = recoverGarment(pixels, found, parts.waistY * 2 - parts.shoulderY);
+  const cleaned = context.getImageData(0, 0, width, height);
+  for (let p = 0; p < width * height; p += 1) {
+    if (!garment.data[p]) continue;
+    for (let k = 0; k < 3; k += 1) cleaned.data[p * 4 + k] = rgb[p * 3 + k] ?? 0;
+  }
+  context.putImageData(cleaned, 0, 0);
+  return prepare(canvas, { ...parts, garment });
 }
 
 /** A design's recoloured picture (with its printed items) and the URLs of that picture's region masks. */

@@ -4,7 +4,14 @@ import { SELFIE_SIZE, type PersonMask } from "./segment";
 
 // Canvas drawing for the live mirror (browser only). The geometry comes from mirror.ts.
 
-/** Draws a picture through a triangle mesh (each triangle an affine piece; seams overlap by half a pixel). */
+/** How far each mesh triangle is grown (pixels) so its neighbours overlap. */
+const SEAM_OVERLAP = 1.3;
+
+/**
+ * Draws a picture through a triangle mesh (each triangle an affine piece). Each triangle is grown by a
+ * pixel so neighbours overlap: with less, the background shows through their anti-aliased edges as
+ * faint lines across the garment.
+ */
 export function drawMesh(context: CanvasRenderingContext2D, image: CanvasImageSource, triangles: readonly Triangle[]) {
   for (const { src, dst } of triangles) {
     const m = triangleTransform(src, dst);
@@ -15,8 +22,8 @@ export function drawMesh(context: CanvasRenderingContext2D, image: CanvasImageSo
     context.beginPath();
     dst.forEach((p, i) => {
       const len = Math.hypot(p.x - cx, p.y - cy) || 1;
-      const x = p.x + ((p.x - cx) / len) * 0.6;
-      const y = p.y + ((p.y - cy) / len) * 0.6;
+      const x = p.x + ((p.x - cx) / len) * SEAM_OVERLAP;
+      const y = p.y + ((p.y - cy) / len) * SEAM_OVERLAP;
       if (i === 0) context.moveTo(x, y);
       else context.lineTo(x, y);
     });

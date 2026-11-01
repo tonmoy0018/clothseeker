@@ -57,9 +57,11 @@ export function shadeFromFrame(rgba: ArrayLike<number>, width: number, height: n
   const mean = (sumR + sumG + sumB) / 3 || 1;
   const cast = [sumR / mean, sumG / mean, sumB / mean].map((c) => Math.min(1.1, Math.max(0.9, c)));
   const out = new Uint8ClampedArray(n * 4);
+  // Kept gentle: what lies under the garment is the person's own clothes, whose colours and edges (a
+  // dark waistband under a shirt's hem) must not read as shadows on the garment.
   for (let p = 0; p < n; p += 1) {
-    const folds = Math.min(1.4, Math.max(0.6, (fine[p] ?? 1) / (broad[p] ?? 1)));
-    const light = Math.min(1.25, Math.max(0.75, (broad[p] ?? median) / median));
+    const folds = Math.min(1.2, Math.max(0.82, (fine[p] ?? 1) / (broad[p] ?? 1)));
+    const light = Math.min(1.15, Math.max(0.88, (broad[p] ?? median) / median));
     const level = folds * Math.sqrt(light);
     for (let c = 0; c < 3; c += 1) {
       const v = 0.5 + (level * (cast[c] ?? 1) - 1) * strength;

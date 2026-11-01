@@ -163,7 +163,8 @@ export function LiveMirror({
         const sleeveOn = (side: "left" | "right") => garment.sleeves.find((s) => s.fit.side === side)?.fit ?? null;
         const arms = (["left", "right"] as const).map((side) => mirror.exposedArm(garment.fit, body, side, sleeveOn(side)));
         const span = Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y);
-        layer.drawArms(context, frame, width, height, arms, span * 0.3);
+        // About an arm's width: wider would redraw the person's own clothes beside the arm.
+        layer.drawArms(context, frame, width, height, arms, span * mirror.ARM_WIDTH);
       }
       frame.close();
       const nextHint = body ? null : pose && pose.leftShoulder.score > 0.3 && pose.leftShoulder.x <= pose.rightShoulder.x ? "Turn to face the camera." : "Step back until your shoulders and hips are in view.";

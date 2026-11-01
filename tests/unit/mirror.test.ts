@@ -158,7 +158,8 @@ describe("live mirror fitting", () => {
     // It runs out to the right with the arm, and stops near the wrist (the hand is 760 + a bit).
     expect(Math.max(...ends.map((p) => p.x))).toBeGreaterThan(700);
     expect(Math.max(...ends.map((p) => p.x))).toBeLessThan(790);
-    expect(Math.abs(Math.min(...ends.map((p) => p.y)) - torso.y)).toBeLessThan(40);
+    // Its top reaches a little above the root (the shoulder cap, mapped like the body), no further.
+    expect(Math.abs(Math.min(...ends.map((p) => p.y)) - torso.y)).toBeLessThan(80);
     expect(armChain(body, "left")).toHaveLength(4);
   });
 

@@ -23,24 +23,90 @@ export type GarmentFit = {
   bottom: number;
   left: number;
   right: number;
+  /** Height of the shoulder seams (the top edge at the shoulders; a collar stands above it). */
   shoulderY: number;
   waistY: number;
   centreX: number;
   shoulderWidth: number;
+  /** Half the width of the garment's body (sleeves left out) on each row, from the centre line; 0 where open. */
+  rowHalfWidth?: readonly number[];
+  /** How far the top edge drops from beside the neck to the shoulder points (garment pixels). */
+  shoulderDrop?: number;
 };
 
 export function garmentFit(parts: GarmentParts): GarmentFit {
   const { garment } = parts;
   const box = maskBounds(garment);
+  const shoulderWidth = Math.max(1, parts.shoulderWidth);
+  const shoulderY = seamHeight(garment, parts.shoulderY, parts.centreX, shoulderWidth);
   return {
     width: garment.width,
     height: garment.height,
     ...box,
-    shoulderY: parts.shoulderY,
-    waistY: Math.max(parts.waistY, parts.shoulderY + 1),
+    shoulderY,
+    waistY: Math.max(parts.waistY, shoulderY + 1),
     centreX: parts.centreX,
-    shoulderWidth: Math.max(1, parts.shoulderWidth),
+    shoulderWidth,
+    rowHalfWidth: rowHalfWidths(garment, parts.sleeves, parts.centreX),
+    shoulderDrop: shoulderDropOf(garment, parts.centreX, shoulderWidth),
   };
+}
+
+/** The top edge's drop between a third and 55% of the shoulder width out from the centre, both sides averaged. */
+function shoulderDropOf(garment: Mask, centreX: number, shoulderWidth: number): number {
+  const topAt = (x: number) => {
+    const column = Math.round(x);
+    if (column < 0 || column >= garment.width) return null;
+    for (let y = 0; y < garment.height; y += 1) if (garment.data[y * garment.width + column]) return y;
+    return null;
+  };
+  const drops: number[] = [];
+  for (const side of [-1, 1]) {
+    const inner = topAt(centreX + side * shoulderWidth * 0.33);
+    const outer = topAt(centreX + side * shoulderWidth * 0.55);
+    if (inner !== null && outer !== null) drops.push(outer - inner);
+  }
+  const drop = drops.length > 0 ? drops.reduce((a, b) => a + b, 0) / drops.length : 0;
+  return Math.min(shoulderWidth * 0.2, Math.max(0, drop));
+}
+
+function rowHalfWidths(garment: Mask, sleeves: Mask, centreX: number): number[] {
+  const body = (x: number, y: number) => x >= 0 && x < garment.width && !!garment.data[y * garment.width + x] && !sleeves.data[y * garment.width + x];
+  const cx = Math.round(centreX);
+  return Array.from({ length: garment.height }, (_, y) => {
+    if (!body(cx, y)) return 0;
+    let left = cx;
+    let right = cx;
+    while (body(left - 1, y)) left -= 1;
+    while (body(right + 1, y)) right += 1;
+    return (right - left) / 2;
+  });
+}
+
+/**
+ * Where the shoulder seams are. When the garment's top is a collar standing up around the neck (its top
+ * rows are only near the centre line), the seams are the top edge a little inside each shoulder point,
+ * and the collar stands above them. Otherwise (no collar, straps, a neckline) the top row is the
+ * shoulder line.
+ */
+function seamHeight(garment: Mask, topY: number, centreX: number, shoulderWidth: number): number {
+  const probe = Math.min(garment.height - 1, topY + 2);
+  for (let x = 0; x < garment.width; x += 1) {
+    if (garment.data[probe * garment.width + x] && Math.abs(x - centreX) > shoulderWidth * 0.3) return topY;
+  }
+  const reach = Math.round(shoulderWidth * 0.3);
+  const heights: number[] = [];
+  for (const side of [-1, 1]) {
+    const x = Math.round(centreX + side * shoulderWidth * 0.45);
+    if (x < 0 || x >= garment.width) continue;
+    for (let y = topY; y <= Math.min(garment.height - 1, topY + reach); y += 1) {
+      if (garment.data[y * garment.width + x]) {
+        heights.push(y);
+        break;
+      }
+    }
+  }
+  return heights.length > 0 ? Math.round(heights.reduce((a, b) => a + b, 0) / heights.length) : topY;
 }
 
 export function maskBounds(mask: Mask): { top: number; bottom: number; left: number; right: number } {
@@ -93,11 +159,20 @@ export function bodyAnchors(pose: Pose, minScore = 0.3): BodyAnchors | null {
 }
 
 /** Garment shoulder width (seam to seam) ÷ the distance between the shoulder joints. */
-export const SEAM_PER_JOINTS = 1.2;
+export const SEAM_PER_JOINTS = 1.1;
 /** The garment's top edge sits this share of the shoulder-joint distance above the joints. */
-export const SHOULDER_LIFT = 0.16;
+export const SHOULDER_LIFT = 0.14;
 /** The natural waist, as a share of the way from the shoulders down to the hip joints. */
 export const BODY_WAIST = 0.6;
+/** An arm's width, as a share of the shoulder-joint distance (arms are redrawn this wide over the garment). */
+export const ARM_WIDTH = 0.21;
+/**
+ * Share of a garment's shoulder slope taken out: mannequins' shoulders slope far more than people's, so
+ * the outer shoulders would sit low and show the person's own clothes above them.
+ */
+export const SHOULDER_SQUARE = 0.55;
+/** A garment's body widens at most this much to reach arms hanging beside it. */
+export const MAX_WIDEN = 1.4;
 
 const mid = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const sub = (a: Point, b: Point): Point => ({ x: a.x - b.x, y: a.y - b.y });
@@ -134,14 +209,59 @@ export function garmentToBody(fit: GarmentFit, body: BodyAnchors): (gx: number, 
   // The garment row level with the hip joints, to blend the sideways direction from shoulders to hips.
   const hipRow = fit.waistY + length(sub(hips, waist)) / down;
 
-  return (gx, gy) => {
+  const span = length(sub(body.leftShoulder, body.rightShoulder));
+  const downward = unit(sub(hips, joints));
+  const depth = (p: Point) => (p.x - joints.x) * downward.x + (p.y - joints.y) * downward.y;
+  /**
+   * How much wider the garment's body should be on this side at this point, to reach under an arm
+   * hanging beside it (to the arm's centre line; the arm is drawn back over it): the person's own
+   * clothes would show in the gap otherwise. Only for arms the camera sees, never more than MAX_WIDEN,
+   * and easing back to none below the hand.
+   */
+  const widen = (side: Side, axis: Point, across: Point, gy: number): number => {
+    const natural = (fit.rowHalfWidth?.[Math.round(gy)] ?? 0) * scale;
+    const arm = body.arms[side];
+    if (natural <= 0 || gy <= fit.shoulderY || !arm.elbow) return 1;
+    const chain = [side === "left" ? body.leftShoulder : body.rightShoulder, arm.elbow, ...(arm.wrist ? [arm.wrist] : [])];
+    const target = depth(axis);
+    const last = chain[chain.length - 1] ?? arm.elbow;
+    let point: Point | null = null;
+    for (let i = 0; i + 1 < chain.length && !point; i += 1) {
+      const a = chain[i] ?? last;
+      const b = chain[i + 1] ?? last;
+      const [da, db] = [depth(a), depth(b)];
+      if (target >= Math.min(da, db) && target <= Math.max(da, db) && Math.abs(db - da) > 1e-6) point = lerp(a, b, (target - da) / (db - da));
+    }
+    const beyond = target - depth(last);
+    const fade = point ? 1 : beyond > 0 ? Math.max(0, 1 - beyond / (span * 0.15)) : 0;
+    const at = point ?? last;
+    const inner = ((at.x - axis.x) * across.x + (at.y - axis.y) * across.y) * (side === "left" ? 1 : -1);
+    if (fade <= 0 || inner <= natural || inner > natural * MAX_WIDEN) return 1;
+    return 1 + (inner / natural - 1) * fade;
+  };
+
+  /** Rows to raise this point by: most of the shoulder slope at the shoulders, fading out down the chest. */
+  const raise = (gx: number, gy: number): number => {
+    const drop = fit.shoulderDrop ?? 0;
+    if (drop <= 0) return 0;
+    // Rising from beside the neck to the shoulder point, then easing off over the top of the sleeve, so
+    // the shoulder stays rounded.
+    const out = (Math.abs(gx - fit.centreX) / fit.shoulderWidth - 0.33) / 0.17;
+    const across = Math.max(0, out <= 1 ? Math.min(1, out) : 1 - (out - 1) * 0.85);
+    const below = Math.min(1, Math.max(0, 1 - (gy - (fit.shoulderY + drop)) / ((fit.waistY - fit.shoulderY) * 0.45)));
+    return drop * SHOULDER_SQUARE * across * below;
+  };
+
+  return (gx, rawGy) => {
+    const gy = rawGy - raise(gx, rawGy);
     const axis =
       gy <= fit.waistY
         ? lerp(shoulders, waist, (gy - fit.shoulderY) / (fit.waistY - fit.shoulderY))
         : { x: waist.x + below.x * (gy - fit.waistY) * down, y: waist.y + below.y * (gy - fit.waistY) * down };
     const t = Math.min(1, Math.max(0, (gy - fit.shoulderY) / Math.max(1, hipRow - fit.shoulderY)));
     const across = unit(lerp(acrossShoulders, acrossHips, t));
-    const offset = (gx - fit.centreX) * scale;
+    // The person's left is towards `across` (from their right shoulder to their left).
+    const offset = (gx - fit.centreX) * scale * widen(gx >= fit.centreX ? "left" : "right", axis, across, gy);
     return { x: axis.x + across.x * offset, y: axis.y + across.y * offset };
   };
 }
@@ -196,10 +316,13 @@ export function triangleTransform(src: [Point, Point, Point], dst: [Point, Point
  */
 export const SLEEVE_TRUNK = 0.42;
 
-/** Whether a sleeve-mask pixel at column `x` belongs to the sleeve on `side`, not the torso. */
-export function inSleeve(x: number, side: Side, fit: GarmentFit): boolean {
+/**
+ * Whether a sleeve-mask pixel at column `x` belongs to the sleeve on `side`, not the torso. `overlap`
+ * pixels further in also count, so a sleeve picture can overlap the body's a little where they join.
+ */
+export function inSleeve(x: number, side: Side, fit: GarmentFit, overlap = 0): boolean {
   const offset = (x - fit.centreX) * (side === "left" ? 1 : -1);
-  return offset > fit.shoulderWidth * SLEEVE_TRUNK;
+  return offset > fit.shoulderWidth * SLEEVE_TRUNK - overlap;
 }
 
 /** A sleeve of the garment picture: where it joins the body, where it ends, and how wide it is. */
@@ -211,6 +334,90 @@ export type SleeveFit = {
   halfWidth: number;
   length: number;
 };
+
+/**
+ * The sleeve mask with what the garment finder missed of the sleeves: it can stop a long sleeve at the
+ * elbow (a panjabi's forearms and cuffs). Left in the body, the rest would be drawn as floating pieces
+ * instead of following the arms. Added: parts of the body that aren't joined to the torso and lie beside
+ * it, and fabric continuing straight down from a sleeve outside the chest's width (a cuff touching the
+ * body), until the fabric ends.
+ */
+export function withLooseSleeves(garment: Mask, sleeves: Mask, fit: GarmentFit): Mask {
+  const { width, height } = garment;
+  const body = (p: number) => !!garment.data[p] && !sleeves.data[p];
+  const label = new Int32Array(width * height).fill(-1);
+  const components: { pixels: number[]; sumX: number }[] = [];
+  for (let start = 0; start < width * height; start += 1) {
+    if (label[start] !== -1 || !body(start)) continue;
+    const id = components.length;
+    const component = { pixels: [] as number[], sumX: 0 };
+    const stack = [start];
+    label[start] = id;
+    while (stack.length > 0) {
+      const p = stack.pop() ?? 0;
+      component.pixels.push(p);
+      component.sumX += p % width;
+      const x = p % width;
+      for (const q of [x > 0 ? p - 1 : -1, x < width - 1 ? p + 1 : -1, p - width, p + width]) {
+        if (q >= 0 && q < width * height && label[q] === -1 && body(q)) {
+          label[q] = id;
+          stack.push(q);
+        }
+      }
+    }
+    components.push(component);
+  }
+  const torso = components.reduce<(typeof components)[number] | null>((best, c) => (!best || c.pixels.length > best.pixels.length ? c : best), null);
+  const out = { data: Uint8Array.from(sleeves.data), width, height };
+  for (const component of components) {
+    if (component === torso) continue;
+    const centre = component.sumX / component.pixels.length;
+    if (Math.abs(centre - fit.centreX) > fit.shoulderWidth * SLEEVE_TRUNK) for (const p of component.pixels) out.data[p] = 1;
+  }
+  // The torso's half-width (the body without sleeves) from the chest to below the waist; rows where the
+  // centre line is open (a neckline, a pale placket) don't count.
+  const torsoRows = fit.waistY - fit.shoulderY;
+  const chest = (fit.rowHalfWidth ?? []).slice(Math.round(fit.shoulderY + torsoRows * 0.2), Math.round(fit.waistY + torsoRows) + 1).filter((w) => w > 0);
+  const chestHalf = chest.length > 0 ? ([...chest].sort((a, b) => a - b)[Math.floor(chest.length / 2)] ?? 0) : 0;
+  if (chestHalf > 0) {
+    // The torso on each row: the run of body fabric through the centre line (none where it's open).
+    const cx = Math.round(fit.centreX);
+    const isBody = (x: number, y: number) => x >= 0 && x < width && !!garment.data[y * width + x] && !out.data[y * width + x];
+    const torsoRun = Array.from({ length: height }, (_, y) => {
+      if (!isBody(cx, y)) return null;
+      let from = cx;
+      let to = cx;
+      while (isBody(from - 1, y)) from -= 1;
+      while (isBody(to + 1, y)) to += 1;
+      return { from, to };
+    });
+    /** Fabric on this row that a gap separates from the torso (a sleeve hanging beside it, not its side). */
+    const apart = (x: number, y: number) => {
+      const run = torsoRun[y];
+      return !!run && (x < run.from || x > run.to);
+    };
+    for (const side of [-1, 1]) {
+      // Each column outside the chest continues down from the sleeve while there's fabric, taking what's
+      // apart from the torso; then all stop where the cuff ends at the sleeve's outer edge.
+      const runs: { x: number; from: number; to: number; out: number }[] = [];
+      for (let x = 0; x < width; x += 1) {
+        const outward = (x - fit.centreX) * side;
+        if (outward <= chestHalf * 1.05 + 2) continue;
+        let y = height - 1;
+        while (y >= 0 && !out.data[y * width + x]) y -= 1;
+        if (y < 0) continue;
+        let to = y + 1;
+        while (to < height && garment.data[to * width + x] && !out.data[to * width + x]) to += 1;
+        if (to > y + 1) runs.push({ x, from: y + 1, to, out: outward });
+      }
+      if (runs.length === 0) continue;
+      const outer = [...runs].sort((a, b) => b.out - a.out).slice(0, Math.max(1, Math.ceil(runs.length / 3)));
+      const cuffEnd = Math.max(...outer.map((r) => r.to));
+      for (const run of runs) for (let y = run.from; y < Math.min(run.to, cuffEnd); y += 1) if (apart(run.x, y)) out.data[y * width + run.x] = 1;
+    }
+  }
+  return out;
+}
 
 /**
  * The garment's sleeves, from the sleeve mask (lib/garment-photo/segment.ts). A sleeve must leave the
@@ -282,9 +489,14 @@ export function armChain(body: BodyAnchors, side: Side): Point[] {
   return [{ x: shoulder.x, y: shoulder.y }, elbow, wrist, hand];
 }
 
+/** Share of a sleeve's length over which it turns from the body's shape to the arm's direction. */
+export const SLEEVE_BLEND = 0.25;
+
 /**
- * A sleeve bent along the arm: the sleeve's axis (root → end) follows the arm from where the sleeve
- * joins the body (continuous with the torso), and its width stays across the arm.
+ * A sleeve bent along the arm: the sleeve's axis (root → end) follows the arm, and its width stays
+ * across the arm. At the shoulder it is mapped exactly like the body, so the shoulder cap carries on
+ * the body's shoulder line without a step or gap; it turns to follow the arm over SLEEVE_BLEND of its
+ * length, as cloth does.
  */
 export function sleeveMesh(fit: GarmentFit, sleeve: SleeveFit, body: BodyAnchors, along3 = 3, rows = 10): Triangle[] {
   const map = garmentToBody(fit, body);
@@ -301,13 +513,22 @@ export function sleeveMesh(fit: GarmentFit, sleeve: SleeveFit, body: BodyAnchors
   // person's arm); across, it keeps the garment's scale.
   const toWrist = length(sub(chain[1] ?? rootOnBody, rootOnBody)) + length(sub(chain[2] ?? rootOnBody, chain[1] ?? rootOnBody));
   const lengthwise = Math.min(scale, (toWrist * 1.02) / sleeve.length);
-  const ts = Array.from({ length: rows + 1 }, (_, j) => -0.12 * sleeve.length + (1.22 * sleeve.length * j) / rows);
-  const ss = Array.from({ length: along3 + 1 }, (_, i) => -sleeve.halfWidth + (2 * sleeve.halfWidth * i) / along3);
+  // The mesh reaches well past the sleeve's axis box: its picture is transparent outside the sleeve, and
+  // a shoulder cap sticking out of the box would otherwise not be drawn (a hole at the shoulder).
+  // Rows every 14% of the sleeve from 28% above its root (so the root itself is on the grid).
+  const ts = Array.from({ length: rows + 1 }, (_, j) => -0.28 * sleeve.length + (1.4 * sleeve.length * j) / rows);
+  const ss = Array.from({ length: along3 + 1 }, (_, i) => -1.3 * sleeve.halfWidth + (2.6 * sleeve.halfWidth * i) / along3);
   const src = (t: number, s: number): Point => ({ x: sleeve.root.x + axis.x * t + perp.x * s, y: sleeve.root.y + axis.y * t + perp.y * s });
-  const dst = (t: number, s: number): Point => {
+  const onArm = (t: number, s: number): Point => {
     const { point, direction } = along(chain, t * lengthwise);
     const across = { x: -direction.y, y: direction.x };
     return { x: point.x + across.x * s * scale, y: point.y + across.y * s * scale };
+  };
+  const dst = (t: number, s: number): Point => {
+    const k = Math.min(1, Math.max(0, t / (sleeve.length * SLEEVE_BLEND)));
+    const w = k * k * (3 - 2 * k);
+    const p = src(t, s);
+    return lerp(map(p.x, p.y), onArm(t, s), w);
   };
   const triangles: Triangle[] = [];
   for (let j = 0; j < rows; j += 1) {
