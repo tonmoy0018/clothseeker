@@ -11,8 +11,8 @@ function coloured(lab: [number, number, number]): boolean {
 }
 
 /**
- * The garment mask grown into coloured pixels it touches, between its upper body's sides, from a collar's
- * height above its top down to `untilY` (its waist); then notches a few pixels wide are sealed and small
+ * The garment mask grown into coloured pixels it touches, between its widest sides, from a collar's
+ * height above its top down to `untilY` (its hem); then notches a few pixels wide are sealed and small
  * enclosed specks (buttons) filled. Greys stop the growing, so an open neckline showing a mannequin,
  * shadows between a sleeve and the body, and the backdrop stay out. Sealed pixels that show the
  * backdrop take the colour of the fabric around them (this changes `image`).
@@ -22,7 +22,7 @@ export function recoverGarment(image: RgbImage, garment: Mask, untilY: number): 
   let top = height;
   for (let p = 0; p < width * height && top === height; p += 1) if (garment.data[p]) top = Math.floor(p / width);
   if (top === height) return garment;
-  // The upper body's sides: the widest garment extent between the top and untilY.
+  // Its sides: the widest garment extent between the top and untilY.
   let left = width;
   let right = -1;
   const bottom = Math.min(height - 1, Math.max(top, Math.round(untilY)));

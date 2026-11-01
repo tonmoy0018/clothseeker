@@ -65,7 +65,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - **Shop item:** its try-on picture (the first catalogue photo), cut out with the same code as the server (`findGarment`/`splitGarment` in `lib/garment-photo/segment.ts`). Storage answers with `Access-Control-Allow-Origin: *`, so the browser may read the pixels.
   - **Design:** the design screen's recoloured front picture with its printed items, cut out by the union of the picture's region masks.
   - **Cleaned up for wearing** (`lib/vision/garment-fill.ts`, shop items):
-    - `recoverGarment` adds the coloured parts the garment finder misses because they aren't the main colour: a pale placket, an embroidered collar band, embroidery. It grows only into clearly coloured pixels, so a mannequin's neck, shadows and the backdrop stay out.
+    - `recoverGarment` adds the coloured parts the garment finder misses because they aren't the main colour: a pale placket, an embroidered collar band, embroidery, a print's motifs on a skirt's edge (down to the hem; otherwise they'd leave bites in it). It grows only into clearly coloured pixels, so a mannequin's neck, shadows and the backdrop stay out.
     - Notches about 1% of the picture wide are sealed, and pixels at the edge with the backdrop's colour take the fabric's colour (`recolourBackdrop`).
     - The measurements (shoulders, waist, sleeves) still come from the plain cut-out, so a collar is never taken for the shoulders.
   - **Pieces:** the body and each sleeve. Only edges against the backdrop are softened, after dropping their outermost pixel ring (a pale fringe). Joins between pieces stay hard, and sleeves overlap the body by 2 px, so no background shows through.
@@ -75,17 +75,38 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
     - The garment hangs from its shoulder seams. When its top is a collar standing up near the centre line, the seams are measured just inside the shoulder points, and the collar stands above them around the neck.
     - The seams are pinned 14% of the shoulder-joint distance above the joints (`SHOULDER_LIFT`), at 1.1× their width (`SEAM_PER_JOINTS`).
     - Mannequin shoulders slope far more than people's, so 55% of the garment's measured shoulder slope is taken out (`SHOULDER_SQUARE`). The raise peaks at the shoulder point and eases off over the sleeve top, so the shoulder stays round.
-  - **Waist and below:** the waist goes to the body's waist (60% of the way to the hip joints, `BODY_WAIST`); below it the garment hangs along hips→knees.
-  - **Covering the person's own clothes:** below the chest, the body widens out to the centre line of an arm hanging beside it, at most 1.4× (`MAX_WIDEN`), easing back below the hand. Arms held away change nothing.
-  - **Drawing:** a 6×16 mesh of affine triangles (`drawMesh` in `lib/vision/draw.ts`). Each triangle is grown by 1.3 px, so their edges overlap and no hairlines show. Turning narrows the garment; facing away hides it with a hint.
+  - **Waist and below:** the waist goes to the body's waist (60% of the way to the hip joints, `BODY_WAIST`). Below it the garment hangs towards the knees and 35% straight down (`GRAVITY`), so a skirt hangs when the body leans.
+  - **Fitted to the person's outline** (`measureOutline`, `fitToOutline`): on 25 rows, the person mask gives how far the body reaches on each side of the centre line. The mask is moved along with the body on frames where the outline model doesn't run.
+    - Above the hips, the body ends where the mask does or where an arm begins. The garment follows it with 6% ease (`EASE`), between 0.85× and 1.4× its own width (`MIN_FIT`, `MAX_WIDEN`). So it wraps a slimmer or fuller figure, and when the person turns, the far side narrows more than the near side.
+    - Below the hips it reaches the furthest leg (hands left out) and only ever widens, so a skirt covers legs that step apart.
+    - The shoulders keep the garment's own width; the fitted width takes over across the upper chest.
+    - Widths are smoothed between rows and over frames (`WidthSmoother`). Without a mask yet, the garment widens to an arm hanging beside it instead (as before).
+  - **Cloth moves** (`lib/vision/cloth.ts`, `ClothSway`): the hem behaves like a weight on a damped spring from the hips (1.3 Hz, damping 0.3). When the person moves, it trails behind, swings past and settles. The swing grows from nothing at the hips to its most at the hem, and is capped at 45% of the shoulder width.
+  - **Drawing:** an 8×24 mesh of affine triangles (`drawMesh` in `lib/vision/draw.ts`). The columns meet at the centre line, because each side is fitted on its own. Each triangle is grown by 1.3 px, so their edges overlap and no hairlines show. Facing away hides the garment with a hint.
+- **The person's own clothes where the garment doesn't cover them** (`lib/vision/uncover.ts`, `FrameCleaner` in `draw.ts`). For example, a T-shirt's sleeves around a sleeveless dress, or its neckline inside a low one. Before the garment is drawn, a smaller copy of the frame is cleaned (the shoulders about 60 px apart, at most 480 px wide; about 5 ms):
+  - **Skin colour** is read around the nose (`skinModel`), and settles over frames. The paint itself takes the colour of the person's visible neck and arm skin, which is usually darker than a lit face.
+  - **On the shoulders, upper chest and arms**, clothing becomes skin:
+    - the shoulders slope from the neck;
+    - arms are 26% of the shoulder distance wide (`ARM_HALF`);
+    - the skin is shaded by the cloth's light and folds and darkens towards the outline and the arms' sides.
+  - **Outside the bare body**, such as a sleeve standing off the arm or a band at the outline (`STAND_OFF`), clothing becomes the backdrop beside it on the same row.
+  - **Left alone:**
+    - the head;
+    - dark hair near it;
+    - real skin, including its shadows (an elliptical tint test, `skinDistance`; borderline tints are only partly painted);
+    - the backdrop;
+    - forearms' shaded edges;
+    - everything below the upper chest (the garment covers the torso, and painting there would show a bare torso wherever a garment doesn't reach); the paint fades out over a short band;
+    - everything below the hips (trousers under a short dress stay).
 - **Sleeves follow the arms** (`sleeveFits`, `sleeveMesh`):
   - Real sleeves are split from the garment picture: sleeve-mask pixels outside the torso trunk (`SLEEVE_TRUNK`) that leave the shoulder outwards or downwards. Straps stay with the body.
   - Each sleeve is bent along shoulder → elbow → wrist. At the shoulder it is mapped exactly like the body, so the cap continues the shoulder line. It turns to follow the arm over the first 25% of its length (`SLEEVE_BLEND`).
   - It's compressed so it never reaches past the wrist.
-- **Arms in front:** the parts of the arms the garment doesn't cover are drawn back from the camera frame over the garment, masked by the person outline (`exposedArm`, `PersonLayer.drawArms`). That's below a short sleeve, the hand below a long one, or almost the whole arm for a sleeveless garment. The stroke is about an arm wide (`ARM_WIDTH`, 21% of the shoulder distance); wider would redraw the person's own clothes beside the arm.
+- **Arms in front:** the parts of the arms the garment doesn't cover are drawn back from the cleaned camera frame over the garment, masked by the person outline (`exposedArm`, `PersonLayer.drawArms`). That's below a short sleeve, the hand below a long one, or almost the whole arm for a sleeveless garment. The stroke is about an arm wide (`ARM_WIDTH`, 21% of the shoulder distance); wider would redraw the person's own clothes beside the arm.
 - **Looks worn, not pasted** (`GarmentCompositor`, `lib/vision/relight.ts`):
   - The garment pieces are drawn into their own layer.
   - That layer is relit from the camera with a soft-light "shade" picture made from a 240-px copy of the frame. It carries the creases of the clothes underneath (fine ÷ broad brightness), the room's light falling across the body, and a mild colour cast. Both are kept gentle (0.82–1.2 and 0.88–1.15), so the colours and edges of the person's own clothes (dark trousers under a shirt's hem) don't read as shadows.
+  - Its edges are darkened softly inside its outline (`roundEdges`, 45%), as cloth turning away from the camera round the body is.
   - The layer is then laid on the frame with a soft contact shadow.
   - Cut-out edges are feathered (`featherAlpha`).
 - **Hints** appear when the shoulders and hips aren't in view, or the person faces away.
@@ -93,7 +114,8 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - **Save picture** downloads it.
   - **Use for the realistic try-on** passes the plain camera frame, cropped to a 3:4 portrait around the person, to the try-on panel. There it's offered as "Use my photo from the live mirror", only after consent, and goes through the usual on-device check and upload.
 - **Tests:**
-  - `tests/unit/mirror.test.ts`: the fitting.
+  - `tests/unit/mirror.test.ts` and `mirror-fit.test.ts`: the fitting.
+  - `tests/unit/mirror-drape.test.ts`: the outline fit, turning, legs, the swing, gravity, and hiding the person's own clothes.
   - `tests/e2e/live-mirror.spec.ts` (`@supabase`): Chromium's fake camera plays `tests/fixtures/mirror-woman.mjpeg` (an AI-generated person). It checks that the body is found, a photo is taken and handed to the try-on, nothing goes to another site, and "Make it real" works only after consent.
 
 ### Make it real
@@ -109,13 +131,15 @@ It's a delay of about 25–60 s with the free IDM-VTON Spaces (instant with the 
 
 ### Limits
 
-- **A 2D fit, not a photo:** the garment is fitted onto the body and relit, but it isn't regenerated.
-  - The customer's own clothes can still show beyond a garment that covers less, e.g. a T-shirt's sleeves around a sleeveless dress.
+- **A 2D fit, not a photo:** the garment is fitted onto the body, moved and relit, but it isn't regenerated.
+  - Uncovered clothes become painted skin or backdrop: convincing at a glance, flat up close. Clothes the same colour as the skin or the backdrop, or black clothes next to black hair, stay as they are. A busy backdrop shows the row-copied fill.
+  - Below the upper chest, the customer's own clothes still show where a garment doesn't cover the torso (deliberately: no painted bare torso).
   - Hair isn't drawn in front.
+  - Garments photographed from the side (the Off-Shoulder Evening Dress's catalogue photo is a three-quarter view) can't sit square on a person facing the camera.
   - Some catalogue photos leave a small gap at one shoulder that shows close to the camera (the Linen Casual Shirt).
   - Strongly sloped shoulders can leave a slight corner where the shoulder meets the sleeve.
   - The realistic photo is "Make it real" (the AI try-on). Photo-real live video would need a generative real-time model (e.g. Decart's Lucy VTON, paid per second).
-- **Checked framings (2026-11-01):** close-up (head to chest, hips out of view) and mid-shot (head to thighs) of an AI-generated man in the Linen Casual Shirt, Oxford Shirt and Embroidered Eid Panjabi, and the full-length test woman in dresses.
+- **Checked framings (2026-11-01):** close-up (head to chest, hips out of view) and mid-shot (head to thighs) of an AI-generated man in the Linen Casual Shirt, Oxford Shirt and Embroidered Eid Panjabi, and the full-length test woman (in a T-shirt and leggings) in eight dresses, standing and stepping side to side.
 - **Cut-out quality:** pale or brightly lit garments can lose pieces in the cut-out (e.g. the smocked dress's left side), and the mirror shows those gaps.
 - **The camera needs a secure page:** `localhost` works; a phone on the local network needs HTTPS.
 - **Distance:** one person, about 1–4 m from the camera, facing it.

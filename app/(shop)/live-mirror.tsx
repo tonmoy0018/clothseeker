@@ -12,6 +12,7 @@ import type { VisionClient } from "@/lib/vision/client";
 import type { PersonLayer } from "@/lib/vision/draw";
 import type { MirrorGarment } from "@/lib/vision/garment-source";
 import type { Pose } from "@/lib/vision/movenet";
+import type { PersonMask } from "@/lib/vision/segment";
 
 import { getTryOnStatusAction, startTryOnAction, uploadTryOnPhotoAction } from "./try-on-actions";
 import type { TryOnSource } from "./try-on-panel";
@@ -122,9 +123,17 @@ export function LiveMirror({
   async function loop(video: HTMLVideoElement, vision: VisionClient, garment: MirrorGarment, layer: PersonLayer, mirror: typeof import("@/lib/vision/mirror")) {
     const { PoseSmoother } = await import("@/lib/vision/smooth");
     const { KEYPOINT_NAMES } = await import("@/lib/vision/movenet");
-    const { GarmentCompositor } = await import("@/lib/vision/draw");
+    const { GarmentCompositor, FrameCleaner } = await import("@/lib/vision/draw");
+    const { ClothSway, WidthSmoother } = await import("@/lib/vision/cloth");
+    const { maskAtSmooth } = await import("@/lib/vision/segment");
     const smoother = new PoseSmoother(KEYPOINT_NAMES);
     const compositor = new GarmentCompositor();
+    const cleaner = new FrameCleaner();
+    const sway = new ClothSway();
+    const widthSmoother = new WidthSmoother();
+    let mask: PersonMask | null = null;
+    /** Where the body was in the frame the person mask was made from. */
+    let maskCentre: { x: number; y: number } | null = null;
     let tick = 0;
     let lastHint: string | null = "";
     while (runningRef.current) {
@@ -145,7 +154,11 @@ export function LiveMirror({
         frame.close();
         break;
       }
-      if (result.mask) layer.setMask(result.mask);
+      if (result.mask) {
+        layer.setMask(result.mask);
+        mask = result.mask;
+        maskCentre = null;
+      }
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
       context.setTransform(1, 0, 0, 1, 0, 0);
@@ -154,17 +167,37 @@ export function LiveMirror({
       const body = pose ? mirror.bodyAnchors(pose) : null;
       centreRef.current = body ? (body.leftShoulder.x + body.rightShoulder.x + body.leftHip.x + body.rightHip.x) / 4 : null;
       if (pose && body) {
+        const span = Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y);
+        // Measured on the unsmoothed pose: the mask is exactly where the person was in its own frame.
+        const raw = result.pose ?? pose;
+        const centre = { x: (raw.leftShoulder.x + raw.rightShoulder.x + raw.leftHip.x + raw.rightHip.x) / 4, y: (raw.leftShoulder.y + raw.rightShoulder.y + raw.leftHip.y + raw.rightHip.y) / 4 };
+        maskCentre ??= centre;
+        // The outline model runs on every other frame: in between, its mask is moved along with the body.
+        const seenMask = mask;
+        const shift = { x: centre.x - maskCentre.x, y: centre.y - maskCentre.y };
+        const person = seenMask ? (x: number, y: number) => maskAtSmooth(seenMask, x - shift.x, y - shift.y) : null;
+        // Fitted to the person's outline (when the outline model has run), the hem swinging behind the hips.
+        const outline = person ? mirror.measureOutline(garment.fit, body, person) : null;
+        const drape = {
+          widths: outline ? widthSmoother.next(mirror.fitToOutline(garment.fit, body, outline)) : null,
+          sway: sway.next({ x: (body.leftHip.x + body.rightHip.x) / 2, y: (body.leftHip.y + body.rightHip.y) / 2 }, span, clock()),
+        };
+        // Their own clothes where the garment won't cover them become skin or backdrop.
+        const clean = cleaner.run(frame, width, height, body, person);
+        if (clean !== frame) context.drawImage(clean, 0, 0, width, height);
         // The body, then each sleeve bent along its arm; then the arms the garment doesn't cover, in front.
         const pieces = [
-          { image: garment.body, triangles: mirror.garmentMesh(garment.fit, body) },
-          ...garment.sleeves.map((s) => ({ image: s.image, triangles: mirror.sleeveMesh(garment.fit, s.fit, body) })),
+          { image: garment.body, triangles: mirror.garmentMesh(garment.fit, body, undefined, undefined, drape) },
+          ...garment.sleeves.map((s) => ({ image: s.image, triangles: mirror.sleeveMesh(garment.fit, s.fit, body, undefined, undefined, drape) })),
         ];
         compositor.draw(context, frame, width, height, pieces);
         const sleeveOn = (side: "left" | "right") => garment.sleeves.find((s) => s.fit.side === side)?.fit ?? null;
         const arms = (["left", "right"] as const).map((side) => mirror.exposedArm(garment.fit, body, side, sleeveOn(side)));
-        const span = Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y);
         // About an arm's width: wider would redraw the person's own clothes beside the arm.
-        layer.drawArms(context, frame, width, height, arms, span * mirror.ARM_WIDTH);
+        layer.drawArms(context, clean, width, height, arms, span * mirror.ARM_WIDTH, shift);
+      } else {
+        sway.reset();
+        widthSmoother.reset();
       }
       frame.close();
       const nextHint = body ? null : pose && pose.leftShoulder.score > 0.3 && pose.leftShoulder.x <= pose.rightShoulder.x ? "Turn to face the camera." : "Step back until your shoulders and hips are in view.";

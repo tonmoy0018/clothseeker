@@ -28,3 +28,17 @@ export function maskAt(mask: PersonMask, x: number, y: number): number {
   if (mx < 0 || my < 0 || mx >= SELFIE_SIZE || my >= SELFIE_SIZE) return 0;
   return mask.alpha[my * SELFIE_SIZE + mx] ?? 0;
 }
+
+/** Like maskAt, but interpolated between the mask's pixels, so outlines drawn from it aren't blocky. */
+export function maskAtSmooth(mask: PersonMask, x: number, y: number): number {
+  const mx = x * mask.box.scale + mask.box.offsetX - 0.5;
+  const my = y * mask.box.scale + mask.box.offsetY - 0.5;
+  const fx = Math.floor(mx);
+  const fy = Math.floor(my);
+  const tx = mx - fx;
+  const ty = my - fy;
+  const at = (px: number, py: number) => (px < 0 || py < 0 || px >= SELFIE_SIZE || py >= SELFIE_SIZE ? 0 : (mask.alpha[py * SELFIE_SIZE + px] ?? 0));
+  const top = at(fx, fy) * (1 - tx) + at(fx + 1, fy) * tx;
+  const bottom = at(fx, fy + 1) * (1 - tx) + at(fx + 1, fy + 1) * tx;
+  return top * (1 - ty) + bottom * ty;
+}

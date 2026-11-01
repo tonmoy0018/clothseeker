@@ -1,7 +1,7 @@
 import { findGarment, splitGarment, type GarmentParts, type Mask } from "@/lib/garment-photo/segment";
 
 import { recoverGarment } from "./garment-fill";
-import { garmentFit, inSleeve, sleeveFits, withLooseSleeves, type GarmentFit, type SleeveFit } from "./mirror";
+import { garmentFit, inSleeve, maskBounds, sleeveFits, withLooseSleeves, type GarmentFit, type SleeveFit } from "./mirror";
 import { featherAlpha } from "./relight";
 
 // The garment picture for the live mirror, prepared in the browser: cut out on a transparent background
@@ -99,11 +99,11 @@ export async function garmentFromPhoto(url: string): Promise<MirrorGarment> {
   const pixels = { data: rgb, width, height };
   const found = findGarment(pixels);
   const parts = splitGarment(found);
-  // Down to a torso's length below the waist: plackets and embroidery can run past it. Only the pixels
-  // drawn change: the shoulders, waist and sleeves are measured on the garment's main colour, or a
-  // collar band would be taken for the shoulders.
+  // Down to the hem: plackets and embroidery run down the body, and a print's motifs on a skirt's edge
+  // would otherwise leave bites in the hem. Only the pixels drawn change: the shoulders, waist and
+  // sleeves are measured on the garment's main colour, or a collar band would be taken for the shoulders.
   // Recovery also recolours the backdrop caught at the garment's edge; those colours go back into the picture.
-  const garment = recoverGarment(pixels, found, parts.waistY * 2 - parts.shoulderY);
+  const garment = recoverGarment(pixels, found, maskBounds(found).bottom);
   const cleaned = context.getImageData(0, 0, width, height);
   for (let p = 0; p < width * height; p += 1) {
     if (!garment.data[p]) continue;

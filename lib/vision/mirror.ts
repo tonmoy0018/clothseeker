@@ -9,8 +9,10 @@ import type { Pose } from "./movenet";
 // person's left is on the picture's right. The page mirrors the finished frame for display.
 //
 // The garment's shoulder line is pinned to the shoulders, its waist to the body's waist (between the
-// shoulders and hip joints), and below the waist it hangs along the hips→knees direction. Its width
-// follows the shoulders, so turning narrows it.
+// shoulders and hip joints), and below the waist it hangs towards the knees and partly straight down.
+// Its scale follows the shoulders; when the person's outline is known (the camera's person mask), each
+// side of each row is fitted to it, so the garment wraps their shape and narrows on the far side when
+// they turn. A skirt's hem swings behind the hips as they move (cloth.ts).
 
 export type Point = { x: number; y: number };
 
@@ -135,6 +137,8 @@ export type BodyAnchors = {
   knees: Point | null;
   /** Elbows and wrists (the person's own sides), when seen: sleeves and arms follow them. */
   arms: Record<Side, { elbow: Point | null; wrist: Point | null }>;
+  /** The nose and eyes, when seen: the person's skin colour is read there. */
+  face?: { nose: Point; leftEye: Point; rightEye: Point } | null;
 };
 
 /** The wearer's own side: "left" is on the picture's right (in garment photos and the camera alike). */
@@ -155,6 +159,7 @@ export function bodyAnchors(pose: Pose, minScore = 0.3): BodyAnchors | null {
     rightHip: pose.rightHip,
     knees,
     arms: { left: { elbow: point("leftElbow"), wrist: point("leftWrist") }, right: { elbow: point("rightElbow"), wrist: point("rightWrist") } },
+    face: seen("nose") && seen("leftEye") && seen("rightEye") ? { nose: pose.nose, leftEye: pose.leftEye, rightEye: pose.rightEye } : null,
   };
 }
 
@@ -188,14 +193,19 @@ export function torsoScale(fit: GarmentFit, body: BodyAnchors): number {
   return (length(sub(body.leftShoulder, body.rightShoulder)) * SEAM_PER_JOINTS) / fit.shoulderWidth;
 }
 
-/** Maps a point of the garment picture to the camera frame, for this body. */
-export function garmentToBody(fit: GarmentFit, body: BodyAnchors): (gx: number, gy: number) => Point {
+/**
+ * How the garment's body is placed on this person, shared by the mapping and the outline measurement:
+ * the centre line from the top of the shoulders through the waist and (below it) towards the knees, and
+ * the sideways direction on each row.
+ */
+function bodyFrame(fit: GarmentFit, body: BodyAnchors) {
   // The pose model's shoulder points are the joints; the top of the shoulders (where a garment's top
   // edge rests) is a little higher, "up" being from the hips towards the shoulders.
   const joints = mid(body.leftShoulder, body.rightShoulder);
   const hips = mid(body.leftHip, body.rightHip);
   const up = unit(sub(joints, hips));
-  const lift = length(sub(body.leftShoulder, body.rightShoulder)) * SHOULDER_LIFT;
+  const span = length(sub(body.leftShoulder, body.rightShoulder));
+  const lift = span * SHOULDER_LIFT;
   const shoulders = { x: joints.x + up.x * lift, y: joints.y + up.y * lift };
   const waist = lerp(shoulders, hips, BODY_WAIST);
   const acrossShoulders = unit(sub(body.leftShoulder, body.rightShoulder));
@@ -205,18 +215,173 @@ export function garmentToBody(fit: GarmentFit, body: BodyAnchors): (gx: number, 
   // garment shouldn't stretch like rubber when the camera sees the torso at an angle).
   const rawDown = length(sub(waist, shoulders)) / (fit.waistY - fit.shoulderY);
   const down = Math.min(Math.max(rawDown, scale * 0.6), scale * 1.6);
-  const below = unit(sub(body.knees ?? hips, body.knees ? hips : shoulders));
+  // Below the waist cloth follows the legs, and partly hangs straight down (gravity) when the body leans.
+  const legs = unit(sub(body.knees ?? hips, body.knees ? hips : shoulders));
+  const below = unit(lerp(legs, { x: 0, y: 1 }, GRAVITY));
   // The garment row level with the hip joints, to blend the sideways direction from shoulders to hips.
   const hipRow = fit.waistY + length(sub(hips, waist)) / down;
+  return {
+    joints,
+    hips,
+    span,
+    scale,
+    hipRow,
+    /** The centre line's point on garment row `gy`. */
+    axisAt: (gy: number): Point =>
+      gy <= fit.waistY
+        ? lerp(shoulders, waist, (gy - fit.shoulderY) / (fit.waistY - fit.shoulderY))
+        : { x: waist.x + below.x * (gy - fit.waistY) * down, y: waist.y + below.y * (gy - fit.waistY) * down },
+    /** Towards the person's left on garment row `gy`. */
+    acrossAt: (gy: number): Point => unit(lerp(acrossShoulders, acrossHips, Math.min(1, Math.max(0, (gy - fit.shoulderY) / Math.max(1, hipRow - fit.shoulderY))))),
+  };
+}
 
-  const span = length(sub(body.leftShoulder, body.rightShoulder));
+/**
+ * The person's outline beside the garment's centre line, measured on the camera's person mask: on each
+ * of `rows` (garment rows), how far the body reaches on the person's left and right (camera pixels,
+ * along the row; 0 where it wasn't found). Arms are left out: above the hips the body ends where the
+ * mask does or where an arm begins; below them, at the furthest leg (hands left out), so a skirt covers
+ * legs that step apart.
+ */
+export type BodyOutline = { rows: number[]; left: number[]; right: number[] };
+
+export function measureOutline(fit: GarmentFit, body: BodyAnchors, person: (x: number, y: number) => number, count = 24): BodyOutline {
+  const frame = bodyFrame(fit, body);
+  const step = Math.max(1, frame.span / 60);
+  const limit = frame.span * 1.6;
+  const arms = (["left", "right"] as const).map((side) => armChain(body, side));
+  const nearArm = (p: Point, reach: number) => arms.some((chain) => chain.some((a, i) => i > 0 && distanceToSegment(p, chain[i - 1] ?? a, a) < reach));
+  const rows = Array.from({ length: count + 1 }, (_, i) => fit.shoulderY + ((fit.bottom - fit.shoulderY) * i) / count);
+  const outline: BodyOutline = { rows, left: [], right: [] };
+  for (const gy of rows) {
+    const axis = frame.axisAt(gy);
+    const across = frame.acrossAt(gy);
+    const legs = gy > frame.hipRow;
+    for (const side of ["left", "right"] as const) {
+      const sign = side === "left" ? 1 : -1;
+      const at = (d: number): Point => ({ x: axis.x + across.x * d * sign, y: axis.y + across.y * d * sign });
+      let reach = 0;
+      if (legs) {
+        for (let d = 0; d <= limit; d += step) if (person(at(d).x, at(d).y) >= 0.5 && !nearArm(at(d), frame.span * ARM_WIDTH * 0.8)) reach = d;
+      } else if (person(axis.x, axis.y) >= 0.5) {
+        let d = 0;
+        while (d + step <= limit && person(at(d + step).x, at(d + step).y) >= 0.5 && !nearArm(at(d + step), frame.span * ARM_WIDTH * 0.5)) d += step;
+        reach = d;
+      }
+      outline[side].push(reach);
+    }
+  }
+  return outline;
+}
+
+function distanceToSegment(p: Point, a: Point, b: Point): number {
+  const ab = sub(b, a);
+  const t = Math.min(1, Math.max(0, ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / Math.max(1e-9, ab.x * ab.x + ab.y * ab.y)));
+  return length(sub(p, lerp(a, b, t)));
+}
+
+/** How much wider (or narrower) the garment is drawn on each side, on the outline's rows. */
+export type BodyWidths = { rows: number[]; left: number[]; right: number[] };
+
+/** Cloth stands this far off the body (a share of the body's half-width): a garment never looks painted on. */
+export const EASE = 1.06;
+/** A garment fitted to the body is narrowed at most to this share of its own width (it's made to measure). */
+export const MIN_FIT = 0.85;
+
+/**
+ * The garment's widths fitted to the person's outline: above the hips it follows the body (wider or
+ * narrower, within MIN_FIT…MAX_WIDEN, with EASE), so it wraps their shape, and narrows on the far side
+ * when they turn; below the hips it only ever widens, to cover legs that step apart. At the shoulders it
+ * keeps its own width (the seams are already placed), taking the body's over the upper chest. Rows the
+ * outline missed take their neighbours' widths.
+ */
+export function fitToOutline(fit: GarmentFit, body: BodyAnchors, outline: BodyOutline): BodyWidths {
+  const frame = bodyFrame(fit, body);
+  const torso = fit.waistY - fit.shoulderY;
+  const widths: BodyWidths = { rows: outline.rows, left: [], right: [] };
+  for (const side of ["left", "right"] as const) {
+    const raw = outline.rows.map((gy, i) => {
+      const natural = naturalHalfWidth(fit, gy) * frame.scale;
+      const reach = outline[side][i] ?? 0;
+      if (natural <= 0 || reach <= 0) return null;
+      const legs = gy > frame.hipRow;
+      const wanted = legs ? (reach + frame.span * 0.05) / natural : (reach * EASE) / natural;
+      return legs ? Math.min(MAX_WIDEN + 0.2, Math.max(1, wanted)) : Math.min(MAX_WIDEN, Math.max(MIN_FIT, wanted));
+    });
+    widths[side] = fillGaps(raw)
+      .map((v, i, all) => ((all[i - 1] ?? v) + v * 2 + (all[i + 1] ?? v)) / 4)
+      .map((factor, i) => {
+        const k = Math.min(1, Math.max(0, ((outline.rows[i] ?? 0) - fit.shoulderY) / (torso * 0.3)));
+        return 1 + (factor - 1) * k * k * (3 - 2 * k);
+      });
+  }
+  return widths;
+}
+
+/** The garment body's half-width on a row, or the nearest row's within a few rows where it's open (a neckline). */
+function naturalHalfWidth(fit: GarmentFit, gy: number): number {
+  const widths = fit.rowHalfWidth;
+  if (!widths) return 0;
+  const row = Math.round(gy);
+  for (let d = 0; d < 12; d += 1) {
+    const w = Math.max(widths[row + d] ?? 0, widths[row - d] ?? 0);
+    if (w > 0) return w;
+  }
+  return 0;
+}
+
+function fillGaps(values: (number | null)[]): number[] {
+  const known = values.flatMap((v, i) => (v === null ? [] : [i]));
+  return values.map((v, i) => {
+    if (v !== null) return v;
+    const before = [...known].reverse().find((k) => k < i);
+    const after = known.find((k) => k > i);
+    const a = before === undefined ? null : values[before];
+    const b = after === undefined ? null : values[after];
+    if (a == null && b == null) return 1;
+    if (a == null) return b ?? 1;
+    if (b == null || before === undefined || after === undefined) return a;
+    return a + ((b - a) * (i - before)) / (after - before);
+  });
+}
+
+function widthAt(widths: BodyWidths, side: Side, gy: number): number {
+  const values = widths[side];
+  const { rows } = widths;
+  if (rows.length === 0) return 1;
+  if (gy <= (rows[0] ?? 0)) return values[0] ?? 1;
+  for (let i = 1; i < rows.length; i += 1) {
+    const r1 = rows[i] ?? 0;
+    if (gy <= r1) {
+      const r0 = rows[i - 1] ?? 0;
+      const t = (gy - r0) / Math.max(1e-6, r1 - r0);
+      return (values[i - 1] ?? 1) + ((values[i] ?? 1) - (values[i - 1] ?? 1)) * t;
+    }
+  }
+  return values[values.length - 1] ?? 1;
+}
+
+/** Share of "straight down" in the direction a skirt hangs (the rest follows the legs). */
+export const GRAVITY = 0.35;
+
+/**
+ * What the person's movement does to the garment, frame by frame: `widths` fits it to their outline
+ * (fitToOutline); `sway` is how far the hem trails behind the hips (camera pixels, ClothSway), fading to
+ * nothing at the hips.
+ */
+export type Drape = { widths?: BodyWidths | null; sway?: Point | null };
+
+/** Maps a point of the garment picture to the camera frame, for this body. */
+export function garmentToBody(fit: GarmentFit, body: BodyAnchors, drape: Drape = {}): (gx: number, gy: number) => Point {
+  const frame = bodyFrame(fit, body);
+  const { joints, hips, span, scale, hipRow } = frame;
   const downward = unit(sub(hips, joints));
   const depth = (p: Point) => (p.x - joints.x) * downward.x + (p.y - joints.y) * downward.y;
   /**
    * How much wider the garment's body should be on this side at this point, to reach under an arm
    * hanging beside it (to the arm's centre line; the arm is drawn back over it): the person's own
    * clothes would show in the gap otherwise. Only for arms the camera sees, never more than MAX_WIDEN,
-   * and easing back to none below the hand.
+   * and easing back to none below the hand. Used when the person's outline isn't known.
    */
   const widen = (side: Side, axis: Point, across: Point, gy: number): number => {
     const natural = (fit.rowHalfWidth?.[Math.round(gy)] ?? 0) * scale;
@@ -252,26 +417,36 @@ export function garmentToBody(fit: GarmentFit, body: BodyAnchors): (gx: number, 
     return drop * SHOULDER_SQUARE * across * below;
   };
 
+  const sway = drape.sway;
+  const hemRows = fit.bottom - hipRow;
   return (gx, rawGy) => {
     const gy = rawGy - raise(gx, rawGy);
-    const axis =
-      gy <= fit.waistY
-        ? lerp(shoulders, waist, (gy - fit.shoulderY) / (fit.waistY - fit.shoulderY))
-        : { x: waist.x + below.x * (gy - fit.waistY) * down, y: waist.y + below.y * (gy - fit.waistY) * down };
-    const t = Math.min(1, Math.max(0, (gy - fit.shoulderY) / Math.max(1, hipRow - fit.shoulderY)));
-    const across = unit(lerp(acrossShoulders, acrossHips, t));
+    const axis = frame.axisAt(gy);
+    const across = frame.acrossAt(gy);
     // The person's left is towards `across` (from their right shoulder to their left).
-    const offset = (gx - fit.centreX) * scale * widen(gx >= fit.centreX ? "left" : "right", axis, across, gy);
-    return { x: axis.x + across.x * offset, y: axis.y + across.y * offset };
+    const side: Side = gx >= fit.centreX ? "left" : "right";
+    const width = drape.widths ? widthAt(drape.widths, side, gy) : widen(side, axis, across, gy);
+    const offset = (gx - fit.centreX) * scale * width;
+    const point = { x: axis.x + across.x * offset, y: axis.y + across.y * offset };
+    if (!sway || gy <= hipRow || hemRows <= 0) return point;
+    // The skirt swings from the hips: not at all there, most at the hem.
+    const k = Math.min(1, (gy - hipRow) / hemRows) ** 1.5;
+    return { x: point.x + sway.x * k, y: point.y + sway.y * k };
   };
 }
 
 export type Triangle = { src: [Point, Point, Point]; dst: [Point, Point, Point] };
 
 /** The garment's bounding box cut into a cols×rows grid of triangle pairs, each mapped onto the body. */
-export function garmentMesh(fit: GarmentFit, body: BodyAnchors, cols = 6, rows = 16): Triangle[] {
-  const map = garmentToBody(fit, body);
-  const xs = Array.from({ length: cols + 1 }, (_, i) => fit.left + ((fit.right + 1 - fit.left) * i) / cols);
+export function garmentMesh(fit: GarmentFit, body: BodyAnchors, cols = 8, rows = 24, drape: Drape = {}): Triangle[] {
+  const map = garmentToBody(fit, body, drape);
+  // Columns meet at the centre line: each side is fitted on its own, so a triangle mustn't straddle it.
+  const half = Math.max(1, Math.round(cols / 2));
+  const centre = Math.min(fit.right, Math.max(fit.left + 1, fit.centreX));
+  const xs = [
+    ...Array.from({ length: half }, (_, i) => fit.left + ((centre - fit.left) * i) / half),
+    ...Array.from({ length: cols - half + 1 }, (_, i) => centre + ((fit.right + 1 - centre) * i) / (cols - half)),
+  ];
   const ys = Array.from({ length: rows + 1 }, (_, j) => fit.top + ((fit.bottom + 1 - fit.top) * j) / rows);
   const triangles: Triangle[] = [];
   for (let j = 0; j < rows; j += 1) {
@@ -498,8 +673,8 @@ export const SLEEVE_BLEND = 0.25;
  * the body's shoulder line without a step or gap; it turns to follow the arm over SLEEVE_BLEND of its
  * length, as cloth does.
  */
-export function sleeveMesh(fit: GarmentFit, sleeve: SleeveFit, body: BodyAnchors, along3 = 3, rows = 10): Triangle[] {
-  const map = garmentToBody(fit, body);
+export function sleeveMesh(fit: GarmentFit, sleeve: SleeveFit, body: BodyAnchors, along3 = 3, rows = 10, drape: Drape = {}): Triangle[] {
+  const map = garmentToBody(fit, body, drape);
   const scale = torsoScale(fit, body);
   const arm = armChain(body, sleeve.side);
   const shoulder = arm[0] ?? map(sleeve.root.x, sleeve.root.y);

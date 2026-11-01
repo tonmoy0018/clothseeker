@@ -1,6 +1,7 @@
-import { triangleTransform, type Point, type Triangle } from "./mirror";
+import { triangleTransform, type BodyAnchors, type Point, type Triangle } from "./mirror";
 import { shadeFromFrame } from "./relight";
 import { SELFIE_SIZE, type PersonMask } from "./segment";
+import { skinModel, uncoverOwnClothes, type SkinModel } from "./uncover";
 
 // Canvas drawing for the live mirror (browser only). The geometry comes from mirror.ts.
 
@@ -70,9 +71,10 @@ export class PersonLayer {
 
   /**
    * Draws the person's arms from `frame` along `paths` (camera pixels) over what's on `context`, masked
-   * by the person outline, so arms in front of the body show in front of the garment.
+   * by the person outline (moved by `shift` when it's from an earlier frame), so arms in front of the
+   * body show in front of the garment.
    */
-  drawArms(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, paths: readonly Point[][], thickness: number) {
+  drawArms(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, paths: readonly Point[][], thickness: number, shift: Point = { x: 0, y: 0 }) {
     if (!this.maskSet || !this.box || paths.every((p) => p.length < 2)) return;
     for (const canvas of [this.person, this.arms]) {
       if (canvas.width !== width) canvas.width = width;
@@ -84,7 +86,7 @@ export class PersonLayer {
     const { scale, offsetX, offsetY } = this.box;
     person.clearRect(0, 0, width, height);
     person.globalCompositeOperation = "source-over";
-    person.drawImage(this.maskSquare, -offsetX / scale, -offsetY / scale, SELFIE_SIZE / scale, SELFIE_SIZE / scale);
+    person.drawImage(this.maskSquare, -offsetX / scale + shift.x, -offsetY / scale + shift.y, SELFIE_SIZE / scale, SELFIE_SIZE / scale);
     person.globalCompositeOperation = "source-in";
     person.drawImage(frame, 0, 0, width, height);
 
@@ -107,6 +109,65 @@ export class PersonLayer {
 }
 
 /**
+ * The camera frame with the person's own clothes, where the garment won't cover them, turned into skin
+ * or backdrop (uncover.ts). Worked out on a smaller copy (UNCOVER_WIDTH wide) and laid over the frame.
+ */
+export class FrameCleaner {
+  private readonly small = document.createElement("canvas");
+  private readonly overlay = document.createElement("canvas");
+  private readonly clean = document.createElement("canvas");
+  private skin: SkinModel | null = null;
+
+  /**
+   * The cleaned frame, or `frame` itself when the person's skin colour or outline isn't known yet.
+   * `person`: the person mask at a camera pixel.
+   */
+  run(frame: CanvasImageSource, width: number, height: number, body: BodyAnchors, person: ((x: number, y: number) => number) | null): CanvasImageSource {
+    // Fewer pixels for a person close to the camera: about UNCOVER_SPAN pixels between the shoulders is plenty.
+    const span = Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y);
+    const smallWidth = Math.round(Math.min(width, UNCOVER_WIDTH, Math.max(160, (width * UNCOVER_SPAN) / Math.max(1, span))));
+    const smallHeight = Math.max(1, Math.round((height * smallWidth) / width));
+    const scale = width / smallWidth;
+    for (const canvas of [this.small, this.overlay]) {
+      if (canvas.width !== smallWidth) canvas.width = smallWidth;
+      if (canvas.height !== smallHeight) canvas.height = smallHeight;
+    }
+    const small = this.small.getContext("2d", { willReadFrequently: true });
+    const overlay = this.overlay.getContext("2d");
+    if (!small || !overlay || !person) return frame;
+    small.drawImage(frame, 0, 0, smallWidth, smallHeight);
+    const pixels = small.getImageData(0, 0, smallWidth, smallHeight).data;
+    const seen = body.face ? skinModel(pixels, smallWidth, smallHeight, scale, body.face) : null;
+    // The skin colour settles over frames (a blink or a hand at the face changes one frame's reading).
+    if (seen) {
+      const last = this.skin;
+      const mix = (a: number, b: number) => (last ? a + (b - a) * 0.2 : b);
+      this.skin = {
+        y: mix(last?.y ?? 0, seen.y),
+        cb: mix(last?.cb ?? 0, seen.cb),
+        cr: mix(last?.cr ?? 0, seen.cr),
+        rgb: [mix(last?.rgb[0] ?? 0, seen.rgb[0]), mix(last?.rgb[1] ?? 0, seen.rgb[1]), mix(last?.rgb[2] ?? 0, seen.rgb[2])],
+      };
+    }
+    if (!this.skin) return frame;
+    const painted = uncoverOwnClothes(pixels, smallWidth, smallHeight, scale, body, person, this.skin);
+    overlay.putImageData(new ImageData(painted, smallWidth, smallHeight), 0, 0);
+    if (this.clean.width !== width) this.clean.width = width;
+    if (this.clean.height !== height) this.clean.height = height;
+    const clean = this.clean.getContext("2d");
+    if (!clean) return frame;
+    clean.drawImage(frame, 0, 0, width, height);
+    clean.imageSmoothingQuality = "high";
+    clean.drawImage(this.overlay, 0, 0, width, height);
+    return this.clean;
+  }
+}
+
+/** The frame is cleaned at most this wide (camera frames are usually 1280), with the shoulders about UNCOVER_SPAN apart. */
+const UNCOVER_WIDTH = 480;
+const UNCOVER_SPAN = 60;
+
+/**
  * Puts the garment on the camera frame so it looks worn: its pieces are drawn into their own layer, lit
  * by the camera's light (relight.ts, soft-light blend), and laid on the frame with a soft contact
  * shadow.
@@ -115,6 +176,8 @@ export class GarmentCompositor {
   private readonly layer = document.createElement("canvas");
   private readonly shade = document.createElement("canvas");
   private readonly small = document.createElement("canvas");
+  private readonly edge = document.createElement("canvas");
+  private readonly edgeShade = document.createElement("canvas");
 
   /** `pieces`: each garment picture with its mesh. */
   draw(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, pieces: readonly { image: CanvasImageSource; triangles: readonly Triangle[] }[]) {
@@ -150,6 +213,8 @@ export class GarmentCompositor {
       layer.globalCompositeOperation = "source-over";
     }
 
+    this.roundEdges(layer, width, height);
+
     // Resting on the body: a soft shadow just below and around the garment.
     context.save();
     context.shadowColor = "rgba(0, 0, 0, 0.32)";
@@ -158,4 +223,41 @@ export class GarmentCompositor {
     context.drawImage(this.layer, 0, 0);
     context.restore();
   }
+
+  /**
+   * Cloth wraps round the body, so it turns away from the camera towards its edges and catches less
+   * light there: the garment darkens softly inside its outline. Done at 1/8 size, where scaling the
+   * outline down and up again blurs it.
+   */
+  private roundEdges(layer: CanvasRenderingContext2D, width: number, height: number) {
+    const w = Math.max(1, Math.round(width / 8));
+    const h = Math.max(1, Math.round(height / 8));
+    for (const canvas of [this.edge, this.edgeShade]) {
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+    }
+    const edge = this.edge.getContext("2d");
+    const shade = this.edgeShade.getContext("2d");
+    if (!edge || !shade) return;
+    edge.clearRect(0, 0, w, h);
+    edge.filter = `blur(${Math.max(1, w * 0.006)}px)`;
+    edge.drawImage(this.layer, 0, 0, w, h);
+    edge.filter = "none";
+    // Dark where the (blurred) garment fades out: that's its edges, seen from inside.
+    shade.globalCompositeOperation = "source-over";
+    shade.fillStyle = "#000";
+    shade.fillRect(0, 0, w, h);
+    shade.globalCompositeOperation = "destination-out";
+    shade.drawImage(this.edge, 0, 0);
+    shade.globalCompositeOperation = "source-over";
+    layer.save();
+    layer.globalCompositeOperation = "source-atop";
+    layer.globalAlpha = EDGE_SHADE;
+    layer.imageSmoothingQuality = "high";
+    layer.drawImage(this.edgeShade, 0, 0, width, height);
+    layer.restore();
+  }
 }
+
+/** How dark a garment's edges get (0–1) where it turns away from the camera. */
+const EDGE_SHADE = 0.45;
