@@ -14,10 +14,13 @@ export const metadata: Metadata = { title: "Design your own — ClothSeeker" };
 
 export default async function CustomizePage({ params, searchParams }: PageProps<"/customize/[productId]">) {
   const { productId } = await params;
-  const { design, job, alts } = await searchParams;
+  const { design, job, alts, quote } = await searchParams;
   const db = getPrisma();
   const storage = getStorage();
-  const context = await loadDesignContext(db, storage, productId);
+  const user = await getCurrentUser();
+  const customer = user?.role === "CUSTOMER" ? user : null;
+  // A customer's own dress (made from their photo) loads only for them.
+  const context = await loadDesignContext(db, storage, productId, { viewerId: customer?.id ?? null });
 
   if (!context) {
     return (
@@ -31,8 +34,6 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
     );
   }
 
-  const user = await getCurrentUser();
-  const customer = user?.role === "CUSTOMER" ? user : null;
   // Only the signed-in customer's own design is ever loaded; anything else starts a fresh design.
   const initialDesign =
     customer && typeof design === "string" ? await getDesignForEdit(db, storage, customer, design, context.template.productId) : null;
@@ -54,6 +55,8 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
       templateId={context.template.templateId}
       templateVersion={context.template.version}
       aiEnabled={context.template.aiEnabled}
+      ownDress={context.template.ownDress}
+      openQuote={initialDesign !== null && quote === "1"}
       config={context.template.config}
       imageUrls={context.template.imageUrls}
       availableSizes={context.availableSizes}

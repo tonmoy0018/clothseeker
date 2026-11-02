@@ -2,21 +2,31 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
+import { GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 import { downscalePhoto } from "@/lib/media/client-resize";
 import { cn } from "@/lib/utils";
 
-import { getStartStatusAction, startFromDescriptionAction, startFromPhotoAction, type StartResult } from "./actions";
+import { getStartStatusAction, startFromDescriptionAction, startFromPhotoAction, uploadDressPhotoAction, type StartResult } from "./actions";
 
-// Two ways to start: a dress photo or a description. Both queue a dress match for the worker, then
-// open the design screen on the matched dress (with an AI round running for descriptions).
+// Two ways to start: a dress photo or a description. A description, or a photo the customer wants matched
+// to our closest dress, queues a dress match and opens the design screen on that dress (with an AI round
+// running for descriptions). A photo can instead become the customer's own dress, to customise or to have
+// made exactly as it is: both open the design screen on it, and are priced by the team through a quote.
 
 const POLL_MS = 1500;
 const GIVE_UP_MS = 8 * 60 * 1000;
 
-type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; mode: "photo" | "description" } | { kind: "error"; message: string };
+type PhotoChoice = "exact" | "customize" | "closest";
+type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; mode: "photo" | "description"; choice?: PhotoChoice } | { kind: "error"; message: string };
+
+const WAITING: Record<PhotoChoice, string> = {
+  exact: "Getting your own dress ready…",
+  customize: "Getting your own dress ready to customise…",
+  closest: "Matching your photo to our dresses…",
+};
 
 const EXAMPLES = ["A flowy floral midi for a summer wedding", "A simple black dress with long sleeves for work", "A bright tiered dress for a beach holiday"];
 
@@ -24,6 +34,10 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
   const router = useRouter();
   const [description, setDescription] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
+  const [photoKey, setPhotoKey] = useState<string | null>(null);
+  const [garmentType, setGarmentType] = useState<GarmentType>("dress");
+  // "Make this exact dress" opens the design screen with the quote request ready.
+  const exactChosen = useRef(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [pending, startTransition] = useTransition();
 
@@ -53,6 +67,7 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
         const params = new URLSearchParams({ design: designId });
         if (roundJobId) params.set("job", roundJobId);
         if (alternatives.length > 0) params.set("alts", alternatives.join(","));
+        if (exactChosen.current) params.set("quote", "1");
         router.push(`/customize/${productId}?${params.toString()}`);
         return;
       }
@@ -73,7 +88,7 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
     };
   }, [waitingJob, router]);
 
-  function handle(result: StartResult, mode: "photo" | "description") {
+  function handle(result: StartResult, mode: "photo" | "description", choice?: PhotoChoice) {
     if (result.status === "signin") {
       signIn();
       return;
@@ -82,26 +97,41 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
       setPhase({ kind: "error", message: result.message });
       return;
     }
-    setPhase({ kind: "waiting", jobId: result.jobId, mode });
+    exactChosen.current = choice === "exact";
+    setPhase({ kind: "waiting", jobId: result.jobId, mode, choice });
   }
 
-  function startFromPhoto(file: File) {
+  function uploadPhoto(file: File) {
     if (!signedIn) {
       signIn();
       return;
     }
     setPhase({ kind: "idle" });
+    setPhotoKey(null);
     startTransition(async () => {
       try {
         const blob = await downscalePhoto(file);
         setPreview(URL.createObjectURL(blob));
         const form = new FormData();
         form.set("photo", blob, "dress.jpg");
-        handle(await startFromPhotoAction(form), "photo");
+        const uploaded = await uploadDressPhotoAction(form);
+        if (uploaded.status === "signin") {
+          signIn();
+        } else if (uploaded.status === "error") {
+          setPhase({ kind: "error", message: uploaded.message });
+        } else {
+          setPhotoKey(uploaded.key);
+        }
       } catch (error) {
         setPhase({ kind: "error", message: error instanceof Error ? error.message : "That photo couldn't be used." });
       }
     });
+  }
+
+  function choose(choice: PhotoChoice) {
+    if (!photoKey) return;
+    setPhase({ kind: "idle" });
+    startTransition(async () => handle(await startFromPhotoAction(photoKey, choice, garmentType), "photo", choice));
   }
 
   function startFromDescription() {
@@ -121,9 +151,11 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
       <div className="grid gap-4 md:grid-cols-2">
         <section className="flex flex-col gap-3 rounded-xl border p-5" data-testid="start-photo">
           <h2 className="font-medium">From a dress photo</h2>
-          <p className="text-sm text-muted-foreground">Upload a photo of a dress you like. We match it to our closest dress and copy its main colors and style.</p>
+          <p className="text-sm text-muted-foreground">
+            Upload a photo of a dress you like. We can make it exactly as it is, let you customise it, or start you from our closest dress.
+          </p>
           <label className={cn("inline-flex h-9 w-fit cursor-pointer items-center rounded-lg border px-3 text-sm hover:bg-muted", busy && "pointer-events-none opacity-50")}>
-            {phase.kind === "waiting" && phase.mode === "photo" ? "Matching…" : "Upload a dress photo"}
+            {photoKey ? "Use another photo" : "Upload a dress photo"}
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -133,14 +165,53 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
               onChange={(e) => {
                 const file = e.currentTarget.files?.[0];
                 e.currentTarget.value = "";
-                if (file) startFromPhoto(file);
+                if (file) uploadPhoto(file);
               }}
             />
           </label>
-          {preview && phase.kind === "waiting" && phase.mode === "photo" && (
+          {preview && (photoKey || (phase.kind === "waiting" && phase.mode === "photo")) && (
             <span className="relative block h-40 w-28 overflow-hidden rounded-lg bg-muted">
               <Image src={preview} alt="Your dress photo" fill unoptimized className="object-cover" />
             </span>
+          )}
+          {photoKey && (
+            <div className="flex flex-col gap-3" data-testid="photo-choices">
+              <label className="flex items-center gap-2 text-sm">
+                What is it?
+                <select
+                  className="h-8 rounded-md border bg-background px-2 text-sm"
+                  value={garmentType}
+                  disabled={busy}
+                  onChange={(e) => setGarmentType(GARMENT_TYPE_IDS.find((t) => t === e.target.value) ?? "dress")}
+                >
+                  {GARMENT_TYPE_IDS.map((t) => (
+                    <option key={t} value={t}>
+                      {GARMENT_TYPES[t].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex flex-col gap-2">
+                <ChoiceButton
+                  title={`Make this exact ${GARMENT_TYPES[garmentType].noun}`}
+                  detail="We make it just like your photo. Choose your size and ask for a price: we reply within 24 hours."
+                  onClick={() => choose("exact")}
+                  disabled={busy}
+                />
+                <ChoiceButton
+                  title={`Customize this ${GARMENT_TYPES[garmentType].noun}`}
+                  detail="Change its colours, add text, decorations or embroidery on your own dress, then ask for a price."
+                  onClick={() => choose("customize")}
+                  disabled={busy}
+                />
+                <ChoiceButton
+                  title="Start from our closest dress"
+                  detail="A ClothSeeker design in the same colours and style: priced right away, order it instantly."
+                  onClick={() => choose("closest")}
+                  disabled={busy}
+                />
+              </div>
+            </div>
           )}
           <p className="text-xs text-muted-foreground">JPEG, PNG or WebP, any size. Clothing brand logos can&apos;t be used.</p>
         </section>
@@ -172,7 +243,7 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
 
       {phase.kind === "waiting" && (
         <p role="status" className="text-sm text-muted-foreground" data-testid="start-waiting">
-          {phase.mode === "photo" ? "Matching your photo to our dresses…" : "Finding the best dress for your description…"}
+          {phase.mode === "photo" ? WAITING[phase.choice ?? "closest"] : "Finding the best dress for your description…"}
         </p>
       )}
       {phase.kind === "error" && (
@@ -181,5 +252,14 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
         </p>
       )}
     </div>
+  );
+}
+
+function ChoiceButton({ title, detail, onClick, disabled }: { title: string; detail: string; onClick: () => void; disabled: boolean }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className="flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left hover:bg-muted disabled:opacity-50">
+      <span className="text-sm font-medium">{title}</span>
+      <span className="text-xs text-muted-foreground">{detail}</span>
+    </button>
   );
 }

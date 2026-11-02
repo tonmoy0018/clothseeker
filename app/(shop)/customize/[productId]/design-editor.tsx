@@ -52,6 +52,10 @@ export type DesignEditorProps = {
   templateId: string;
   templateVersion: number;
   aiEnabled: boolean;
+  /** The customer's own dress, from their photo (lib/own-dress): priced by the team through a quote. */
+  ownDress: boolean;
+  /** Opened from "Make this exact dress": the quote request is shown straight away. */
+  openQuote?: boolean;
   config: TemplateConfig;
   imageUrls: Record<string, string>;
   availableSizes: Size[];
@@ -521,7 +525,7 @@ export function DesignEditor(props: DesignEditorProps) {
 
       {/* ── preview ── */}
       <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-4">
-        <h1 className="text-2xl font-semibold lg:hidden">Design your {props.productName}</h1>
+        <h1 className="text-2xl font-semibold lg:hidden">{props.ownDress ? props.productName : `Design your ${props.productName}`}</h1>
         <div className="relative flex justify-center rounded-2xl bg-[#f3f2ef] py-4 pr-16 pl-4 sm:px-16" data-testid="preview">
           {fontsReady ? (
             <DesignCanvas
@@ -631,7 +635,13 @@ export function DesignEditor(props: DesignEditorProps) {
               </figure>
             )}
             <div className="flex flex-col gap-1">
-              <p>{spec.startedFrom === "photo" ? `We matched your photo to this ${garment.noun} and copied its main colors.` : `We matched your description to this ${garment.noun}.`}</p>
+              <p>
+                {props.ownDress
+                  ? `This is the ${garment.noun} from your photo. Change its colours or add text, decorations and embroidery, or keep it exactly as it is.`
+                  : spec.startedFrom === "photo"
+                    ? `We matched your photo to this ${garment.noun} and copied its main colors.`
+                    : `We matched your description to this ${garment.noun}.`}
+              </p>
               {props.alternatives && props.alternatives.length > 0 && (
                 <p className="text-muted-foreground">
                   Other good matches:{" "}
@@ -653,7 +663,7 @@ export function DesignEditor(props: DesignEditorProps) {
       {/* ── configurator ── */}
       <div className="flex min-w-0 flex-col">
         <div className="mb-4">
-          <h1 className="hidden text-2xl font-semibold lg:block">Design your {props.productName}</h1>
+          <h1 className="hidden text-2xl font-semibold lg:block">{props.ownDress ? props.productName : `Design your ${props.productName}`}</h1>
           <p className="text-sm text-muted-foreground">Clothing brand logos can&apos;t be used.</p>
         </div>
 
@@ -790,7 +800,7 @@ export function DesignEditor(props: DesignEditorProps) {
             </div>
           )}
 
-          {spec.startedFrom === "photo" && (
+          {spec.startedFrom === "photo" && !props.ownDress && (
             <QuoteRequest designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
           )}
 
@@ -811,36 +821,58 @@ export function DesignEditor(props: DesignEditorProps) {
             </div>
           </div>
 
-          <div id="price-details" hidden={!showPrice}>
-            {price && (
-              <ul className="flex flex-col gap-1 rounded-lg bg-muted/40 p-3 text-sm" data-testid="price-breakdown">
-                {price.lines.map((line) => (
-                  <li key={line.label} className="flex justify-between gap-4">
-                    <span>{line.label}</span>
-                    <span className="tabular-nums">{formatBDT(line.amountMinor)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="mt-1 text-xs text-muted-foreground">Final price is confirmed when you save. Custom clothes are made to order.</p>
-          </div>
+          {props.ownDress ? (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="mr-auto text-sm text-muted-foreground" data-testid="own-dress-price">
+                  Made to order from your photo: the ClothSeeker team prices it.
+                </p>
+                <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
+                  {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
+                </Button>
+              </div>
+              <QuoteRequest
+                ownDress
+                focus={props.openQuote === true}
+                designId={designId}
+                saved={designId !== null && !dirty && !isDraft}
+                onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+              />
+            </>
+          ) : (
+            <>
+              <div id="price-details" hidden={!showPrice}>
+                {price && (
+                  <ul className="flex flex-col gap-1 rounded-lg bg-muted/40 p-3 text-sm" data-testid="price-breakdown">
+                    {price.lines.map((line) => (
+                      <li key={line.label} className="flex justify-between gap-4">
+                        <span>{line.label}</span>
+                        <span className="tabular-nums">{formatBDT(line.amountMinor)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-1 text-xs text-muted-foreground">Final price is confirmed when you save. Custom clothes are made to order.</p>
+              </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="mr-auto flex flex-col">
-              <span className="text-xl font-semibold tabular-nums" data-testid="design-total">
-                {price ? formatBDT(price.totalMinor) : "—"}
-              </span>
-              <button type="button" aria-expanded={showPrice} aria-controls="price-details" onClick={() => setShowPrice((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2">
-                {showPrice ? "Hide price details" : "Price details"}
-              </button>
-            </div>
-            <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
-              {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
-            </Button>
-            <Button onClick={addToCart} disabled={pending || issues.length > 0 || !price}>
-              Add to cart
-            </Button>
-          </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="mr-auto flex flex-col">
+                  <span className="text-xl font-semibold tabular-nums" data-testid="design-total">
+                    {price ? formatBDT(price.totalMinor) : "—"}
+                  </span>
+                  <button type="button" aria-expanded={showPrice} aria-controls="price-details" onClick={() => setShowPrice((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2">
+                    {showPrice ? "Hide price details" : "Price details"}
+                  </button>
+                </div>
+                <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
+                  {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
+                </Button>
+                <Button onClick={addToCart} disabled={pending || issues.length > 0 || !price}>
+                  Add to cart
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

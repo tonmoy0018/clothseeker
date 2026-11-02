@@ -1,12 +1,13 @@
 import { styleOptionsFor, templateStyleGroups } from "@/types/template";
 import { loadDesignContext, type DesignContext } from "@/lib/design/service";
+import { buildOwnDress, OwnDressError, removeOwnDress } from "@/lib/own-dress/build";
 import { BUCKETS } from "@/lib/storage/buckets";
 
 import { AiError, AiJobRejected, AiProviderError } from "../errors";
 import { createDesignRoundJob } from "../jobs";
 import { DressMatchError, matchToSpec, parseDressMatch, startingSpec } from "../match";
-import { dressMatchPayloadSchema, type DressMatchResult } from "../starts";
-import type { DressCandidate } from "../types";
+import { dressMatchPayloadSchema, type DressMatchPayload, type DressMatchResult } from "../starts";
+import type { DressCandidate, ProviderImage } from "../types";
 
 import { leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import type { AiWorkerDeps } from "./run";
@@ -14,6 +15,8 @@ import type { AiWorkerDeps } from "./run";
 // "Start from a dress photo / description", run by the worker:
 //   candidates (live customizable dresses) → brand-logo check (photo) → planner.matchDress
 //   → validated match → prefilled DRAFT design → (description) AI design round → job SUCCEEDED.
+// Or, for "your own dress": brand-logo check → the photo made into a private template (lib/own-dress)
+//   → a draft (customise) or saved (exact) design on it → job SUCCEEDED.
 
 const MAX_CANDIDATES = 40;
 
@@ -45,6 +48,64 @@ async function loadCandidates(deps: AiWorkerDeps, aiOnly: boolean): Promise<{ ca
   return { candidates, contexts };
 }
 
+/** The customer's dress photo, refused (and flagged for the team) when it shows a clothing brand's logo. */
+async function checkedPhoto(deps: AiWorkerDeps, job: ClaimedJob, referenceKey: string | null, signal: AbortSignal): Promise<ProviderImage> {
+  const data = referenceKey ? await deps.storage.get(BUCKETS.designAssets, referenceKey) : null;
+  if (!data || !referenceKey) {
+    throw new AiJobRejected("INTERNAL");
+  }
+  const image = { data, mimeType: "image/webp" as const };
+  const logo = await deps.providers.planner.detectBrandLogos([image], signal);
+  if (logo.detected) {
+    await deps.db.flaggedItem.create({
+      data: {
+        kind: "BRAND_LOGO",
+        customerId: job.customerId,
+        aiJobId: job.id,
+        storageKey: referenceKey,
+        reason: `Brand logo detected in a dress photo used to start a design${logo.label ? ` (${logo.label.slice(0, 60)})` : ""}.`,
+      },
+    });
+    throw new AiJobRejected("BRAND_LOGO");
+  }
+  return image;
+}
+
+/** "Your own dress": their photo becomes a private template of its own (lib/own-dress), to customise or order exactly. */
+async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatchPayload, signal: AbortSignal): Promise<void> {
+  const { db, storage } = deps;
+  if (!input.own || !input.referenceKey) {
+    throw new AiJobRejected("INTERNAL");
+  }
+  const photo = await checkedPhoto(deps, job, input.referenceKey, signal);
+  if (signal.aborted) {
+    throw new AiProviderError("job aborted", true, "TIMEOUT");
+  }
+  let built;
+  try {
+    built = await buildOwnDress(db, storage, { customerId: job.customerId, referenceKey: input.referenceKey, photo: photo.data, garmentType: input.own.garmentType, exact: input.own.exact });
+  } catch (error) {
+    if (error instanceof OwnDressError) throw new AiJobRejected("GARMENT_NOT_FOUND");
+    throw error;
+  }
+  try {
+    const result: DressMatchResult = { designId: built.designId, productId: built.productId, alternatives: [], roundJobId: null };
+    const now = (deps.now ?? (() => new Date()))();
+    const finished = await db.aIJob.updateMany({
+      where: leaseWhere(job, deps.workerId),
+      data: { status: "SUCCEEDED", result, finishedAt: now, lockedAt: null, lockedBy: null, error: null, errorCode: null },
+    });
+    if (finished.count !== 1) {
+      throw new LostLease();
+    }
+    deps.log?.("ai.start_own_dress", { jobId: job.id, exact: input.own.exact });
+  } catch (error) {
+    // The dress belongs to this attempt only.
+    await removeOwnDress(db, storage, built.productId).catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function runDressMatch(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal): Promise<void> {
   const { db, storage, providers } = deps;
   const parsed = dressMatchPayloadSchema.safeParse(job.payload);
@@ -52,33 +113,16 @@ export async function runDressMatch(deps: AiWorkerDeps, job: ClaimedJob, signal:
     throw new AiJobRejected("INTERNAL");
   }
   const input = parsed.data;
+  if (input.mode === "own") {
+    return runOwnDress(deps, job, input, signal);
+  }
 
   const { candidates, contexts } = await loadCandidates(deps, input.mode === "description");
   if (candidates.length === 0) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
 
-  let image = null;
-  if (input.mode === "photo") {
-    const data = input.referenceKey ? await storage.get(BUCKETS.designAssets, input.referenceKey) : null;
-    if (!data || !input.referenceKey) {
-      throw new AiJobRejected("INTERNAL");
-    }
-    image = { data, mimeType: "image/webp" as const };
-    const logo = await providers.planner.detectBrandLogos([image], signal);
-    if (logo.detected) {
-      await db.flaggedItem.create({
-        data: {
-          kind: "BRAND_LOGO",
-          customerId: job.customerId,
-          aiJobId: job.id,
-          storageKey: input.referenceKey,
-          reason: `Brand logo detected in a dress photo used to start a design${logo.label ? ` (${logo.label.slice(0, 60)})` : ""}.`,
-        },
-      });
-      throw new AiJobRejected("BRAND_LOGO");
-    }
-  }
+  const image = input.mode === "photo" ? await checkedPhoto(deps, job, input.referenceKey, signal) : null;
 
   const raw = await providers.planner.matchDress({ mode: input.mode, image, description: input.description, candidates, seed: input.seed }, signal);
   let match;

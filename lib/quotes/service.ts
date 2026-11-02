@@ -38,12 +38,11 @@ export function openQuoteWhere(now: Date): Prisma.QuoteRequestWhereInput {
 
 const requestSchema = z.object({
   designId: z.uuid(),
-  notes: z
-    .string()
-    .trim()
-    .min(10, "Tell the tailors what needs special attention (at least a few words).")
-    .max(1000, "Keep your notes under 1000 characters."),
+  notes: z.string().trim().max(1000, "Keep your notes under 1000 characters."),
 });
+
+/** Tailoring a ClothSeeker dress needs a word on what to change; the customer's own dress (made as it is) doesn't. */
+const NOTES_NEEDED = "Tell the tailors what needs special attention (at least a few words).";
 
 /** Asks the team for a price. Freezes the design (spec + its own preview) for the quote. */
 export async function requestQuote(
@@ -75,6 +74,9 @@ export async function requestQuote(
       throw new QuoteError("NOT_ELIGIBLE", "This design needs changes before it can be quoted. Open it and save it again.");
     }
     throw error;
+  }
+  if (!checked.context.template.ownDress && input.notes.length < 10) {
+    throw new QuoteError("INVALID", NOTES_NEEDED);
   }
 
   // Render the snapshot's preview before the transaction (slow; no locks held).

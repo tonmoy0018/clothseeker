@@ -3,6 +3,7 @@ import { randomInt } from "node:crypto";
 import { z } from "zod";
 
 import { assertAdmin, type Actor } from "@/lib/auth/policy";
+import { IN_CATALOG } from "@/lib/catalog/product-status";
 import type { PrismaClient } from "@/lib/db/client";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { Size } from "@/lib/generated/prisma/enums";
@@ -60,7 +61,7 @@ function titleCase(value: string): string {
 export async function addVariant(db: PrismaClient, actor: Actor, rawInput: unknown): Promise<{ id: string }> {
   assertAdmin(actor);
   const input = addVariantSchema.parse(rawInput);
-  const product = await db.product.findUnique({ where: { id: input.productId }, select: { slug: true } });
+  const product = await db.product.findFirst({ where: { id: input.productId, ...IN_CATALOG }, select: { slug: true } });
   if (!product) {
     throw new AdminError("NOT_FOUND", "That dress no longer exists.");
   }
@@ -109,8 +110,8 @@ export async function addVariant(db: PrismaClient, actor: Actor, rawInput: unkno
 export async function updateVariant(db: PrismaClient, actor: Actor, rawInput: unknown): Promise<void> {
   assertAdmin(actor);
   const input = updateVariantSchema.parse(rawInput);
-  const before = await db.variant.findUnique({
-    where: { id: input.variantId },
+  const before = await db.variant.findFirst({
+    where: { id: input.variantId, product: IN_CATALOG },
     select: { priceMinor: true, stock: true, isActive: true, productId: true },
   });
   if (!before) {

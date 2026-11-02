@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
+import { GARMENT_TYPE_IDS } from "@/lib/catalog/garment-types";
 import type { PrismaClient } from "@/lib/db/client";
 import { customerReferencePrefix } from "@/lib/design/validate";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
@@ -16,16 +17,20 @@ import { DAILY_ROUND_LIMIT, DAILY_SUBMISSION_LIMIT, QUOTA_MESSAGE, startOfDhakaD
 
 // "Start a design from a dress photo or a description" (app side). Queues a DRESS_MATCH job; the
 // worker picks the closest customizable dress, prefills a draft design (lib/ai/worker/dress-match.ts)
-// and, for descriptions, queues an AI design round on it.
+// and, for descriptions, queues an AI design round on it. With a photo the customer may instead ask for
+// their own dress (mode "own", lib/own-dress): made into a private template of its own, to customise or
+// to order exactly as it is, both through a quote.
 
 const key = z.string().max(200).refine(isSafeObjectKey);
 
 export const dressMatchPayloadSchema = z.object({
   kind: z.literal("dress_match"),
-  mode: z.enum(["photo", "description"]),
+  mode: z.enum(["photo", "description", "own"]),
   referenceKey: key.nullable(),
   description: z.string().min(10).max(500).nullable(),
   seed: z.string().length(64),
+  /** Mode "own": what the garment is, and whether to order it exactly as it is (else to customise it). */
+  own: z.object({ garmentType: z.enum(GARMENT_TYPE_IDS), exact: z.boolean() }).optional(),
 });
 export type DressMatchPayload = z.infer<typeof dressMatchPayloadSchema>;
 
@@ -60,6 +65,7 @@ export async function uploadReferencePhoto(storage: StorageAdapter, actor: Actor
 
 const startSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("photo"), referenceKey: z.string().max(200) }),
+  z.object({ mode: z.literal("own"), referenceKey: z.string().max(200), garmentType: z.enum(GARMENT_TYPE_IDS), exact: z.boolean() }),
   z.object({
     mode: z.literal("description"),
     description: z.string().trim().min(10, "Describe the dress in a sentence or two.").max(500, "Keep your description under 500 characters."),
@@ -82,7 +88,7 @@ export async function startDesignFrom(
   const input = parsed.data;
   let referenceKey: string | null = null;
   let description: string | null = null;
-  if (input.mode === "photo") {
+  if (input.mode === "photo" || input.mode === "own") {
     if (!isSafeObjectKey(input.referenceKey) || !input.referenceKey.startsWith(customerReferencePrefix(actor.id))) {
       throw new AiError("INVALID", "That photo isn't yours.");
     }
@@ -97,7 +103,15 @@ export async function startDesignFrom(
     description = input.description.replace(/\s+/g, " ");
   }
 
-  const inputHash = aiInputHash({ v: 1, type: "DRESS_MATCH", customerId: actor.id, referenceKey, description: description ? normalizeInstruction(description) : null });
+  const own = input.mode === "own" ? { garmentType: input.garmentType, exact: input.exact } : undefined;
+  const inputHash = aiInputHash({
+    v: 1,
+    type: "DRESS_MATCH",
+    customerId: actor.id,
+    referenceKey,
+    description: description ? normalizeInstruction(description) : null,
+    ...(own ? { mode: "own", own } : {}),
+  });
   try {
     return await queueMatch();
   } catch (error) {
@@ -135,7 +149,7 @@ export async function startDesignFrom(
           throw new AiError("QUOTA", QUOTA_MESSAGE);
         }
       }
-      const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash } satisfies DressMatchPayload;
+      const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash, ...(own ? { own } : {}) } satisfies DressMatchPayload;
       const job = await tx.aIJob.create({ data: { type: "DRESS_MATCH", customerId: actor.id, payload, inputHash, runAfter: now }, select: { id: true } });
       return { jobId: job.id, cached: false };
     });

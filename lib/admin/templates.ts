@@ -3,6 +3,7 @@ import { z } from "zod";
 import { STYLE_GROUP_IDS } from "@/lib/catalog/garment-types";
 
 import { assertAdmin, type Actor } from "@/lib/auth/policy";
+import { IN_CATALOG } from "@/lib/catalog/product-status";
 import { defaultTemplateConfig } from "@/lib/catalog/default-template";
 import type { PrismaClient } from "@/lib/db/client";
 import type { StorageAdapter } from "@/lib/storage/adapter";
@@ -37,7 +38,7 @@ export type TemplateForEdit = {
 export async function createTemplate(db: PrismaClient, actor: Actor, rawProductId: unknown): Promise<void> {
   assertAdmin(actor);
   const productId = productIdSchema.parse(rawProductId);
-  const product = await db.product.findUnique({ where: { id: productId }, select: { garmentType: true, template: { select: { id: true } } } });
+  const product = await db.product.findFirst({ where: { id: productId, ...IN_CATALOG }, select: { garmentType: true, template: { select: { id: true } } } });
   if (!product) {
     throw new AdminError("NOT_FOUND", "That item no longer exists.");
   }
@@ -65,8 +66,8 @@ export async function getTemplateForEdit(
   if (!parsed.success) {
     return null;
   }
-  const product = await db.product.findUnique({
-    where: { id: parsed.data },
+  const product = await db.product.findFirst({
+    where: { id: parsed.data, ...IN_CATALOG },
     select: { id: true, name: true, template: { select: { version: true, isActive: true, aiEnabled: true, config: true } } },
   });
   if (!product?.template) {
@@ -132,8 +133,8 @@ export async function saveTemplate(
   const input = saveTemplateSchema.parse(rawInput);
   assertKeysBelongToProduct(input.config, input.productId);
 
-  const current = await db.customizationTemplate.findUnique({
-    where: { productId: input.productId },
+  const current = await db.customizationTemplate.findFirst({
+    where: { productId: input.productId, product: IN_CATALOG },
     select: { id: true, version: true, isActive: true, config: true, product: { select: { garmentType: true } } },
   });
   if (!current) {
@@ -189,8 +190,8 @@ export const setTemplateStateSchema = z.object({
 export async function setTemplateState(db: PrismaClient, actor: Actor, rawInput: unknown): Promise<void> {
   assertAdmin(actor);
   const input = setTemplateStateSchema.parse(rawInput);
-  const template = await db.customizationTemplate.findUnique({
-    where: { productId: input.productId },
+  const template = await db.customizationTemplate.findFirst({
+    where: { productId: input.productId, product: IN_CATALOG },
     select: { id: true, isActive: true, aiEnabled: true, config: true },
   });
   if (!template) {

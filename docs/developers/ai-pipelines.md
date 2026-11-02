@@ -136,6 +136,41 @@ browser: polls → /customize/{product}?design=…[&job=round][&alts=a,b]
 - **Untrusted answer.** The planner must choose one of the offered `productId`s, or the attempt is retried and finally fails with `INVALID_PLAN`. Colours snap to the template's allowed colours, a pattern applies to the skirt (or first recolorable region) only if allowed, and style words match option ids or labels.
 - **Reference photo.** Saved on the design (`referencePhotoKey`) and shown beside the canvas. `validateDesignAgainstTemplate` only accepts the customer's own `{customerId}/references/` keys.
 - **Limits and cache.** A dress match counts toward the 30-requests-a-day limit only. A description start also needs one of the day's 10 AI rounds, used by the round it queues. An identical request (same photo or same normalized description) gets the earlier job back while its design still exists.
+- **Upload, then choose** (2026-11-02). The photo is uploaded first (`uploadDressPhotoAction`). The customer then picks one of three options:
+  - **Make this exact dress**;
+  - **Customize this dress**;
+  - **Start from our closest dress**, the match above.
+
+  They also say what it is: dress, shirt or panjabi.
+
+### Your own dress (mode `own`, `lib/own-dress/build.ts`)
+
+```
+own:    the same DRESS_MATCH job, payload.own = { garmentType, exact }
+worker: brand-logo check (as above)
+        → photoPicture (lib/garment-photo/template.ts: lined up, cut into Sleeves/Bodice/Skirt or Body)
+        → PRIVATE product (owner = the customer; every size, price 0, never sold directly)
+          + template (front picture, part masks, print areas, recolor "shade",
+            one style option per group: "As in your photo")
+        → design: SAVED with a preview (exact) or DRAFT (customize)
+browser: /customize/{product}?design=…[&quote=1 for exact]
+```
+
+- **Private.** `status: PRIVATE` keeps it out of everything that shows ACTIVE products:
+  - the shop, product pages and filters;
+  - try-on of ready-made items;
+  - decoration cut-outs;
+  - the dress matcher's candidates;
+  - the photo scripts.
+
+  The loaders (`getCustomizationTemplate`, `loadDesignContext`) let only its owner load it (`viewerId`). Admin catalogue queries exclude it (`IN_CATALOG`, `lib/catalog/product-status.ts`); the team sees it through its quote. If the account is deleted, `ownerId` becomes null and the dress stays private.
+- **Customising.** Customers can recolour each part, keeping the photo's folds, and add patterns, text, decorations, uploads and finishes. They can't change the cut. The AI box is off for these dresses.
+- **Ordering.** Only through a quote:
+  - `addDesignToCart` and checkout refuse these designs (`QUOTE_ONLY`);
+  - "My designs" shows "Priced by quote";
+  - the editor shows "Request a price" instead of a total and "Add to cart";
+  - notes are optional for these quotes, and still required when tailoring one of our dresses.
+- **No dress found.** If no garment is found in the photo, the job fails with `GARMENT_NOT_FOUND` and nothing is left behind. A job that loses its lease after building removes what it built (`removeOwnDress`).
 - **Live results (2026-10-09, Gemini + Cloudflare):**
   - A photo of a striped dress gave the tiered midi with a terracotta skirt, ivory stripes, a square neckline and midi length (28 s).
   - "A romantic floral maxi in lilac for a spring wedding, with long sleeves" picked a matching dress (21 s), then four lilac floral designs with motifs (22 s).

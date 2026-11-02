@@ -44,6 +44,7 @@ model User {
   flaggedItems  FlaggedItem[]
   auditLogs     AuditLog[]
   bodyProfile   BodyProfile?
+  ownDresses    Product[]     @relation("OwnDresses")
 
   @@map("users")
 }
@@ -54,6 +55,9 @@ enum ProductStatus {
   DRAFT
   ACTIVE
   ARCHIVED
+  /// A customer's own dress, made from their photo (lib/own-dress): only its owner designs on it, never
+  /// in the shop or the team's catalogue, and ordered only through a quote.
+  PRIVATE
 }
 
 enum Size {
@@ -98,9 +102,12 @@ model Product {
   imageKeys   String[]      @default([]) @map("image_keys")
   /// Garment length in cm from the shoulder, size M (try-on fit: where the hem lands). Null = not listed.
   lengthCm    Int?          @map("length_cm")
+  /// The customer whose own dress this is (status PRIVATE only). Kept PRIVATE if the account goes.
+  ownerId     String?       @map("owner_id") @db.Uuid
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
+  owner    User?                  @relation("OwnDresses", fields: [ownerId], references: [id], onDelete: SetNull)
   category Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   variants Variant[]
   template CustomizationTemplate?
@@ -111,6 +118,7 @@ model Product {
 
   @@index([status, categoryId])
   @@index([status, garmentType])
+  @@index([ownerId])
   @@map("products")
 }
 

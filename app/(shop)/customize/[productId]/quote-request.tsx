@@ -1,17 +1,34 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import { requestQuoteAction } from "../../account/quotes/actions";
 
 /**
- * Photo-started designs may need special tailoring: the customer can ask the team for a price.
- * Only saved designs can be quoted (the quote freezes what was saved).
+ * Photo-started designs may need special tailoring: the customer can ask the team for a price. The
+ * customer's own dress (`ownDress`) is always priced this way, and needs no notes. Only saved designs can
+ * be quoted (the quote freezes what was saved). `focus` scrolls it into view ("Make this exact dress").
  */
-export function QuoteRequest({ designId, saved, onSignIn }: { designId: string | null; saved: boolean; onSignIn: () => void }) {
+export function QuoteRequest({
+  designId,
+  saved,
+  onSignIn,
+  ownDress = false,
+  focus = false,
+}: {
+  designId: string | null;
+  saved: boolean;
+  onSignIn: () => void;
+  ownDress?: boolean;
+  focus?: boolean;
+}) {
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (focus) section.current?.scrollIntoView({ block: "center" });
+  }, [focus]);
   const router = useRouter();
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +52,12 @@ export function QuoteRequest({ designId, saved, onSignIn }: { designId: string |
   }
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl border p-4" data-testid="quote-request">
-      <h2 className="font-medium">Need special tailoring?</h2>
+    <section ref={section} className="flex flex-col gap-2 rounded-xl border p-4" data-testid="quote-request">
+      <h2 className="font-medium">{ownDress ? "Get a price for your dress" : "Need special tailoring?"}</h2>
       <p className="text-sm text-muted-foreground">
-        If the garment in your photo needs changes our templates can&apos;t make, describe them and the ClothSeeker team will reply with a price within 24 hours.
+        {ownDress
+          ? "Choose your size and save any changes. The ClothSeeker team will reply with a price within 24 hours; you then have 7 days to order."
+          : "If the garment in your photo needs changes our templates can't make, describe them and the ClothSeeker team will reply with a price within 24 hours."}
       </p>
       {!designId || !saved ? (
         <p className="text-sm">Save your design first, then request a quote.</p>
@@ -49,12 +68,12 @@ export function QuoteRequest({ designId, saved, onSignIn }: { designId: string |
             value={notes}
             maxLength={1000}
             rows={3}
-            placeholder="e.g. Add a high slit on the left, and pleats like in my photo"
+            placeholder={ownDress ? "Anything the tailors should know? (optional)" : "e.g. Add a high slit on the left, and pleats like in my photo"}
             onChange={(e) => setNotes(e.target.value)}
             className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
-          <Button className="self-start" variant="outline" onClick={submit} disabled={pending || notes.trim().length < 10}>
-            {pending ? "Sending…" : "Request a tailoring quote"}
+          <Button className="self-start" variant={ownDress ? "default" : "outline"} onClick={submit} disabled={pending || (!ownDress && notes.trim().length < 10)}>
+            {pending ? "Sending…" : ownDress ? "Request a price" : "Request a tailoring quote"}
           </Button>
         </>
       )}

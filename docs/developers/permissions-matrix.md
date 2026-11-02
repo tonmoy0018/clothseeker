@@ -96,6 +96,7 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Action | Anonymous | Customer | Admin | Enforced in |
 |---|---|---|---|---|
 | Request a quote | ➡️ sign in | ✅ own saved, photo-started designs; ≤ 5 open | ❌ | `requestQuote` → `assertCustomer`, `quoteIneligibility` |
+| Make, design on or load their own dress (from their photo) | ➡️ sign in | ✅ **own only** (anyone else gets "not found"); ordered only through a quote | ❌ in the catalogue screens; ✅ through its quote | `startDesignFrom` (mode `own`) → `assertCustomer`; `getCustomizationTemplate`/`loadDesignContext` (`viewerId`); `addDesignToCart`/checkout refuse (`QUOTE_ONLY`); admin queries `IN_CATALOG` |
 | See quotes | ❌ | ✅ **own only** ("not found" otherwise) | ✅ all, in `/admin/quotes` (no contact details) | `listMyQuotes`/`getMyQuote` (scoped by `customerId`); `lib/admin/quotes.ts` → `assertAdmin` |
 | Price or decline a quote | ❌ | ❌ | ✅ once, while open (audited) | `respondToQuote` |
 | Accept (add to cart) / withdraw | ❌ | ✅ own, while open; the price comes from the quote | ❌ | `acceptQuote`, `withdrawQuote`; checkout re-checks |

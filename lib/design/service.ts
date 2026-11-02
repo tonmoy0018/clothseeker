@@ -19,7 +19,10 @@ import { validateDesignAgainstTemplate, type DesignIssue } from "./validate";
 // Customer design workflows. Every write re-parses the spec, revalidates it against the CURRENT
 // live template, and recomputes the price on the server — the client's copy is only a proposal.
 
-export type DesignErrorCode = "NOT_FOUND" | "NOT_CUSTOMIZABLE" | "INVALID" | "UPLOAD_INVALID";
+export type DesignErrorCode = "NOT_FOUND" | "NOT_CUSTOMIZABLE" | "INVALID" | "UPLOAD_INVALID" | "QUOTE_ONLY";
+
+/** A design on the customer's own dress can only be ordered through a quote (the team prices it). */
+export const QUOTE_ONLY_MESSAGE = "Your own dress is made to order: request a quote and we'll reply with a price within 24 hours.";
 
 export class DesignError extends Error {
   override readonly name = "DesignError";
@@ -40,12 +43,15 @@ export type DesignContext = {
   basePrices: Partial<Record<Size, number>>;
 };
 
-/** Everything needed to design a product, or null if it isn't customizable right now. */
+/**
+ * Everything needed to design a product, or null if it isn't customizable right now. `viewerId` lets a
+ * customer load their own dress (lib/own-dress), which no one else can.
+ */
 export async function loadDesignContext(
   db: PrismaClient,
   storage: StorageAdapter,
   productId: unknown,
-  options: { signImages?: boolean } = {},
+  options: { signImages?: boolean; viewerId?: string | null } = {},
 ): Promise<DesignContext | null> {
   const template = await getCustomizationTemplate(db, storage, productId, options);
   if (!template) {
@@ -85,7 +91,7 @@ export async function checkDesign(
   } catch {
     throw new DesignError("INVALID", "This design couldn't be read. Please refresh and try again.");
   }
-  const context = await loadDesignContext(db, storage, spec.productId, { signImages: false });
+  const context = await loadDesignContext(db, storage, spec.productId, { signImages: false, viewerId: customerId });
   if (!context) {
     throw new DesignError("NOT_CUSTOMIZABLE", "This dress can't be customized right now.");
   }
@@ -132,6 +138,9 @@ export async function checkSavedDesignForOrder(
     throw new DesignError("NOT_FOUND", "A design in your cart no longer exists.");
   }
   const { spec, price, context } = await checkDesign(db, storage, customerId, design.spec);
+  if (context.template.ownDress) {
+    throw new DesignError("QUOTE_ONLY", QUOTE_ONLY_MESSAGE);
+  }
   return { designId: design.id, productName: context.template.productName, spec, price, template: context.template };
 }
 
@@ -201,7 +210,10 @@ export async function addDesignToCart(
   if (!design) {
     throw new DesignError("NOT_FOUND", "That design doesn't exist or isn't yours.");
   }
-  await checkDesign(db, storage, actor.id, design.spec);
+  const { context } = await checkDesign(db, storage, actor.id, design.spec);
+  if (context.template.ownDress) {
+    throw new DesignError("QUOTE_ONLY", QUOTE_ONLY_MESSAGE);
+  }
 
   await db.$transaction(async (tx) => {
     const cart = await tx.cart.upsert({ where: { customerId: actor.id }, create: { customerId: actor.id }, update: {}, select: { id: true } });
@@ -301,7 +313,7 @@ export async function getDesignForEdit(
 
 export type DesignPriceCheck = { price: DesignPrice; issue: null } | { price: null; issue: string };
 
-/** Current server price of a stored design, or why it can't be bought as-is. */
+/** Current server price of a stored design, or why it can't be bought as-is (or is priced by quote). */
 export async function priceStoredDesign(
   db: PrismaClient,
   storage: StorageAdapter,
@@ -309,7 +321,9 @@ export async function priceStoredDesign(
   rawSpec: unknown,
 ): Promise<DesignPriceCheck> {
   try {
-    const { price } = await checkDesign(db, storage, customerId, rawSpec);
+    const { price, context } = await checkDesign(db, storage, customerId, rawSpec);
+    // The customer's own dress has no shop price: the team quotes it.
+    if (context.template.ownDress) return { price: null, issue: "Priced by quote" };
     return { price, issue: null };
   } catch (error) {
     if (error instanceof DesignError) {

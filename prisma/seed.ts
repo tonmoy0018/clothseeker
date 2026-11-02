@@ -28,7 +28,9 @@ import {
   sizeSurchargeTaka,
   type SeedProduct,
 } from "./seed-data";
-import { catalogPhotoPath, photoPictures, printAreasFor, photoRegionsFor, styleFiles, type PhotoRegion } from "./seed-style-photos";
+import { photoRegionsFor, printAreasFor, type PhotoRegion } from "@/lib/garment-photo/template";
+
+import { catalogPhotoPath, photoPictures, styleFiles } from "./seed-style-photos";
 
 /** AI-generated sample catalog photos, one per seeded dress (see ai-scripts/generate-dress-photos.ts). */
 const SEED_PHOTOS_DIR = path.join(process.cwd(), "prisma", "seed-photos");

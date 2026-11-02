@@ -14,6 +14,7 @@ test.describe("@supabase tailoring quotes", () => {
     await page.goto("/design/start");
     const photo = await sharp({ create: { width: 500, height: 700, channels: 3, background: "#1f2a44" } }).jpeg().toBuffer();
     await page.getByLabel("Upload a dress photo").setInputFiles({ name: "dress.jpg", mimeType: "image/jpeg", buffer: photo });
+    await page.getByRole("button", { name: /^Start from our closest dress/ }).click();
     await expect(page).toHaveURL(/\/customize\//, { timeout: 30_000 });
     const quoteBox = page.getByTestId("quote-request");
     await expect(quoteBox).toContainText("Save your design first");
