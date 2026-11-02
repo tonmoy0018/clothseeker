@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiProviderError, AI_FAILURE_MESSAGES } from "@/lib/ai/errors";
 import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
-import type { AiProviders, TryOnProvider } from "@/lib/ai/types";
+import type { AiProviders, TryOnProvider, TryOnRequest } from "@/lib/ai/types";
+import { hemPlace, type TryOnFit } from "@/lib/fit/fit";
 import { processNextJob, runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import { ForbiddenError, type Actor } from "@/lib/auth/policy";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -142,6 +143,29 @@ describe("try-on jobs", () => {
     await processNextJob(deps());
     expect((await getTryOnStatus(db, storage, customer, queued.jobId)).state).toBe("done");
     expect((await db.tryOnResult.findFirstOrThrow()).productId).toBe(product.id);
+  });
+
+  it("shows the chosen size on the person: the provider gets the fit, the result records it, a new fit is a new try-on", async () => {
+    const customer = await createUser();
+    const { product } = await customizableProduct();
+    await db.product.update({ where: { id: product.id }, data: { lengthCm: 115 } });
+    const pic = await uploaded(customer);
+    const seen: TryOnRequest[] = [];
+    const recording: TryOnProvider = { name: "recording", tryOn: async (request, signal) => (seen.push(request), new FakeTryOn().tryOn(request, signal)) };
+    const fit: TryOnFit = { heightCm: 160, weightKg: 57, preference: "regular", size: "M" };
+    const start = (f: TryOnFit) => createTryOnJob(db, storage, customer, { photoId: pic.id, source: { kind: "product", productId: product.id }, fit: f });
+
+    const first = await start(fit);
+    await processNextJob(deps({ tryOn: recording }));
+    expect(seen[0]?.fit).toEqual({ width: 1, hemLevel: hemPlace(160, 115).level });
+    const status = await getTryOnStatus(db, storage, customer, first.jobId);
+    if (status.state !== "done") throw new Error(`expected done, got ${status.state}`);
+    expect(status.result.fit).toEqual(fit);
+
+    expect(await start(fit)).toEqual({ jobId: first.jobId, cached: true });
+    expect((await start({ ...fit, size: "L" })).cached).toBe(false);
+    expect((await start({ ...fit, heightCm: 175 })).cached).toBe(false);
+    await expectTryOnError(start({ ...fit, heightCm: 300 }), "INVALID");
   });
 
   it("the same photo and design give the cached result; a changed design needs a new try-on", async () => {

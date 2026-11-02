@@ -334,3 +334,32 @@ export function sizeSurchargeTaka(size: Size): number {
 export function seedStock(productIndex: number, sizeIndex: number, colorIndex: number): number {
   return (productIndex * 7 + sizeIndex * 3 + colorIndex * 5) % 9;
 }
+
+/**
+ * Garment lengths in cm from the shoulder, size M (Product.lengthCm; try-on fit shows where the hem
+ * lands). Demo values read off each catalogue photo; the team can change them in the product form.
+ */
+export const SEED_LENGTHS_CM: Readonly<Record<string, number>> = {
+  "linen-wrap-dress": 118,
+  "everyday-shirt-dress": 102,
+  "cotton-tiered-midi": 118,
+  "satin-slip-dress": 140,
+  "sequin-cocktail-dress": 145,
+  "ruffle-mini-dress": 85,
+  "pleated-maxi-gown": 150,
+  "tailored-sheath-dress": 98,
+  "off-shoulder-evening-dress": 150,
+  "floral-sundress": 138,
+  "halter-beach-dress": 140,
+  "smocked-cotton-dress": 125,
+  "embroidered-kurti-dress": 100,
+  "jamdani-inspired-anarkali": 140,
+  "block-print-maxi-dress": 140,
+  "velvet-holiday-dress": 100,
+  "oxford-shirt": 77,
+  "linen-casual-shirt": 74,
+  "mandarin-collar-shirt": 76,
+  "cotton-panjabi": 100,
+  "silk-blend-panjabi": 104,
+  "embroidered-eid-panjabi": 106,
+};

@@ -100,6 +100,11 @@ export type TryOnRequest = {
   category: GarmentTypeInfo["tryOnCategory"];
   /** How far down it covers the body (used by the local try-on's mask). */
   reach?: GarmentTypeInfo["tryOnReach"];
+  /**
+   * How the chosen size fits this person (lib/fit/fit.ts): `width` 1 = as made for them, more is loose,
+   * less tight; `hemLevel` = hem height above the floor as a share of their height (null = unknown).
+   */
+  fit?: { width: number; hemLevel: number | null };
   /** A short description of the garment from catalogue words (lib/tryon/describe.ts), when known. */
   description?: string;
 };

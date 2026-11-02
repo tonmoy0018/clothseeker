@@ -1,4 +1,5 @@
 import type { GarmentTypeInfo } from "@/lib/catalog/garment-types";
+import { BODY_LEVELS } from "@/lib/fit/fit";
 import type { Keypoint, Pose } from "@/lib/vision/movenet";
 
 // The area of a customer's photo a local try-on model repaints (lib/ai/tryon-local.ts): their own
@@ -46,11 +47,22 @@ function profile(points: readonly { y: number; v: number }[]): (y: number) => nu
 }
 
 /**
+ * How the chosen size fits (lib/fit/fit.ts): `width` scales the garment's outline (1 = as made for the
+ * person, more = loose, less = tight); `hemLevel` is the hem's height above the floor as a share of the
+ * person's height, or null when the garment's length isn't known.
+ */
+export type MaskFit = { width: number; hemLevel: number | null };
+
+/**
  * The try-on mask: 255 where the model may repaint, 0 where the photo is kept. Only the shoulders are
  * needed: hips, knees and ankles out of the picture (a half-body photo or selfie) are guessed below it,
  * and the mask simply stops at the photo's edge. Null when the shoulders aren't found.
+ *
+ * With a `fit`, the outline is as wide as that size sits on them and ends where its hem lands. Below the
+ * hem the photo is kept (their own legs, or what they wear on them): repainting legs alone, the model
+ * draws trousers.
  */
-export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, height: number, reach: TryOnReach): Uint8Array | null {
+export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, height: number, reach: TryOnReach, fit?: MaskFit): Uint8Array | null {
   const { leftShoulder: ls, rightShoulder: rs, leftHip: lh, rightHip: rh } = pose;
   if (!seen(ls) || !seen(rs)) return null;
   const shoulders = mid(ls, rs);
@@ -75,7 +87,17 @@ export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, he
   const knees = seen(pose.leftKnee) && seen(pose.rightKnee) ? mid(pose.leftKnee, pose.rightKnee) : { x: hips.x, y: hips.y + torso * 0.9 };
   const ankles = seen(pose.leftAnkle) && seen(pose.rightAnkle) ? mid(pose.leftAnkle, pose.rightAnkle) : { x: knees.x, y: Math.min(height, knees.y + (knees.y - hips.y)) };
   // Dresses: a little past the ankle points, so trouser and legging cuffs are repainted too.
-  const hem = reach === "hips" ? hips.y + torso * 0.3 : reach === "knees" ? knees.y + torso * 0.15 : ankles.y + torso * 0.1;
+  const fullHem = reach === "hips" ? hips.y + torso * 0.3 : reach === "knees" ? knees.y + torso * 0.15 : ankles.y + torso * 0.1;
+  // Where this size's hem lands on them (body levels → photo rows, extended past the last known point).
+  const levelToY = profile([
+    { y: BODY_LEVELS.shoulder, v: shoulders.y },
+    { y: BODY_LEVELS.hip, v: hips.y },
+    { y: BODY_LEVELS.knee, v: knees.y },
+    { y: BODY_LEVELS.ankle, v: ankles.y },
+  ].reverse());
+  const fittedHem = fit?.hemLevel != null && fit.hemLevel > BODY_LEVELS.ankle ? levelToY(fit.hemLevel) + torso * 0.02 : null;
+  const hem = fittedHem !== null ? Math.min(fullHem, Math.max(hips.y, fittedHem)) : fullHem;
+  const widthScale = fit?.width ?? 1;
   const feetSpread = seen(pose.leftAnkle) && seen(pose.rightAnkle) ? Math.abs(pose.leftAnkle.x - pose.rightAnkle.x) : hipSpan;
 
   // The garment's widest plausible outline, left and right of the body's centre line.
@@ -129,7 +151,7 @@ export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, he
   const bottom = Math.min(height - 1, Math.ceil(hem));
   for (let y = Math.max(0, Math.floor(top)); y <= bottom; y += 1) {
     const c = centre(y);
-    const h = half(y);
+    const h = half(y) * widthScale;
     for (let x = 0; x < width; x += 1) {
       const p = { x, y };
       if (hands.some((hand) => Math.hypot(x - hand.x, y - hand.y) < handRadius)) continue;

@@ -27,6 +27,11 @@ const productFields = {
   garmentType: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.enum(GARMENT_TYPE_IDS).default("dress")),
   categoryId: z.uuid("Choose a category"),
   description: z.string().trim().min(10, "Write at least a sentence").max(2000),
+  /** Optional length in cm from the shoulder, size M: where the hem lands in try-on fit. */
+  lengthCm: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? null : v),
+    z.coerce.number().int("Enter the length in whole centimetres").min(30, "Length must be 30–200 cm").max(200, "Length must be 30–200 cm").nullable(),
+  ),
 };
 
 export const createProductSchema = z.object({
@@ -58,7 +63,7 @@ export async function createProduct(db: PrismaClient, actor: Actor, rawInput: un
   try {
     return await db.$transaction(async (tx) => {
       const product = await tx.product.create({
-        data: { name: input.name, slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description, status: "DRAFT" },
+        data: { name: input.name, slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description, lengthCm: input.lengthCm, status: "DRAFT" },
         select: { id: true },
       });
       await writeAudit(tx, actor, "product.create", { type: "product", id: product.id }, { slug });
@@ -77,7 +82,7 @@ export async function updateProduct(db: PrismaClient, actor: Actor, rawInput: un
   const input = updateProductSchema.parse(rawInput);
   const before = await db.product.findUnique({
     where: { id: input.id },
-    select: { name: true, slug: true, garmentType: true, categoryId: true, description: true, template: { select: { id: true } } },
+    select: { name: true, slug: true, garmentType: true, categoryId: true, description: true, lengthCm: true, template: { select: { id: true } } },
   });
   if (!before) {
     throw new AdminError("NOT_FOUND", "That item no longer exists.");
@@ -87,7 +92,7 @@ export async function updateProduct(db: PrismaClient, actor: Actor, rawInput: un
     throw new AdminError("BLOCKED", "This item has a customization template, so its garment type can't change.");
   }
   await ensureCategory(db, input.categoryId);
-  const after = { name: input.name, slug: input.slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description };
+  const after = { name: input.name, slug: input.slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description, lengthCm: input.lengthCm };
   const { template: _template, ...beforeFields } = before;
   const fields = changedFields(beforeFields, after);
   if (fields.length === 0) {
@@ -219,6 +224,7 @@ export type AdminProduct = {
   status: ProductStatus;
   garmentType: GarmentType;
   categoryId: string;
+  lengthCm: number | null;
   imageKeys: string[];
   variants: AdminVariant[];
   template: { isActive: boolean; version: number; aiEnabled: boolean } | null;
@@ -239,6 +245,7 @@ export async function getAdminProduct(db: PrismaClient, actor: Actor, productId:
       status: true,
       garmentType: true,
       categoryId: true,
+      lengthCm: true,
       imageKeys: true,
       template: { select: { isActive: true, version: true, aiEnabled: true } },
       variants: {

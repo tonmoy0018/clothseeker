@@ -6,10 +6,24 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { LiveMirror } from "../../live-mirror";
-import { TryOnPanel } from "../../try-on-panel";
+import { TryOnPanel, type TryOnGarmentFacts } from "../../try-on-panel";
 
 /** "Try on" (the realistic AI photo) and "Live mirror" (the camera, on this device) for a ready-made garment. */
-export function TryOnButton({ productId, slug, signedIn, noun, mirrorImageUrl }: { productId: string; slug: string; signedIn: boolean; noun: string; mirrorImageUrl: string | null }) {
+export function TryOnButton({
+  productId,
+  slug,
+  signedIn,
+  noun,
+  garment,
+  mirrorImageUrl,
+}: {
+  productId: string;
+  slug: string;
+  signedIn: boolean;
+  noun: string;
+  garment: TryOnGarmentFacts;
+  mirrorImageUrl: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const [mirror, setMirror] = useState(false);
   const [mirrorPhoto, setMirrorPhoto] = useState<Blob | null>(null);
@@ -31,6 +45,7 @@ export function TryOnButton({ productId, slug, signedIn, noun, mirrorImageUrl }:
           source={{ kind: "product", productId }}
           signedIn={signedIn}
           noun={noun}
+          garment={garment}
           offeredPhoto={mirrorPhoto}
           onSignIn={() => router.push(`/login?next=${encodeURIComponent(`/products/${slug}`)}`)}
         />

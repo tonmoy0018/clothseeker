@@ -82,6 +82,17 @@ The other Spaces have no text input and ignore it. The cache key is `v: 4` since
 - Each attempt is limited by `TRYON_TIMEOUT_MS` (default 240 s).
 - Space error texts are never copied into our errors or logs, because they may echo inputs.
 
+## Fit (height and weight)
+
+Decided 2026-11-02: customers may give their **height and weight** (only those), pick **Fitted / Regular / Relaxed**, and see a **fit report** while the try-on **shows that size on them**. Everything in `lib/fit/fit.ts` is pure and shared by the browser and the worker.
+
+- **Body estimate** (`estimateGirths`): bust/waist/hip (women's) or chest/waist/neck (men's) scale with weight per height, calibrated so a 160 cm, 57 kg woman (172 cm, 68 kg man) sits in the middle of size M; waists follow weight more strongly than bust or hips. It's an estimate, and the panel says so.
+- **Recommended size** (`fitReport`): among the sizes on sale, the one whose size-chart range ([size-chart.ts](../../lib/catalog/size-chart.ts)) best places the body where the preference wants it: near the top of the range for Fitted, the middle for Regular, the bottom for Relaxed. A size that would be tight is penalised three times as much as a loose one. The report lists, per measurement, the estimate, the size's range, and "fits", "tight by N cm" or "loose by N cm".
+- **Length** (`hemPlace`): garment lengths are from the high point of the shoulder, size M, graded ±1.5 cm per size (`gradedLength`). Designs use their length option (`STYLE_LENGTH_CM`: mini 85, knee 100, midi 115, maxi 140, hip 78, long 112); ready-made items use `Product.lengthCm`, which the team enters in the product form (seeded from the catalogue photos), or nothing. With standard body proportions (`BODY_LEVELS`), the hem is described as "at the knee", "6 cm below the knee", "on the floor"…
+- **The picture** (local try-on only): the job carries `fit` (height, weight, preference, size; part of the cache key, so a new size or height is a new try-on). The worker turns it into `widthFactor` (the size's middle against the body: 1 = made for them, up to 1.3 loose, down to 0.85 tight) and the hem level. `LocalTryOn` widens or narrows both the mask (`tryOnMask(…, fit)`) and the garment picture (a wider garment is drawn looser, tested), and ends the mask at the hem. **Below the hem the photo is kept** (their own legs or legwear): repainting legs alone, the model drew trousers. The Hugging Face provider ignores the fit; the report still shows.
+- **Remembering** (`lib/fit/profile.ts`, `body_profiles`): only when the customer ticks "Remember my height, weight and fit on my account"; "Forget them" deletes it, and it goes with the account. Height and weight are never logged.
+- **The panel** (`app/(shop)/fit-section.tsx`): optional section above "Try it on". With no size chosen, the try-on uses the recommended one. A result shows "Showing size M at 165 cm, 58 kg"; changing the size or measurements offers "Update try-on" (never reruns by itself).
+
 ## Local try-on
 
 `TRYON_PROVIDER=local` runs the try-on on the worker's machine instead of a public Space. Set it up once with `pnpm tryon:setup` (`scripts/setup-local-tryon.ts`):
@@ -126,6 +137,8 @@ Without these it swapped and took over a minute per step.
   - consent values, staleness rules and upload photo checks
   - garment canvas, the fake check and the fake try-on
   - `HuggingFaceTryOn` against a mocked Gradio client: dress parameters, token, fallback, quota → `TRYON_LIMIT`, abort, and no leaking of Space errors
+- `tests/unit/fit.test.ts`: body estimates, the recommended size per preference (never tight), the per-measurement report, hem places, length grading and the width factor.
+- `tests/integration/fit-profile.test.ts`: remembering, updating and forgetting a profile, owner-only, refused for admins and impossible values, deleted with the account.
 - `tests/unit/tryon-mask.test.ts`: the local try-on's mask (neck to hem, arms, hands and face kept, room for a skirt, own clothes), the 3:4 crop and the blend.
 - `tests/unit/tryon-local.test.ts`: `LocalTryOn` with a fake model (only the mask area changes, crop and settings, temporary files deleted, no body → refused); `CatVtonProcess` with a fake process (loaded once, keys never passed, failures mapped, killed on timeout and restarted, load timeout).
 - `tests/integration/try-on.test.ts`:

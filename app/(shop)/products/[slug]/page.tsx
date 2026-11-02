@@ -77,7 +77,14 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
                 Customize this {garment.noun}
               </Link>
             )}
-            {tryOnImage && <TryOnButton productId={product.id} slug={product.slug} signedIn={user?.role === "CUSTOMER"} noun={garment.noun} mirrorImageUrl={mirrorImageUrl} />}
+            {tryOnImage && <TryOnButton
+                productId={product.id}
+                slug={product.slug}
+                signedIn={user?.role === "CUSTOMER"}
+                noun={garment.noun}
+                garment={{ type: product.garmentType, sizes, productLengthCm: product.lengthCm }}
+                mirrorImageUrl={mirrorImageUrl}
+              />}
           </div>
         </div>
 

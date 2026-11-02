@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { tryOnFitSchema } from "@/lib/fit/fit";
+
 // ai_jobs.payload for TRY_ON jobs and ai_jobs.result once done. Shared by the app and the worker.
 
 export const tryOnSourceSchema = z.discriminatedUnion("kind", [
@@ -13,6 +15,8 @@ export const tryOnPayloadSchema = z.object({
   photoId: z.uuid(),
   source: tryOnSourceSchema,
   garmentHash: z.string().min(3).max(80),
+  /** Height, weight, preference and size: the try-on follows how that size fits (absent = as made). */
+  fit: tryOnFitSchema.optional(),
 });
 
 export type TryOnPayload = z.infer<typeof tryOnPayloadSchema>;

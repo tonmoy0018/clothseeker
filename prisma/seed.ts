@@ -22,6 +22,7 @@ import { parseTemplateConfig, templateConfigSchema, templateImageKeys, type Temp
 import { renderGarment, renderMask, SEED_REGIONS, SEED_SKIRT_AREA, SEED_STYLE_IDS, seedStyles, type SeedRegion } from "./seed-garments";
 import {
   SEED_CATEGORIES,
+  SEED_LENGTHS_CM,
   SEED_PRODUCTS,
   seedStock,
   sizeSurchargeTaka,
@@ -261,9 +262,10 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
         description: p.description,
         garmentType: p.garmentType ?? "dress",
         categoryId: category.id,
+        lengthCm: SEED_LENGTHS_CM[p.slug] ?? null,
         status: p.status ?? "ACTIVE",
       },
-      update: { name: p.name, description: p.description, garmentType: p.garmentType ?? "dress", categoryId: category.id, status: p.status ?? "ACTIVE" },
+      update: { name: p.name, description: p.description, garmentType: p.garmentType ?? "dress", categoryId: category.id, lengthCm: SEED_LENGTHS_CM[p.slug] ?? null, status: p.status ?? "ACTIVE" },
       select: { id: true, imageKeys: true },
     });
     // AI-generated sample catalog photo (prisma/seed-photos, ai-scripts/generate-dress-photos.ts),

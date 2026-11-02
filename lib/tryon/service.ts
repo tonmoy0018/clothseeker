@@ -6,6 +6,7 @@ import { failureMessage } from "@/lib/ai/errors";
 import { recordLimitHit } from "@/lib/ai/limit-hits";
 import { startOfDhakaDay, DAILY_SUBMISSION_LIMIT, SUBMISSION_LIMIT_MESSAGE } from "@/lib/ai/quota";
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
+import { tryOnFitSchema, type TryOnFit } from "@/lib/fit/fit";
 import type { PrismaClient } from "@/lib/db/client";
 import { checkDesign, DesignError } from "@/lib/design/service";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
@@ -155,6 +156,7 @@ const startSchema = z.object({
     z.object({ kind: z.literal("design"), designId: z.uuid().nullish(), spec: z.unknown() }),
     z.object({ kind: z.literal("product"), productId: z.uuid() }),
   ]),
+  fit: tryOnFitSchema.optional(),
 });
 
 export type QueuedTryOn = { jobId: string; cached: boolean };
@@ -214,8 +216,9 @@ export async function createTryOnJob(db: PrismaClient, storage: StorageAdapter, 
 
   // v2: ready-made dresses are cut out of their photo before try-on; v3: IDM-VTON Spaces first; v4: the
   // garment is described to the model (lib/tryon/describe.ts); v5: the local try-on model
-  // (TRYON_PROVIDER=local). Earlier results are redone.
-  const inputHash = aiInputHash({ v: 5, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash });
+  // (TRYON_PROVIDER=local). Earlier results are redone. A different fit (size, height…) is a new try-on.
+  const fit: TryOnFit | undefined = input.fit;
+  const inputHash = aiInputHash({ v: 5, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash, ...(fit ? { fit } : {}) });
   const cached = await db.tryOnResult.findFirst({ where: { customerId: actor.id, inputHash, deletedAt: null }, orderBy: { createdAt: "desc" }, select: { jobId: true } });
   if (cached) {
     return { jobId: cached.jobId, cached: true };
@@ -243,7 +246,7 @@ export async function createTryOnJob(db: PrismaClient, storage: StorageAdapter, 
       if ((await tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: startOfDhakaDay(now) } } })) >= DAILY_SUBMISSION_LIMIT) {
         throw new TryOnError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
       }
-      const payload = { kind: "try_on", photoId: photo.id, source, garmentHash } satisfies TryOnPayload;
+      const payload = { kind: "try_on", photoId: photo.id, source, garmentHash, ...(fit ? { fit } : {}) } satisfies TryOnPayload;
       tryOnPayloadSchema.parse(payload);
       const job = await tx.aIJob.create({
         data: { type: "TRY_ON", customerId: actor.id, payload, inputHash, runAfter: now },
@@ -263,6 +266,8 @@ export type TryOnResultView = {
   photoSaved: boolean;
   saved: boolean;
   garmentHash: string;
+  /** The fit it shows (height, weight, preference, size), or null when made without one. */
+  fit: TryOnFit | null;
   expiresAt: string | null;
 };
 
@@ -289,7 +294,7 @@ export async function getTryOnStatus(db: PrismaClient, storage: StorageAdapter, 
   const row = result.success
     ? await db.tryOnResult.findFirst({
         where: { id: result.data.resultId, customerId: actor.id, deletedAt: null },
-        select: { id: true, resultKey: true, saved: true, garmentHash: true, createdAt: true, photo: { select: { id: true, storageKey: true, saved: true, deletedAt: true } } },
+        select: { id: true, resultKey: true, saved: true, garmentHash: true, fit: true, createdAt: true, photo: { select: { id: true, storageKey: true, saved: true, deletedAt: true } } },
       })
     : null;
   if (!row) {
@@ -307,6 +312,7 @@ export async function getTryOnStatus(db: PrismaClient, storage: StorageAdapter, 
       photoSaved: row.photo.saved,
       saved: row.saved,
       garmentHash: row.garmentHash,
+      fit: tryOnFitSchema.safeParse(row.fit).data ?? null,
       expiresAt: row.saved ? null : new Date(row.createdAt.getTime() + TRYON_RETENTION_MS).toISOString(),
     },
   };

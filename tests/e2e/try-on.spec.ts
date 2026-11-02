@@ -62,7 +62,7 @@ test.describe("@supabase virtual try-on", () => {
     await expect(result.getByLabel(/Keep this try-on/)).toBeChecked();
     await panel.getByRole("button", { name: "Delete photo now" }).click();
     await expect(panel.getByRole("status")).toHaveText("Photo and its try-ons deleted.");
-    await expect(panel.getByRole("radio")).toHaveCount(0);
+    await expect(panel.getByRole("radiogroup", { name: "Your photos" })).toHaveCount(0);
   });
 
   test("ready-made dresses can be tried on from the product page", async ({ page }) => {
@@ -110,6 +110,48 @@ test.describe("@supabase virtual try-on", () => {
     const tiny = await sharp(await portraitPhoto()).resize(90, 160).jpeg().toBuffer();
     await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "tiny.jpg", mimeType: "image/jpeg", buffer: tiny });
     await expect(panel.getByRole("radio", { name: "Photo 2" })).toBeVisible({ timeout: 60_000 });
+  });
+
+  test("fit: height and weight give a recommended size and a report; the try-on shows that size; remembered on request", async ({ page }) => {
+    test.setTimeout(120_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/products/linen-wrap-dress");
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    const panel = page.getByTestId("try-on-panel");
+    const fit = panel.getByTestId("fit-section");
+    await fit.getByLabel("Height (cm)").fill("160");
+    await fit.getByLabel("Weight (kg)").fill("57");
+    await expect(fit.getByTestId("fit-recommended")).toHaveText("M");
+    // No size chosen yet: the report waits; choosing one shows how it fits and where the hem lands.
+    await fit.getByLabel("Size to try").selectOption("XS");
+    await expect(fit.getByTestId("fit-report")).toContainText("tight by");
+    await expect(fit.getByTestId("fit-length")).toContainText("the hem lands");
+    await fit.getByRole("button", { name: "Try M" }).click();
+    await expect(fit.getByTestId("fit-report")).not.toContainText("tight by");
+    await fit.getByLabel("Height (cm)").fill("90");
+    await expect(fit.getByRole("alert")).toContainText("Height must be 120–220 cm.");
+    await fit.getByLabel("Height (cm)").fill("160");
+    await fit.getByLabel("Remember my height, weight and fit on my account").check();
+
+    await panel.getByLabel("I agree to use my photo for try-on").check();
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await portraitPhoto() });
+    await expect(panel.getByRole("radio", { name: "Photo 1" })).toBeVisible();
+    await panel.getByRole("button", { name: "Try it on" }).click();
+    await expect(panel.getByTestId("try-on-fit-shown")).toContainText("Showing size M at 160 cm, 57 kg", { timeout: 30_000 });
+    // A different size offers an update; nothing reruns by itself.
+    await fit.getByLabel("Size to try").selectOption("L");
+    await expect(panel.getByTestId("try-on-fit-stale")).toContainText("This try-on shows size M");
+
+    // Remembered on the account.
+    await page.reload();
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    await expect(page.getByTestId("fit-section").getByLabel("Height (cm)")).toHaveValue("160");
+    await expect(page.getByTestId("fit-section").getByLabel("Weight (kg)")).toHaveValue("57");
+    await page.getByTestId("fit-section").getByRole("button", { name: "Forget them" }).click();
+    await expect(page.getByTestId("try-on-panel")).toContainText("removed from your account");
+    await page.reload();
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    await expect(page.getByTestId("fit-section").getByLabel("Height (cm)")).toHaveValue("");
   });
 
   test("signed-out visitors are asked to sign in", async ({ page }) => {

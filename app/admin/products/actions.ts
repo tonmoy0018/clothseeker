@@ -34,6 +34,7 @@ export async function createProductAction(_prev: FormState, formData: FormData):
       garmentType: field(formData, "garmentType"),
       categoryId: field(formData, "categoryId"),
       description: field(formData, "description"),
+      lengthCm: field(formData, "lengthCm"),
     }));
   } catch (error) {
     return toFormState(error);
@@ -53,6 +54,7 @@ export async function updateProductAction(_prev: FormState, formData: FormData):
       garmentType: field(formData, "garmentType"),
       categoryId: field(formData, "categoryId"),
       description: field(formData, "description"),
+      lengthCm: field(formData, "lengthCm"),
     });
   } catch (error) {
     return toFormState(error);

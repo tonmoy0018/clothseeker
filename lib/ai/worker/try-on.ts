@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 import { garmentPicture } from "@/lib/design/garment-variant";
+import { garmentLengthCm, gradedLength, hemPlace, widthFactor } from "@/lib/fit/fit";
 import { cutOutGarment } from "@/lib/garment-photo/align";
 import { SegmentationError } from "@/lib/garment-photo/segment";
 import { normalizeForRender } from "@/lib/design/normalize";
@@ -30,13 +31,13 @@ import type { AiWorkerDeps } from "./run";
 
 const GARMENT_RENDER_WIDTH = 900;
 
-/** The garment image for the try-on model, and what kind of garment it is. */
+/** The garment image for the try-on model, what kind of garment it is, and its length (cm, size M) if known. */
 async function garmentImage(
   deps: AiWorkerDeps,
   job: ClaimedJob,
   source: TryOnPayload["source"],
   expectedHash: string,
-): Promise<{ image: Buffer; type: GarmentType; description: string }> {
+): Promise<{ image: Buffer; type: GarmentType; description: string; lengthCm: number | null }> {
   const { db, storage } = deps;
   if (source.kind === "design") {
     let checked;
@@ -63,7 +64,8 @@ async function garmentImage(
       return option ? [stylePhrase(group, option.label)] : [];
     });
     const description = garmentDescription({ name: checked.context.template.productName, noun: GARMENT_TYPES[config.garmentType].noun, colour, styles });
-    return { image: await prepareGarment(flat), type: config.garmentType, description };
+    const lengthCm = garmentLengthCm(config.garmentType, checked.spec.styleOptions, null);
+    return { image: await prepareGarment(flat), type: config.garmentType, description, lengthCm };
   }
   const imageKey = await productTryOnImageKey(db, source.productId);
   if (!imageKey || productSignature(source.productId, imageKey) !== expectedHash) {
@@ -71,20 +73,21 @@ async function garmentImage(
   }
   const [image, product] = await Promise.all([
     storage.get(BUCKETS.productMedia, imageKey),
-    db.product.findUnique({ where: { id: source.productId }, select: { garmentType: true, name: true, description: true } }),
+    db.product.findUnique({ where: { id: source.productId }, select: { garmentType: true, name: true, description: true, lengthCm: true } }),
   ]);
   if (!image || !product) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
   const type = product.garmentType;
   const description = garmentDescription({ name: product.name, noun: GARMENT_TYPES[type].noun, details: product.description });
+  const lengthCm = garmentLengthCm(type, null, product.lengthCm);
   // Try-on models want the garment alone: cut the dress out of the catalogue photo (mannequin and
   // backdrop removed). If it can't be found, the whole photo is still better than nothing.
   try {
-    return { image: await prepareGarment(await cutOutGarment(image)), type, description };
+    return { image: await prepareGarment(await cutOutGarment(image)), type, description, lengthCm };
   } catch (error) {
     if (!(error instanceof SegmentationError)) throw error;
-    return { image: await prepareGarment(image), type, description };
+    return { image: await prepareGarment(image), type, description, lengthCm };
   }
 }
 
@@ -126,12 +129,19 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
   // 2. The garment as try-on models expect it.
   const garment = await garmentImage(deps, job, input.source, input.garmentHash);
   const { tryOnCategory: category, tryOnReach: reach } = GARMENT_TYPES[garment.type];
+  // The chosen size on this person: how much wider or narrower it sits, and where its hem lands.
+  const fit = input.fit
+    ? {
+        width: widthFactor(garment.type, input.fit),
+        hemLevel: garment.lengthCm ? hemPlace(input.fit.heightCm, gradedLength(garment.lengthCm, input.fit.size)).level : null,
+      }
+    : undefined;
   if (signal.aborted) {
     throw new AiProviderError("job aborted", true, "TIMEOUT");
   }
 
   // 3. Try-on, then treat the returned bytes like any upload.
-  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment.image, mimeType: "image/png" }, category, reach, description: garment.description }, signal);
+  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment.image, mimeType: "image/png" }, category, reach, fit, description: garment.description }, signal);
   let image;
   try {
     image = await processImage(raw, "tryOnResult");
@@ -159,6 +169,7 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
           designId: input.source.kind === "design" ? input.source.designId : null,
           productId: input.source.kind === "product" ? input.source.productId : null,
           garmentHash: input.garmentHash,
+          ...(input.fit ? { fit: input.fit } : {}),
           inputHash: job.inputHash,
           resultKey,
           jobId: job.id,

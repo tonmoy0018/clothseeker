@@ -61,7 +61,7 @@ export class LocalTryOn implements TryOnProvider {
     const { width, height } = info;
     const [analysis, person] = await Promise.all([this.options.body.analyse(request.person.data), this.options.body.personMask(request.person.data)]);
     const reach = request.reach ?? (request.category === "Dress" ? "ankles" : "hips");
-    const mask = analysis.pose ? tryOnMask(analysis.pose, (x, y) => maskAtSmooth(person, x, y), width, height, reach) : null;
+    const mask = analysis.pose ? tryOnMask(analysis.pose, (x, y) => maskAtSmooth(person, x, y), width, height, reach, request.fit) : null;
     if (!mask) {
       // The photo check refuses these before; a photo that slips through gets the same message.
       throw new AiJobRejected("PHOTO_BODY_NOT_VISIBLE");
@@ -75,7 +75,7 @@ export class LocalTryOn implements TryOnProvider {
       await Promise.all([
         crop(rgb, 3).png().toFile(file("person.png")),
         crop(mask, 1).png().toFile(file("mask.png")),
-        sharp(request.garment.data).flatten({ background: "#ffffff" }).png().toFile(file("garment.png")),
+        fittedGarment(request.garment.data, request.fit?.width ?? 1).then((garment) => sharp(garment).toFile(file("garment.png"))),
       ]);
       const job = { person: file("person.png"), mask: file("mask.png"), garment: file("garment.png"), out: file("result.png") };
       await this.options.runner.run({ ...job, steps: this.options.steps, width: this.options.width, height: (this.options.width * 4) / 3, seed: 42 }, signal);
@@ -88,6 +88,25 @@ export class LocalTryOn implements TryOnProvider {
       await rm(dir, { recursive: true, force: true });
     }
   }
+}
+
+/**
+ * The garment picture, widened (a size too big) or narrowed (too small) about its centre on the same
+ * white canvas: the model draws a wider garment looser on the body, a narrower one snug.
+ */
+async function fittedGarment(garment: Buffer, widthScale: number): Promise<Buffer> {
+  const flat = sharp(garment).flatten({ background: "#ffffff" });
+  if (Math.abs(widthScale - 1) < 0.01) return flat.png().toBuffer();
+  const { data, info } = await flat.removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const scaled = Math.max(1, Math.round(info.width * widthScale));
+  const resized = await sharp(data, { raw: { width: info.width, height: info.height, channels: 3 } }).resize(scaled, info.height, { fit: "fill" }).png().toBuffer();
+  // Centred on the original canvas; anything wider than it is trimmed equally from both sides.
+  const left = Math.round((info.width - scaled) / 2);
+  const piece = left >= 0 ? resized : await sharp(resized).extract({ left: -left, top: 0, width: info.width, height: info.height }).png().toBuffer();
+  return sharp({ create: { width: info.width, height: info.height, channels: 3, background: "#ffffff" } })
+    .composite([{ input: piece, left: Math.max(0, left), top: 0 }])
+    .png()
+    .toBuffer();
 }
 
 /** The model's picture, scaled to the crop, blended into the photo inside the softened mask. */

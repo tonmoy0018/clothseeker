@@ -2,6 +2,8 @@
 
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db";
+import type { FitInput } from "@/lib/fit/fit";
+import { deleteBodyProfile, FitProfileError, getBodyProfile, saveBodyProfile } from "@/lib/fit/profile";
 import { MAX_UPLOAD_BYTES } from "@/lib/media/process-image";
 import { getStorage } from "@/lib/storage/supabase";
 import {
@@ -39,23 +41,46 @@ function isFailure(value: CurrentUser | Failure): value is Failure {
 }
 
 function failure(error: unknown): Failure {
-  if (error instanceof TryOnError) {
+  if (error instanceof TryOnError || error instanceof FitProfileError) {
     return { status: "error", message: error.message };
   }
   throw error;
 }
 
 export type TryOnQuotaView = { used: number; limit: number; remaining: number };
-export type TryOnOverview = { photos: TryOnPhotoView[]; quota: TryOnQuotaView | null };
+export type TryOnOverview = { photos: TryOnPhotoView[]; quota: TryOnQuotaView | null; profile: FitInput | null };
 
 export async function getTryOnOverviewAction(): Promise<TryOnOverview> {
   const user = await getCurrentUser();
   if (!user || user.role !== "CUSTOMER") {
-    return { photos: [], quota: null };
+    return { photos: [], quota: null, profile: null };
   }
   const db = getPrisma();
-  const [photos, quota] = await Promise.all([listTryOnPhotos(db, getStorage(), user), getTryOnQuota(db, user)]);
-  return { photos, quota };
+  const [photos, quota, profile] = await Promise.all([listTryOnPhotos(db, getStorage(), user), getTryOnQuota(db, user), getBodyProfile(db, user)]);
+  return { photos, quota, profile };
+}
+
+/** "Remember my height, weight and fit on my account" (only when the customer ticks it). */
+export async function saveBodyProfileAction(input: unknown): Promise<{ status: "ok" } | Failure> {
+  const user = await customer();
+  if (isFailure(user)) {
+    return user;
+  }
+  try {
+    await saveBodyProfile(getPrisma(), user, input);
+    return { status: "ok" };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function deleteBodyProfileAction(): Promise<{ status: "ok" } | Failure> {
+  const user = await customer();
+  if (isFailure(user)) {
+    return user;
+  }
+  await deleteBodyProfile(getPrisma(), user);
+  return { status: "ok" };
 }
 
 export type UploadPhotoResult = { status: "ok"; photo: TryOnPhotoView } | Failure;

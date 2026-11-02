@@ -98,6 +98,7 @@ export default async function AdminProductPage({ params }: PageProps<"/admin/pro
                 garmentType: product.garmentType,
                 categoryId: product.categoryId,
                 description: product.description,
+                lengthCm: product.lengthCm,
               }}
               garmentTypeLocked={product.template !== null}
             />

@@ -176,6 +176,8 @@ export type ProductDetail = {
   description: string;
   category: { slug: string; name: string };
   garmentType: GarmentType;
+  /** Length in cm from the shoulder, size M, when the team has listed it (try-on fit). */
+  lengthCm: number | null;
   customizable: boolean;
   imageKeys: string[];
   variants: ProductVariantOption[];
@@ -194,6 +196,7 @@ export async function getProductBySlug(db: PrismaClient, slug: string): Promise<
       name: true,
       description: true,
       garmentType: true,
+      lengthCm: true,
       imageKeys: true,
       category: { select: { slug: true, name: true } },
       template: { select: { isActive: true } },
@@ -213,6 +216,7 @@ export async function getProductBySlug(db: PrismaClient, slug: string): Promise<
     description: product.description,
     category: product.category,
     garmentType: product.garmentType,
+    lengthCm: product.lengthCm,
     customizable: product.template?.isActive ?? false,
     imageKeys: product.imageKeys,
     variants: product.variants

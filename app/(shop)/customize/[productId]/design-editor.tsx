@@ -591,6 +591,7 @@ export function DesignEditor(props: DesignEditorProps) {
             source={{ kind: "design", spec, designId }}
             signedIn={props.customerId !== null}
             noun={garment.noun}
+            garment={{ type: config.garmentType, sizes: props.availableSizes, productLengthCm: null }}
             offeredPhoto={mirrorPhoto}
             onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
           />

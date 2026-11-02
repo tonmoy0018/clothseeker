@@ -111,6 +111,38 @@ describe("tryOnMask", () => {
   });
 });
 
+describe("tryOnMask with a fit", () => {
+  const count = (m: Uint8Array | null, y: number) => {
+    let n = 0;
+    for (let x = 0; x < W; x += 1) if (m?.[y * W + x] === 255) n += 1;
+    return n;
+  };
+
+  it("is wider for a size too big and narrower for one too small", () => {
+    const as = tryOnMask(pose(), null, W, H, "ankles");
+    const loose = tryOnMask(pose(), null, W, H, "ankles", { width: 1.2, hemLevel: null });
+    const tight = tryOnMask(pose(), null, W, H, "ankles", { width: 0.88, hemLevel: null });
+    expect(count(loose, 700)).toBeGreaterThan(count(as, 700));
+    expect(count(tight, 700)).toBeLessThan(count(as, 700));
+  });
+
+  it("ends a dress where its hem lands, keeping the photo below it", () => {
+    // Knee level: 0.285 of their height above the floor → the knee points (y 680).
+    const knee = tryOnMask(pose(), null, W, H, "ankles", { width: 1, hemLevel: 0.285 });
+    if (!knee) throw new Error("no mask");
+    const at = (x: number, y: number) => knee[y * W + x] === 255;
+    expect(at(420, 650)).toBe(true);
+    expect(at(500, 682)).toBe(true);
+    expect(at(540, 800)).toBe(false);
+    expect(at(500, 800)).toBe(false);
+  });
+
+  it("reaches the ankles as before when the hem would be at or below them", () => {
+    const long = tryOnMask(pose(), null, W, H, "ankles", { width: 1, hemLevel: 0.01 });
+    expect(long?.[850 * W + 500]).toBe(255);
+  });
+});
+
 describe("tryOnCrop and blendTryOn", () => {
   it("picks the largest 3:4 box that holds the mask, inside the photo", () => {
     const width = 1200;

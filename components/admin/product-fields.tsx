@@ -4,7 +4,7 @@ import { AUDIENCES, GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/
 
 type ProductFieldsProps = {
   categories: { id: string; name: string }[];
-  defaults?: { name: string; slug: string; garmentType: GarmentType; categoryId: string; description: string };
+  defaults?: { name: string; slug: string; garmentType: GarmentType; categoryId: string; description: string; lengthCm: number | null };
   slugOptional?: boolean;
   /** The garment type can't change once the item has a customization template. */
   garmentTypeLocked?: boolean;
@@ -68,6 +68,11 @@ export function ProductFields({ categories, defaults, slugOptional, garmentTypeL
             </option>
           ))}
         </select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="lengthCm">Length (cm, optional)</Label>
+        <Input id="lengthCm" name="lengthCm" type="number" inputMode="numeric" min={30} max={200} defaultValue={defaults?.lengthCm ?? ""} className="w-32" />
+        <p className="text-xs text-muted-foreground">From the shoulder to the hem, size M. Try-on uses it to show where the hem lands on each customer.</p>
       </div>
       <div className="flex flex-col gap-1.5 md:col-span-2">
         <Label htmlFor="description">Description</Label>
