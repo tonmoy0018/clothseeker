@@ -148,13 +148,20 @@ browser: polls → /customize/{product}?design=…[&job=round][&alts=a,b]
 ```
 own:    the same DRESS_MATCH job, payload.own = { garmentType, exact }
 worker: brand-logo check (as above)
-        → photoPicture (lib/garment-photo/template.ts: lined up, cut into Sleeves/Bodice/Skirt or Body)
+        → ownPhotoPicture (lib/garment-photo/template.ts → frameGarmentPhoto: the whole garment cut out
+          onto the studio backdrop, cut into Sleeves/Bodice/Skirt or Body)
         → PRIVATE product (owner = the customer; every size, price 0, never sold directly)
           + template (front picture, part masks, print areas, recolor "shade",
             one style option per group: "As in your photo")
         → design: SAVED with a preview (exact) or DRAFT (customize)
-browser: /customize/{product}?design=…[&quote=1 for exact]
+browser: /customize/{product}?design=… (see it → "Try it on" → "Request a price")
 ```
+
+- **The picture.** It looks like a catalogue shot and is the same garment.
+  - **Not lined up.** It isn't lined up like the catalogue's style pictures: that framing crops to the shoulders-to-waist and enlarges, which cut most of a long garment away and blurred the rest. Instead the whole garment is fitted into the 900×1170 picture, uncropped and centred. The mannequin, stand and backdrop are removed, and the garment is placed on a plain studio backdrop (`BACKDROP`).
+  - **Several colours.** Customer photos are cut out with `findGarment(…, { colours: "several" })`. It follows the garment wherever it stands in the photo, keeps every main colour (a k-means of the garment's middle), and fills pale fabric inside the garment's rows that barely differs from the backdrop (a white shirt inside an open black jacket).
+  - **Print sizes.** They come from the garment's shoulder width (37 cm for dresses, 46 cm for tops), kept within 45–100% of the garment's width.
+- **The order on the design screen.** First the garment, then a "See it on you" step ("Try it on" opens the try-on panel), then "Get a price for your dress". The quote isn't pushed first.
 
 - **Private.** `status: PRIVATE` keeps it out of everything that shows ACTIVE products:
   - the shop, product pages and filters;

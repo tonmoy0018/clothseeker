@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -10,25 +10,9 @@ import { requestQuoteAction } from "../../account/quotes/actions";
 /**
  * Photo-started designs may need special tailoring: the customer can ask the team for a price. The
  * customer's own dress (`ownDress`) is always priced this way, and needs no notes. Only saved designs can
- * be quoted (the quote freezes what was saved). `focus` scrolls it into view ("Make this exact dress").
+ * be quoted (the quote freezes what was saved).
  */
-export function QuoteRequest({
-  designId,
-  saved,
-  onSignIn,
-  ownDress = false,
-  focus = false,
-}: {
-  designId: string | null;
-  saved: boolean;
-  onSignIn: () => void;
-  ownDress?: boolean;
-  focus?: boolean;
-}) {
-  const section = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (focus) section.current?.scrollIntoView({ block: "center" });
-  }, [focus]);
+export function QuoteRequest({ designId, saved, onSignIn, ownDress = false }: { designId: string | null; saved: boolean; onSignIn: () => void; ownDress?: boolean }) {
   const router = useRouter();
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -52,11 +36,11 @@ export function QuoteRequest({
   }
 
   return (
-    <section ref={section} className="flex flex-col gap-2 rounded-xl border p-4" data-testid="quote-request">
+    <section className="flex flex-col gap-2 rounded-xl border p-4" data-testid="quote-request">
       <h2 className="font-medium">{ownDress ? "Get a price for your dress" : "Need special tailoring?"}</h2>
       <p className="text-sm text-muted-foreground">
         {ownDress
-          ? "Choose your size and save any changes. The ClothSeeker team will reply with a price within 24 hours; you then have 7 days to order."
+          ? "When you're happy with it (your size chosen, any changes saved), the ClothSeeker team will reply with a price within 24 hours; you then have 7 days to order."
           : "If the garment in your photo needs changes our templates can't make, describe them and the ClothSeeker team will reply with a price within 24 hours."}
       </p>
       {!designId || !saved ? (

@@ -3,7 +3,7 @@ import sharp from "sharp";
 import type { GarmentType } from "@/lib/catalog/garment-types";
 import type { PlacementArea } from "@/types/template";
 
-import { alignGarmentPhoto, maskPng, PHOTO_HEIGHT, PHOTO_WIDTH } from "./align";
+import { alignGarmentPhoto, frameGarmentPhoto, maskPng, PHOTO_HEIGHT, PHOTO_WIDTH, type AlignedPhoto } from "./align";
 import type { Mask } from "./segment";
 import type { StyleChoice } from "./style-files";
 
@@ -42,9 +42,21 @@ function union(a: Mask, b: Mask): Mask {
   return { ...a, data: a.data.map((v, i) => (v || b.data[i] ? 1 : 0)) };
 }
 
-/** One picture, lined up and cut into its parts. */
+/** One catalogue picture, lined up like the others and cut into its parts. */
 export async function photoPicture(raw: Buffer, type: GarmentType, side: "front" | "back", match: StyleChoice): Promise<PhotoPicture> {
-  const aligned = await alignGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders");
+  return pictureFrom(await alignGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders"), type, side, match);
+}
+
+/**
+ * A customer's own garment photo (lib/own-dress): the whole garment, cut out onto a studio backdrop and
+ * cut into its parts, with the picture's real size for the print areas.
+ */
+export async function ownPhotoPicture(raw: Buffer, type: GarmentType, match: StyleChoice): Promise<{ picture: PhotoPicture; pictureCm: { w: number; h: number } }> {
+  const framed = await frameGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders");
+  return { picture: await pictureFrom(framed, type, "front", match), pictureCm: framed.pictureCm };
+}
+
+async function pictureFrom(aligned: AlignedPhoto, type: GarmentType, side: "front" | "back", match: StyleChoice): Promise<PhotoPicture> {
   const workMasks: Partial<Record<PhotoRegion, Mask>> = {};
   const masks: Partial<Record<PhotoRegion, Buffer>> = {};
   const add = async (id: PhotoRegion, work: Mask, png?: Buffer) => {
@@ -95,8 +107,9 @@ function boundingBox(masks: readonly Mask[]): Box | null {
  * trim to the fabric: customers can place items anywhere on the garment, and whatever falls off the
  * chosen style's outline isn't printed.
  */
-export function printAreasFor(type: GarmentType, pictures: readonly PhotoPicture[]): PlacementArea[] {
-  const cm = PICTURE_CM[type === "dress" ? "dress" : "top"];
+/** `pictureCm` overrides the catalogue framing's size (a customer's own photo, framed whole). */
+export function printAreasFor(type: GarmentType, pictures: readonly PhotoPicture[], pictureCm?: { w: number; h: number }): PlacementArea[] {
+  const cm = pictureCm ?? PICTURE_CM[type === "dress" ? "dress" : "top"];
   const round = (v: number) => Math.round(v * 10_000) / 10_000;
   const area = (id: string, label: string, side: "front" | "back", regions: readonly PhotoRegion[]): PlacementArea[] => {
     const masks = pictures.filter((p) => p.side === side).flatMap((p) => regions.flatMap((r) => p.workMasks[r] ?? []));

@@ -27,10 +27,10 @@ export async function readRgb(input: Buffer, width?: number): Promise<RgbImage> 
 }
 
 /** Segments a photo (on a smaller copy, for speed) and returns its parts in that copy's pixels. */
-export async function analysePhoto(input: Buffer, workWidth = 400): Promise<{ parts: GarmentParts; scale: number }> {
+export async function analysePhoto(input: Buffer, workWidth = 400, colours: "one" | "several" = "one"): Promise<{ parts: GarmentParts; scale: number }> {
   const image = await readRgb(input, workWidth);
   const meta = await sharp(input).metadata();
-  return { parts: splitGarment(findGarment(image)), scale: (meta.width ?? workWidth) / workWidth };
+  return { parts: splitGarment(findGarment(image, { colours })), scale: (meta.width ?? workWidth) / workWidth };
 }
 
 type Placement = { scaledW: number; scaledH: number; left: number; top: number };
@@ -144,4 +144,114 @@ export async function cutOutGarment(input: Buffer): Promise<Buffer> {
     rgba[p * 4 + 3] = alpha[p] ?? 0;
   }
   return sharp(rgba, { raw: { width, height, channels: 4 } }).trim().png().toBuffer();
+}
+
+/** The plain studio backdrop a customer's own garment is shown on, like the catalogue's photos. */
+export const BACKDROP = { r: 241, g: 240, b: 237 };
+/** Real width across a garment's shoulders (cm), to size print areas on a framed photo. */
+const SHOULDER_CM: Record<AlignBy, number> = { torso: 37, shoulders: 46 };
+
+export type FramedPhoto = AlignedPhoto & {
+  /** Real size of the whole picture in cm, from the garment's shoulder width. */
+  pictureCm: { w: number; h: number };
+};
+
+/**
+ * A customer's own garment photo, shown whole: the garment is cut out (backdrop, mannequin and stand
+ * removed), scaled to fit the picture without cropping, and centred on a plain studio backdrop, with its
+ * part masks moved along. Unlike alignGarmentPhoto there's no catalogue framing to match, so nothing of
+ * the garment is cut off or blown up. Throws SegmentationError if no garment is found.
+ */
+export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso"): Promise<FramedPhoto> {
+  // A customer's garment may be more than one colour (a jacket open over a shirt).
+  const { parts, scale } = await analysePhoto(input, 800, "several");
+  const meta = await sharp(input).metadata();
+  const sourceW = meta.width ?? 1;
+  const sourceH = meta.height ?? 1;
+
+  // The garment's box in the source photo.
+  let x0 = parts.garment.width;
+  let y0 = parts.garment.height;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < parts.garment.height; y += 1) {
+    for (let x = 0; x < parts.garment.width; x += 1) {
+      if (!parts.garment.data[y * parts.garment.width + x]) continue;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+    }
+  }
+  const box = {
+    left: Math.max(0, Math.floor(x0 * scale)),
+    top: Math.max(0, Math.floor(y0 * scale)),
+    width: 0,
+    height: 0,
+  };
+  box.width = Math.max(1, Math.min(sourceW - box.left, Math.ceil((x1 + 1) * scale) - box.left));
+  box.height = Math.max(1, Math.min(sourceH - box.top, Math.ceil((y1 + 1) * scale) - box.top));
+
+  // Fit inside the picture with a little room around it (more below, like a catalogue shot).
+  const factor = Math.min((PHOTO_WIDTH * 0.88) / box.width, (PHOTO_HEIGHT * 0.92) / box.height);
+  const outW = Math.max(1, Math.round(box.width * factor));
+  const outH = Math.max(1, Math.round(box.height * factor));
+  const left = Math.round((PHOTO_WIDTH - outW) / 2);
+  const top = Math.round(PHOTO_HEIGHT * 0.04);
+
+  /** A source-sized single-channel image, cropped to the garment and placed on the picture. */
+  const placeGrey = async (grey: Buffer, blur: number) =>
+    sharp(
+      await sharp(grey)
+        .extract(box)
+        .resize(outW, outH, { fit: "fill", kernel: "lanczos3" })
+        .extend({ left, top, right: PHOTO_WIDTH - left - outW, bottom: PHOTO_HEIGHT - top - outH, background: "#000000" })
+        .toBuffer(),
+    )
+      .extractChannel(0)
+      .blur(blur)
+      .toColourspace("b-w")
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+
+  // The garment on the backdrop, with soft edges.
+  // (.raw() would expand the grey PNG to three channels: take the one.)
+  const alpha = await sharp(await placeGrey(await maskPng(parts.garment, sourceW, sourceH), 0.8)).extractChannel(0).raw().toBuffer();
+  const garment = await sharp(input).removeAlpha().extract(box).resize(outW, outH, { fit: "fill", kernel: "lanczos3" }).raw().toBuffer();
+  const rgb = Buffer.alloc(PHOTO_WIDTH * PHOTO_HEIGHT * 3);
+  for (let y = 0; y < PHOTO_HEIGHT; y += 1) {
+    for (let x = 0; x < PHOTO_WIDTH; x += 1) {
+      const p = y * PHOTO_WIDTH + x;
+      const a = (alpha[p] ?? 0) / 255;
+      const gx = x - left;
+      const gy = y - top;
+      const inside = gx >= 0 && gy >= 0 && gx < outW && gy < outH;
+      const g = (gy * outW + gx) * 3;
+      rgb[p * 3] = Math.round((inside ? (garment[g] ?? 0) : 0) * a + BACKDROP.r * (1 - a));
+      rgb[p * 3 + 1] = Math.round((inside ? (garment[g + 1] ?? 0) : 0) * a + BACKDROP.g * (1 - a));
+      rgb[p * 3 + 2] = Math.round((inside ? (garment[g + 2] ?? 0) : 0) * a + BACKDROP.b * (1 - a));
+    }
+  }
+  const image = await sharp(rgb, { raw: { width: PHOTO_WIDTH, height: PHOTO_HEIGHT, channels: 3 } })
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toBuffer();
+
+  const workW = 400;
+  const workH = Math.round((workW * PHOTO_HEIGHT) / PHOTO_WIDTH);
+  const moveMask = async (mask: Mask) => {
+    const grey = await placeGrey(await maskPng(mask, sourceW, sourceH), 1.2);
+    const small = await sharp(grey).resize(workW, workH, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+    const work: Mask = { data: Uint8Array.from(small, (v) => (v >= 128 ? 1 : 0)), width: workW, height: workH };
+    return { png: grey, work };
+  };
+
+  // Shoulders are found reliably on single garments; an outfit or an open jacket can fool it, so it's
+  // kept within what a garment's shoulders can be against its own width.
+  const shoulderPx = Math.min(outW, Math.max(outW * 0.45, parts.shoulderWidth * scale * factor));
+  const cmPerPx = SHOULDER_CM[alignBy] / shoulderPx;
+  return {
+    image,
+    masks: { sleeves: await moveMask(parts.sleeves), bodice: await moveMask(parts.bodice), skirt: await moveMask(parts.skirt) },
+    pictureCm: { w: PHOTO_WIDTH * cmPerPx, h: PHOTO_HEIGHT * cmPerPx },
+  };
 }

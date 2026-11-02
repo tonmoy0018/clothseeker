@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
-import { alignPhoto, analysePhoto, cutOutGarment, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, SHOULDERS, TORSO } from "@/lib/garment-photo/align";
+import { alignPhoto, analysePhoto, BACKDROP, cutOutGarment, frameGarmentPhoto, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, SHOULDERS, TORSO } from "@/lib/garment-photo/align";
 import { lengthRatio, maskArea, skirtRatio, sleeveReach, sleeveStyle } from "@/lib/garment-photo/segment";
 import { luminance, shadeFactor, shadeRange } from "@/lib/design/shade";
 
@@ -117,6 +117,48 @@ describe("cutting the dress out for try-on", () => {
 });
 
 describe("recolouring photos (shade)", () => {
+  it("frames a customer's own photo whole: nothing cut off, on a plain backdrop, sized by the shoulders", async () => {
+    // A long dress drawn near the bottom-right of a wide photo.
+    const input = await sharp(await photo({ colour: "#1f6f50", sleeves: "short", hem: 380 }))
+      .extend({ left: 300, right: 40, top: 0, bottom: 0, background: "#dcdcda" })
+      .jpeg()
+      .toBuffer();
+    const framed = await frameGarmentPhoto(input);
+    const { data, info } = await sharp(framed.image).raw().toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height]).toEqual([PHOTO_WIDTH, PHOTO_HEIGHT]);
+    const at = (x: number, y: number): [number, number, number] => [data[(y * info.width + x) * 3] ?? 0, data[(y * info.width + x) * 3 + 1] ?? 0, data[(y * info.width + x) * 3 + 2] ?? 0];
+    // The corners are the backdrop (the photo's own grey, mannequin and stand are gone).
+    for (const [x, y] of [[5, 5], [PHOTO_WIDTH - 5, 5], [5, PHOTO_HEIGHT - 5], [PHOTO_WIDTH - 5, PHOTO_HEIGHT - 5]] as const) {
+      const [r, g, b] = at(x, y);
+      // JPEG: within a few levels.
+      expect(Math.max(Math.abs(r - BACKDROP.r), Math.abs(g - BACKDROP.g), Math.abs(b - BACKDROP.b))).toBeLessThanOrEqual(3);
+    }
+    // The whole dress fits: green from near the top down to near the bottom, centred.
+    const green = (x: number, y: number) => {
+      const [r, g, b] = at(x, y);
+      return g > r + 20 && g > b + 10;
+    };
+    expect(green(PHOTO_WIDTH / 2, Math.round(PHOTO_HEIGHT * 0.12))).toBe(true);
+    expect(green(PHOTO_WIDTH / 2, Math.round(PHOTO_HEIGHT * 0.9))).toBe(true);
+    expect(framed.pictureCm.w).toBeGreaterThan(60);
+    expect(framed.pictureCm.w).toBeLessThan(250);
+  });
+
+  it("finds a garment of several colours in a customer's photo (a jacket open over a shirt)", async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+      <rect width="400" height="400" fill="#e2e2e0"/>
+      <path d="M150 90 L250 90 L262 330 L138 330 Z" fill="#161616"/>
+      <path d="M186 92 L214 92 L210 300 L190 300 Z" fill="#f4f1ea"/></svg>`;
+    const input = await sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toBuffer();
+    const one = (await analysePhoto(input, 400)).parts.garment;
+    const several = (await analysePhoto(input, 400, "several")).parts.garment;
+    const on = (mask: typeof one, x: number, y: number) => mask.data[y * mask.width + x] === 1;
+    // The jacket's side and the shirt in the middle are both garment.
+    expect(on(several, 165, 200)).toBe(true);
+    expect(on(several, 200, 200)).toBe(true);
+    expect(maskArea(several)).toBeGreaterThan(maskArea(one));
+  });
+
   it("stretches the fabric's own light and shade over the new colour", () => {
     // A dark navy region: brightness 0.10–0.30, with a mask.
     const rgb = [20, 25, 50, 60, 70, 110, 40, 45, 80, 200, 200, 200];

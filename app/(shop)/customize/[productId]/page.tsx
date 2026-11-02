@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Design your own — ClothSeeker" };
 
 export default async function CustomizePage({ params, searchParams }: PageProps<"/customize/[productId]">) {
   const { productId } = await params;
-  const { design, job, alts, quote } = await searchParams;
+  const { design, job, alts } = await searchParams;
   const db = getPrisma();
   const storage = getStorage();
   const user = await getCurrentUser();
@@ -56,7 +56,6 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
       templateVersion={context.template.version}
       aiEnabled={context.template.aiEnabled}
       ownDress={context.template.ownDress}
-      openQuote={initialDesign !== null && quote === "1"}
       config={context.template.config}
       imageUrls={context.template.imageUrls}
       availableSizes={context.availableSizes}

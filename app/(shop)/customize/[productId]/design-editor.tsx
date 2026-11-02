@@ -54,8 +54,6 @@ export type DesignEditorProps = {
   aiEnabled: boolean;
   /** The customer's own dress, from their photo (lib/own-dress): priced by the team through a quote. */
   ownDress: boolean;
-  /** Opened from "Make this exact dress": the quote request is shown straight away. */
-  openQuote?: boolean;
   config: TemplateConfig;
   imageUrls: Record<string, string>;
   availableSizes: Size[];
@@ -141,6 +139,7 @@ export function DesignEditor(props: DesignEditorProps) {
   const [fontsReady, setFontsReady] = useState(false);
   const [pending, startTransition] = useTransition();
   const [showTryOn, setShowTryOn] = useState(false);
+  const tryOnPanel = useRef<HTMLDivElement>(null);
   const [showMirror, setShowMirror] = useState(false);
   const [mirrorPhoto, setMirrorPhoto] = useState<Blob | null>(null);
   /** The front garment with its items printed on it, as last drawn by the canvas. */
@@ -590,6 +589,7 @@ export function DesignEditor(props: DesignEditorProps) {
           {activeArea?.clipToFabric ? `Place them anywhere on the ${garment.noun}: anything off the fabric isn't printed.` : "Items stay inside the dashed area."}
         </p>
 
+        <div ref={tryOnPanel} />
         {showTryOn && (
           <TryOnPanel
             source={{ kind: "design", spec, designId }}
@@ -637,7 +637,7 @@ export function DesignEditor(props: DesignEditorProps) {
             <div className="flex flex-col gap-1">
               <p>
                 {props.ownDress
-                  ? `This is the ${garment.noun} from your photo. Change its colours or add text, decorations and embroidery, or keep it exactly as it is.`
+                  ? `This is the ${garment.noun} from your photo. Change its colours or add text, decorations and embroidery, or keep it exactly as it is. Try it on, then ask us for a price.`
                   : spec.startedFrom === "photo"
                     ? `We matched your photo to this ${garment.noun} and copied its main colors.`
                     : `We matched your description to this ${garment.noun}.`}
@@ -823,6 +823,22 @@ export function DesignEditor(props: DesignEditorProps) {
 
           {props.ownDress ? (
             <>
+              {/* Your own dress: see it, try it on, then ask for a price. */}
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4" data-testid="own-dress-try-on">
+                <div className="mr-auto flex flex-col gap-0.5">
+                  <span className="text-sm font-medium">See it on you</span>
+                  <span className="text-xs text-muted-foreground">Try your {garment.noun} on with a photo of yourself before asking for a price.</span>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowTryOn(true);
+                    requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+                  }}
+                >
+                  Try it on
+                </Button>
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <p className="mr-auto text-sm text-muted-foreground" data-testid="own-dress-price">
                   Made to order from your photo: the ClothSeeker team prices it.
@@ -831,13 +847,7 @@ export function DesignEditor(props: DesignEditorProps) {
                   {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
                 </Button>
               </div>
-              <QuoteRequest
-                ownDress
-                focus={props.openQuote === true}
-                designId={designId}
-                saved={designId !== null && !dirty && !isDraft}
-                onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
-              />
+              <QuoteRequest ownDress designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
             </>
           ) : (
             <>

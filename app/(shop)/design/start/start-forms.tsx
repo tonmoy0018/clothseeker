@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
@@ -36,8 +36,6 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [photoKey, setPhotoKey] = useState<string | null>(null);
   const [garmentType, setGarmentType] = useState<GarmentType>("dress");
-  // "Make this exact dress" opens the design screen with the quote request ready.
-  const exactChosen = useRef(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [pending, startTransition] = useTransition();
 
@@ -67,7 +65,6 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
         const params = new URLSearchParams({ design: designId });
         if (roundJobId) params.set("job", roundJobId);
         if (alternatives.length > 0) params.set("alts", alternatives.join(","));
-        if (exactChosen.current) params.set("quote", "1");
         router.push(`/customize/${productId}?${params.toString()}`);
         return;
       }
@@ -97,7 +94,6 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
       setPhase({ kind: "error", message: result.message });
       return;
     }
-    exactChosen.current = choice === "exact";
     setPhase({ kind: "waiting", jobId: result.jobId, mode, choice });
   }
 
@@ -194,13 +190,13 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
               <div className="flex flex-col gap-2">
                 <ChoiceButton
                   title={`Make this exact ${GARMENT_TYPES[garmentType].noun}`}
-                  detail="We make it just like your photo. Choose your size and ask for a price: we reply within 24 hours."
+                  detail="We make it just like your photo. See it, try it on, then ask for a price: we reply within 24 hours."
                   onClick={() => choose("exact")}
                   disabled={busy}
                 />
                 <ChoiceButton
                   title={`Customize this ${GARMENT_TYPES[garmentType].noun}`}
-                  detail="Change its colours, add text, decorations or embroidery on your own dress, then ask for a price."
+                  detail="Change its colours, add text, decorations or embroidery on your own dress, try it on, then ask for a price."
                   onClick={() => choose("customize")}
                   disabled={busy}
                 />

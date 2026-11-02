@@ -210,13 +210,46 @@ function trimThinEnds(mask: Mask): Mask {
   return out;
 }
 
+/** The main colours among Lab samples: a small k-means, keeping clusters with at least `minShare` of them. */
+function mainColours(samples: readonly Lab[], k: number, minShare: number): Lab[] {
+  if (samples.length === 0) return [];
+  const distance = (a: Lab, b: Lab) => Math.hypot((a[0] - b[0]) * 0.6, a[1] - b[1], a[2] - b[2]);
+  // Start from samples spread across the range of lightness (the clearest difference between fabrics).
+  const sorted = [...samples].sort((a, b) => a[0] - b[0]);
+  let centres: Lab[] = Array.from({ length: k }, (_, i) => sorted[Math.floor(((i + 0.5) / k) * sorted.length)] ?? samples[0] ?? [0, 0, 0]);
+  let counts: number[] = [];
+  for (let round = 0; round < 8; round += 1) {
+    const sums: Lab[] = centres.map(() => [0, 0, 0]);
+    counts = centres.map(() => 0);
+    for (const c of samples) {
+      let best = 0;
+      centres.forEach((m, i) => {
+        if (distance(c, m) < distance(c, centres[best] ?? m)) best = i;
+      });
+      counts[best] = (counts[best] ?? 0) + 1;
+      const sum = sums[best];
+      if (sum) sums[best] = [sum[0] + c[0], sum[1] + c[1], sum[2] + c[2]];
+    }
+    centres = centres.map((m, i) => {
+      const n = counts[i] ?? 0;
+      const sum = sums[i];
+      return n > 0 && sum ? [sum[0] / n, sum[1] / n, sum[2] / n] : m;
+    });
+  }
+  return centres.filter((_, i) => (counts[i] ?? 0) >= samples.length * minShare);
+}
+
 /**
  * The dress as a mask. The background is modelled from the image border (as a gentle gradient); the
  * dress colour comes from the central column, between the mannequin's neck and its stand. A pixel is
  * dress when it stands out from the background and is close to the dress colour. Lightness counts
  * for little, so folds and shadows stay in and pale dresses are told apart by their tint.
+ *
+ * `colours: "several"` (a customer's own photo, where a jacket can be open over a shirt): the colours are
+ * sampled across the middle of the garment instead of a thin column, and a pixel close to any of its
+ * main colours counts.
  */
-export function findGarment(image: RgbImage): Mask {
+export function findGarment(image: RgbImage, options: { colours?: "one" | "several" } = {}): Mask {
   const { width, height } = image;
   const lab = labImage(image);
   const at = (x: number, y: number) => (y * width + x) * 3;
@@ -240,10 +273,21 @@ export function findGarment(image: RgbImage): Mask {
     return Math.hypot(((lab[i] ?? 0) - bgAt(x, y, 0)) * 0.4, (lab[i + 1] ?? 0) - bgAt(x, y, 1), (lab[i + 2] ?? 0) - bgAt(x, y, 2));
   };
 
-  // Central column: what differs from the background; the middle of its extent is dress.
+  // Central column: what differs from the background; the middle of its extent is dress. A customer's
+  // photo needn't be centred: there the column is where most of what isn't background is.
+  let middle = 0.5;
+  if (options.colours === "several") {
+    const mass: number[] = [];
+    for (let x = edge; x < width - edge; x += 1) {
+      let n = 0;
+      for (let y = edge; y < height - edge; y += 3) if (toBg(x, y) > 8) n += 1;
+      for (let k = 0; k < n; k += 1) mass.push(x);
+    }
+    if (mass.length > 0) middle = (mass[Math.floor(mass.length / 2)] ?? width / 2) / width;
+  }
   const column: number[] = [];
-  const x0 = Math.round(width * 0.48);
-  const x1 = Math.round(width * 0.52);
+  const x0 = Math.round(width * (middle - 0.02));
+  const x1 = Math.round(width * (middle + 0.02));
   for (let y = 0; y < height; y += 1) {
     for (let x = x0; x <= x1; x += 1) {
       if (toBg(x, y) > 5) column.push(y);
@@ -260,6 +304,18 @@ export function findGarment(image: RgbImage): Mask {
   }
   const dress = samples.map(median);
   const dressL = dress[0] ?? 0;
+  // Several colours: the middle half of the garment's width, between the same rows.
+  const colours: Lab[] = [];
+  if (options.colours === "several") {
+    const spread: Lab[] = [];
+    for (let y = top; y <= bottom; y += 2) {
+      for (let x = Math.max(0, Math.round(width * (middle - 0.25))); x <= Math.min(width - 1, width * (middle + 0.25)); x += 2) {
+        const i = at(x, y);
+        if (toBg(x, y) > 8) spread.push([lab[i] ?? 0, lab[i + 1] ?? 0, lab[i + 2] ?? 0]);
+      }
+    }
+    colours.push(...mainColours(spread, 3, 0.12));
+  }
   const contrast = Math.hypot((dressL - bgAt(0.5 * width, 0.5 * height, 0)) * 0.4, (dress[1] ?? 0) - bgAt(0.5 * width, 0.5 * height, 1), (dress[2] ?? 0) - bgAt(0.5 * width, 0.5 * height, 2));
   const bgThreshold = Math.max(4, contrast * 0.4);
   // Colourless fabric (black, white) can only be told apart by its lightness; coloured fabric by its tint.
@@ -272,12 +328,31 @@ export function findGarment(image: RgbImage): Mask {
     for (let x = 0; x < width; x += 1) {
       const i = at(x, y);
       const toDress = Math.hypot(((lab[i] ?? 0) - dressL) * lightnessWeight, (lab[i + 1] ?? 0) - (dress[1] ?? 0), (lab[i + 2] ?? 0) - (dress[2] ?? 0));
-      mask.data[y * width + x] = toBg(x, y) > bgThreshold && toDress < dressThreshold ? 1 : 0;
+      const toAnother = colours.some((c) => Math.hypot(((lab[i] ?? 0) - c[0]) * 0.4, (lab[i + 1] ?? 0) - c[1], (lab[i + 2] ?? 0) - c[2]) < dressThreshold);
+      mask.data[y * width + x] = toBg(x, y) > bgThreshold && (toDress < dressThreshold || toAnother) ? 1 : 0;
     }
   }
   // Closing fills notches along the edge (highlights on pale fabric); gaps beside hanging sleeves are wider.
   const radius = Math.max(1, Math.round(width / 200));
-  const garment = fillSmallHoles(close(largestComponent(trimThinEnds(largestComponent(smooth(mask)))), radius), Math.round(width * height * 0.004));
+  let garment = fillSmallHoles(close(largestComponent(trimThinEnds(largestComponent(smooth(mask)))), radius), Math.round(width * height * 0.004));
+  if (options.colours === "several") {
+    // A pale shirt inside an open jacket barely differs from a pale backdrop: within each row of the
+    // garment, whatever isn't quite backdrop is garment too (real gaps, e.g. beside a sleeve, stay open).
+    const filled = { ...garment, data: Uint8Array.from(garment.data) };
+    for (let y = 0; y < height; y += 1) {
+      let first = -1;
+      let last = -1;
+      for (let x = 0; x < width; x += 1) {
+        if (!garment.data[y * width + x]) continue;
+        if (first < 0) first = x;
+        last = x;
+      }
+      for (let x = first + 1; x < last; x += 1) {
+        if (!filled.data[y * width + x] && toBg(x, y) > Math.max(2, bgThreshold * 0.2)) filled.data[y * width + x] = 1;
+      }
+    }
+    garment = fillSmallHoles(smooth(filled), Math.round(width * height * 0.004));
+  }
   if (maskArea(garment) < width * height * 0.03) throw new SegmentationError("The dress is too small or wasn't found");
   return garment;
 }

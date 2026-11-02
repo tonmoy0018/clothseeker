@@ -21,16 +21,24 @@ async function uploadAndChoose(page: Page, choice: RegExp) {
 }
 
 test.describe("@supabase your own dress", () => {
-  test("make this exact dress: opens ready to ask for a price, with no shop price or cart", async ({ page }) => {
-    test.setTimeout(120_000);
+  test("make this exact dress: see it, try it on, then ask for a price; no shop price or cart", async ({ page }) => {
+    test.setTimeout(150_000);
     await signUpFreshCustomer(page);
     await uploadAndChoose(page, /^Make this exact dress/);
-    await expect(page).toHaveURL(/&quote=1$/);
     await expect(page.getByRole("heading", { name: "Your dress" }).first()).toBeVisible();
     await expect(page.getByTestId("start-info")).toContainText("This is the dress from your photo");
     await expect(page.getByTestId("own-dress-price")).toContainText("the ClothSeeker team prices it");
     await expect(page.getByTestId("design-total")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Add to cart" })).toHaveCount(0);
+
+    // Try it on first.
+    await page.getByTestId("own-dress-try-on").getByRole("button", { name: "Try it on" }).click();
+    const panel = page.getByTestId("try-on-panel");
+    await panel.getByLabel("I agree to use my photo for try-on").check();
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await readFile(path.join(process.cwd(), "tests", "fixtures", "tryon-woman.jpg")) });
+    await expect(panel.getByRole("radio", { name: "Photo 1" })).toBeVisible();
+    await panel.getByRole("button", { name: "Try it on" }).click();
+    await expect(panel.getByTestId("try-on-result").getByRole("img", { name: "You wearing this dress (AI preview)" })).toBeVisible({ timeout: 45_000 });
 
     const quote = page.getByTestId("quote-request");
     await expect(quote).toContainText("Get a price for your dress");

@@ -6,16 +6,16 @@ import { SIZE_ORDER } from "@/lib/catalog/size-chart";
 import type { PrismaClient } from "@/lib/db/client";
 import { saveDesign } from "@/lib/design/service";
 import { SegmentationError } from "@/lib/garment-photo/segment";
-import { photoPicture, photoRegionsFor, printAreasFor } from "@/lib/garment-photo/template";
+import { ownPhotoPicture, photoRegionsFor, printAreasFor } from "@/lib/garment-photo/template";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { buildObjectKey } from "@/lib/storage/object-key";
 import type { DesignSpec } from "@/types/design-spec";
 import { parseTemplateConfig, templateConfigSchema, templateImageKeys, templateStyleGroups, type TemplateConfig } from "@/types/template";
 
-// A customer's own dress, made from their photo (decided 2026-11-02): the photo is lined up and cut into
-// parts like the catalogue's photo templates (lib/garment-photo/template.ts), and becomes a PRIVATE
-// product with its own template, owned by the customer. They may recolour it and add text, decorations,
+// A customer's own dress, made from their photo (decided 2026-11-02): the whole garment is cut out onto
+// a studio backdrop like the catalogue's photos and cut into parts (lib/garment-photo/template.ts), and
+// becomes a PRIVATE product with its own template, owned by the customer. They may recolour it and add text, decorations,
 // prints and finishes, but not change its cut (one style option per group: as in the photo). It's made
 // to order: the team prices it through a quote (lib/quotes), so it's never sold directly.
 
@@ -65,8 +65,9 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
   const groups = templateStyleGroups(defaultTemplateConfig(type));
   const style = Object.fromEntries(groups.map((group) => [group, AS_PHOTO]));
   let picture;
+  let pictureCm;
   try {
-    picture = await photoPicture(input.photo, type, "front", style);
+    ({ picture, pictureCm } = await ownPhotoPicture(input.photo, type, style));
   } catch (error) {
     if (error instanceof SegmentationError) throw new OwnDressError("no garment found");
     throw error;
@@ -89,7 +90,7 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
     for (const [region, mask] of Object.entries(picture.masks)) {
       if (mask) masks[region] = await upload(mask, "png");
     }
-    const config = ownDressConfig(type, { image, masks }, printAreasFor(type, [picture]));
+    const config = ownDressConfig(type, { image, masks }, printAreasFor(type, [picture], pictureCm));
     const category = await db.category.findFirst({ orderBy: { sortOrder: "asc" }, select: { id: true } });
     if (!category) throw new Error("no category to file the dress under");
     const noun = GARMENT_TYPES[type].noun;
