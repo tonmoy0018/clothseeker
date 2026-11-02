@@ -1,29 +1,56 @@
 "use client";
 
 import type { GarmentType } from "@/lib/catalog/garment-types";
-import { FIT_PREFERENCE_LABEL, FIT_PREFERENCES, fitInputSchema, fitReport, type FitInput, type FitPreference } from "@/lib/fit/fit";
+import { FIT_PREFERENCE_LABEL, FIT_PREFERENCES, fitInputSchema, fitReport, type BodyGirth, type FitInput, type FitPreference } from "@/lib/fit/fit";
 import type { Size } from "@/lib/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
-// "Your fit" in the try-on panel: height, weight and a Fitted / Regular / Relaxed choice give an
-// estimated fit report for each size and a recommended size; the try-on then shows that size on you.
+// "Your fit" in the try-on panel: height (the only thing the customer types) plus the measurements taken
+// from their photo on this device, and a Fitted / Regular / Relaxed choice, give a fit report for each
+// size and a recommended size; the try-on then shows that size on them.
 
 export type FitGarment = { type: GarmentType; sizes: readonly Size[]; lengthCm: number | null };
 
-export type FitDraft = { height: string; weight: string; preference: FitPreference; size: Size | null; remember: boolean };
+export type FitDraft = { height: string; preference: FitPreference; size: Size | null; remember: boolean };
 
-/** The draft as a valid fit input, or null while height or weight is missing or out of range. */
+/** What the selected photo told us about the body. */
+export type FitMeasure =
+  | { kind: "no_photo" }
+  | { kind: "measuring" }
+  | { kind: "failed"; message: string }
+  | { kind: "measured"; fullLength: boolean; girths: (heightCm: number) => BodyGirth[] };
+
+/** The draft as a valid fit input, or null while the height is missing or out of range. */
 export function fitInputOf(draft: FitDraft): FitInput | null {
-  const parsed = fitInputSchema.safeParse({ heightCm: draft.height, weightKg: draft.weight, preference: draft.preference });
+  const parsed = fitInputSchema.safeParse({ heightCm: draft.height, preference: draft.preference });
   return parsed.success ? parsed.data : null;
 }
 
 const STATUS_WORDS = { tight: "tight", good: "fits", loose: "loose" } as const;
 
+function MeasureNote({ measure }: { measure: FitMeasure }) {
+  const text =
+    measure.kind === "no_photo"
+      ? "Add a photo of you: we measure you from it, on this device."
+      : measure.kind === "measuring"
+        ? "Measuring you from your photo…"
+        : measure.kind === "failed"
+          ? `${measure.message} Without measurements we can't suggest a size; the length still shows.`
+          : measure.fullLength
+            ? "Measured from your photo."
+            : "Measured from your photo. A full-length photo, head to feet, measures more accurately.";
+  return (
+    <p className={cn("text-xs", measure.kind === "failed" ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground")} data-testid="fit-measure">
+      {text}
+    </p>
+  );
+}
+
 export function FitSection({
   garment,
   noun,
   draft,
+  measure,
   onChange,
   savedProfile,
   onForget,
@@ -32,20 +59,22 @@ export function FitSection({
   garment: FitGarment;
   noun: string;
   draft: FitDraft;
+  measure: FitMeasure;
   onChange: (draft: FitDraft) => void;
   savedProfile: boolean;
   onForget: () => void;
   disabled: boolean;
 }) {
   const input = fitInputOf(draft);
-  const problem = draft.height !== "" && draft.weight !== "" && !input ? fitInputSchema.safeParse({ heightCm: draft.height, weightKg: draft.weight, preference: draft.preference }).error?.issues[0]?.message : null;
-  const report = input ? fitReport(garment.type, input, garment.sizes, draft.size, garment.lengthCm) : null;
+  const problem = draft.height !== "" && !input ? fitInputSchema.safeParse({ heightCm: draft.height, preference: draft.preference }).error?.issues[0]?.message : null;
+  const girths = input && measure.kind === "measured" ? measure.girths(input.heightCm) : null;
+  const report = input ? fitReport(garment.type, input, girths, garment.sizes, draft.size, garment.lengthCm) : null;
   const set = (patch: Partial<FitDraft>) => onChange({ ...draft, ...patch });
 
   return (
     <fieldset className="flex flex-col gap-3 rounded-lg border p-3" data-testid="fit-section" disabled={disabled}>
       <legend className="px-1 text-sm font-medium">Your fit (optional)</legend>
-      <p className="text-xs text-muted-foreground">Add your height and weight to see how each size fits you, and the try-on shows that size on you.</p>
+      <p className="text-xs text-muted-foreground">Add your height and we measure the rest from your photo, to show how each size fits you; the try-on then shows that size on you.</p>
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-xs">
           Height (cm)
@@ -57,18 +86,6 @@ export function FitSection({
             className="h-8 w-24 rounded-md border bg-background px-2 text-sm"
             value={draft.height}
             onChange={(e) => set({ height: e.target.value })}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          Weight (kg)
-          <input
-            type="number"
-            inputMode="numeric"
-            min={30}
-            max={200}
-            className="h-8 w-24 rounded-md border bg-background px-2 text-sm"
-            value={draft.weight}
-            onChange={(e) => set({ weight: e.target.value })}
           />
         </label>
         <div className="flex flex-col gap-1 text-xs">
@@ -106,6 +123,7 @@ export function FitSection({
           {problem}
         </p>
       )}
+      {input && <MeasureNote measure={measure} />}
 
       {report && (
         <div className="flex flex-col gap-2 text-sm" data-testid="fit-report" aria-live="polite">
@@ -133,7 +151,10 @@ export function FitSection({
               <tbody>
                 {report.chosen.lines.map((line) => (
                   <tr key={line.label} className="border-t">
-                    <td className="py-1">{line.label}</td>
+                    <td className="py-1">
+                      {line.label}
+                      {line.estimated && " *"}
+                    </td>
                     <td className="py-1 tabular-nums">{Math.round(line.bodyCm)} cm</td>
                     <td className="py-1 tabular-nums">
                       {line.rangeCm[0]}–{line.rangeCm[1]} cm
@@ -146,19 +167,24 @@ export function FitSection({
               </tbody>
             </table>
           )}
-          {report.chosen && (
+          {draft.size && (
             <p className="text-xs" data-testid="fit-length">
               {report.hem ? `Length: the hem lands ${report.hem.words} on you.` : `Length: not listed for this ${noun}.`}
             </p>
           )}
-          <p className="text-xs text-muted-foreground">Body measurements are estimated from your height and weight, so treat them as a guide.</p>
+          {girths && (
+            <p className="text-xs text-muted-foreground">
+              {girths.some((g) => g.estimated) && "* Guessed from your other measurements: the photo doesn't show it. "}
+              Measured from one photo, so treat them as a guide: loose clothes make you look bigger.
+            </p>
+          )}
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <label className="flex items-center gap-1.5">
           <input type="checkbox" className="size-4" checked={draft.remember} onChange={(e) => set({ remember: e.target.checked })} />
-          Remember my height, weight and fit on my account
+          Remember my height and fit on my account
         </label>
         {savedProfile && (
           <button type="button" className="text-destructive underline" onClick={onForget}>

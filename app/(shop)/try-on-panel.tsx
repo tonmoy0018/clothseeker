@@ -4,14 +4,16 @@ import Image from "next/image";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
+import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import { fitReport, garmentLengthCm, type TryOnFit } from "@/lib/fit/fit";
+import { girthsFromPhoto, MEASURE_PROBLEM_TEXT, type PhotoMeasure } from "@/lib/fit/measure";
 import { downscalePhoto } from "@/lib/media/client-resize";
 import { isTryOnStale, TRYON_CONSENT_POINTS } from "@/lib/tryon/rules";
 import type { TryOnPhotoView, TryOnResultView } from "@/lib/tryon/service";
 import { cn } from "@/lib/utils";
 import type { DesignSpec } from "@/types/design-spec";
 
-import { FitSection, fitInputOf, type FitDraft, type FitGarment } from "./fit-section";
+import { FitSection, fitInputOf, type FitDraft, type FitGarment, type FitMeasure } from "./fit-section";
 import {
   deleteBodyProfileAction,
   deletePhotoAction,
@@ -38,7 +40,17 @@ type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; running: boole
 /** The garment's kind, the sizes on sale and its listed length (ready-made items), for the fit report. */
 export type TryOnGarmentFacts = { type: FitGarment["type"]; sizes: FitGarment["sizes"]; productLengthCm: number | null };
 
-const sameFit = (a: TryOnFit | null, b: TryOnFit | null) => JSON.stringify(a) === JSON.stringify(b);
+const sameFit = (a: TryOnFit | null, b: TryOnFit | null) =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.heightCm === b.heightCm &&
+    a.preference === b.preference &&
+    a.size === b.size &&
+    JSON.stringify(a.girthsCm) === JSON.stringify(b.girthsCm));
+
+/** A photo's measurement, or null when it can't be done on this device. */
+type MeasureState = PhotoMeasure | null;
 
 /**
  * `noun` names the garment in messages: "Putting the shirt on you…". `offeredPhoto` is a photo taken in
@@ -59,7 +71,9 @@ export function TryOnPanel({
   garment: TryOnGarmentFacts;
   offeredPhoto?: Blob | null;
 }) {
-  const [fitDraft, setFitDraft] = useState<FitDraft>({ height: "", weight: "", preference: "regular", size: source.kind === "design" ? source.spec.size : null, remember: false });
+  const [fitDraft, setFitDraft] = useState<FitDraft>({ height: "", preference: "regular", size: source.kind === "design" ? source.spec.size : null, remember: false });
+  const [measures, setMeasures] = useState<Record<string, MeasureState>>({});
+  const measuring = useRef(new Set<string>());
   const [savedProfile, setSavedProfile] = useState(false);
   const [usedOffer, setUsedOffer] = useState<Blob | null>(null);
   const [photos, setPhotos] = useState<TryOnPhotoView[]>([]);
@@ -86,10 +100,23 @@ export function TryOnPanel({
       const profile = overview.profile;
       if (profile) {
         setSavedProfile(true);
-        setFitDraft((d) => ({ ...d, height: String(profile.heightCm), weight: String(profile.weightKg), preference: profile.preference, remember: true }));
+        setFitDraft((d) => ({ ...d, height: String(profile.heightCm), preference: profile.preference, remember: true }));
       }
     });
   }, [signedIn]);
+
+  // Each photo is measured once, on this device, when it's first chosen.
+  const audience = GARMENT_TYPES[garment.type].audience;
+  const measureUrl = photos.find((p) => p.id === photoId)?.url ?? null;
+  const measured = photoId !== null && photoId in measures;
+  useEffect(() => {
+    if (!photoId || !measureUrl || measured || measuring.current.has(photoId)) return;
+    measuring.current.add(photoId);
+    void import("@/lib/vision/measure-photo")
+      .then(({ measurePhotoOnDevice }) => measurePhotoOnDevice(measureUrl, audience))
+      .catch(() => null)
+      .then((result) => setMeasures((m) => ({ ...m, [photoId]: result })));
+  }, [photoId, measureUrl, measured, audience]);
 
   const waitingJob = phase.kind === "waiting" ? phase.jobId : null;
   useEffect(() => {
@@ -244,7 +271,7 @@ export function TryOnPanel({
       if (response.status === "ok") {
         setSavedProfile(false);
         setFitDraft((d) => ({ ...d, remember: false }));
-        setNotice("Your height, weight and fit were removed from your account.");
+        setNotice("Your height and fit were removed from your account.");
       }
     });
   }
@@ -254,10 +281,23 @@ export function TryOnPanel({
     sizes: garment.sizes,
     lengthCm: garmentLengthCm(garment.type, source.kind === "design" ? source.spec.styleOptions : null, garment.productLengthCm),
   };
+  const state = photoId ? measures[photoId] : undefined;
+  const fitMeasure: FitMeasure = !photoId
+    ? { kind: "no_photo" }
+    : state === undefined
+      ? measureUrl
+        ? { kind: "measuring" }
+        : { kind: "failed", message: "This photo can't be measured right now." }
+      : state === null
+        ? { kind: "failed", message: "Measuring doesn't work on this device." }
+        : state.ok
+          ? { kind: "measured", fullLength: state.fullLength, girths: (heightCm) => girthsFromPhoto(audience, state.breadths, heightCm) }
+          : { kind: "failed", message: MEASURE_PROBLEM_TEXT[state.problem] };
   // The fit the next try-on shows: the chosen size, else the recommended one.
   const fitInput = fitInputOf(fitDraft);
-  const fitSize = fitInput ? (fitDraft.size ?? fitReport(fitGarment.type, fitInput, fitGarment.sizes, null, null).recommended) : null;
-  const currentFit: TryOnFit | null = fitInput && fitSize ? { ...fitInput, size: fitSize } : null;
+  const fitGirths = fitInput && fitMeasure.kind === "measured" ? fitMeasure.girths(fitInput.heightCm) : null;
+  const fitSize = fitInput ? (fitDraft.size ?? fitReport(fitGarment.type, fitInput, fitGirths, fitGarment.sizes, null, null).recommended) : null;
+  const currentFit: TryOnFit | null = fitInput && fitSize ? { ...fitInput, size: fitSize, girthsCm: fitGirths?.map((g) => g.cm) ?? null } : null;
 
   const busy = pending || uploading || phase.kind === "waiting";
   const stale = result !== null && source.kind === "design" && isTryOnStale(result.garmentHash, source.spec);
@@ -368,7 +408,16 @@ export function TryOnPanel({
         </div>
       )}
 
-      <FitSection garment={fitGarment} noun={noun} draft={fitDraft} onChange={setFitDraft} savedProfile={savedProfile} onForget={forgetProfile} disabled={busy} />
+      <FitSection
+        garment={fitGarment}
+        noun={noun}
+        draft={fitDraft}
+        measure={fitMeasure}
+        onChange={setFitDraft}
+        savedProfile={savedProfile}
+        onForget={forgetProfile}
+        disabled={busy}
+      />
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={start} disabled={!photoId || busy || quota?.remaining === 0}>
@@ -404,7 +453,7 @@ export function TryOnPanel({
           )}
           {fitStale && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm dark:bg-amber-950/30" data-testid="try-on-fit-stale">
-              {result.fit ? `This try-on shows size ${result.fit.size} at ${result.fit.heightCm} cm, ${result.fit.weightKg} kg.` : "This try-on doesn't show your fit yet."}
+              {result.fit ? `This try-on shows size ${result.fit.size} at ${result.fit.heightCm} cm${result.fit.girthsCm ? "" : " (length only)"}.` : "This try-on doesn't show your fit yet."}
               <Button size="sm" variant="outline" onClick={start} disabled={busy || !photoId}>
                 Update try-on
               </Button>
@@ -412,7 +461,7 @@ export function TryOnPanel({
           )}
           {result.fit && !fitStale && (
             <p className="text-xs text-muted-foreground" data-testid="try-on-fit-shown">
-              Showing size {result.fit.size} at {result.fit.heightCm} cm, {result.fit.weightKg} kg ({result.fit.preference} fit).
+              Showing size {result.fit.size} at {result.fit.heightCm} cm ({result.fit.girthsCm ? `${result.fit.preference} fit` : "length only"}).
             </p>
           )}
           <div className="grid grid-cols-2 gap-3">

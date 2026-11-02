@@ -15,7 +15,7 @@ export const tryOnPayloadSchema = z.object({
   photoId: z.uuid(),
   source: tryOnSourceSchema,
   garmentHash: z.string().min(3).max(80),
-  /** Height, weight, preference and size: the try-on follows how that size fits (absent = as made). */
+  /** Height, preference, size and girths from the photo: the try-on follows how that size fits (absent = as made). */
   fit: tryOnFitSchema.optional(),
 });
 

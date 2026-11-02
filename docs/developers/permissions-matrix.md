@@ -121,7 +121,7 @@ Every `app/admin/**` page, action and route checks the role on the server. `test
 | Try on a design or dress, poll, keep, delete | ➡️ sign in | ✅ **own photos, jobs and results only** (others look like "not found"); 5 per day | ❌ | `lib/tryon/service.ts` (scoped by `customerId`) |
 | See try-on photos/results | ❌ | ✅ own, via short-lived signed URLs | ❌ | private `tryon-private` bucket |
 | Delete unsaved try-on media after 24 h | ❌ | ❌ | ❌ | **Worker sweep only** (`cleanupTryOnMedia`, audited) |
-| Remember, read or forget height, weight and fit preference | ❌ | ✅ **own profile only**, only when they tick "Remember" | ❌ | `lib/fit/profile.ts` → `assertCustomer`, scoped by `userId` |
+| Remember, read or forget height and fit preference | ❌ | ✅ **own profile only**, only when they tick "Remember" | ❌ | `lib/fit/profile.ts` → `assertCustomer`, scoped by `userId` |
 
 ## Planned
 

@@ -112,41 +112,52 @@ test.describe("@supabase virtual try-on", () => {
     await expect(panel.getByRole("radio", { name: "Photo 2" })).toBeVisible({ timeout: 60_000 });
   });
 
-  test("fit: height and weight give a recommended size and a report; the try-on shows that size; remembered on request", async ({ page }) => {
+  test("fit: height plus the photo give a recommended size and a report; the try-on shows that size; remembered on request", async ({ page }) => {
     test.setTimeout(120_000);
     await signUpFreshCustomer(page);
     await page.goto("/products/linen-wrap-dress");
     await page.getByRole("button", { name: "Try on", exact: true }).click();
     const panel = page.getByTestId("try-on-panel");
     const fit = panel.getByTestId("fit-section");
-    await fit.getByLabel("Height (cm)").fill("160");
-    await fit.getByLabel("Weight (kg)").fill("57");
-    await expect(fit.getByTestId("fit-recommended")).toHaveText("M");
-    // No size chosen yet: the report waits; choosing one shows how it fits and where the hem lands.
-    await fit.getByLabel("Size to try").selectOption("XS");
-    await expect(fit.getByTestId("fit-report")).toContainText("tight by");
-    await expect(fit.getByTestId("fit-length")).toContainText("the hem lands");
-    await fit.getByRole("button", { name: "Try M" }).click();
-    await expect(fit.getByTestId("fit-report")).not.toContainText("tight by");
+    await expect(fit.getByLabel("Weight (kg)")).toHaveCount(0);
     await fit.getByLabel("Height (cm)").fill("90");
     await expect(fit.getByRole("alert")).toContainText("Height must be 120–220 cm.");
     await fit.getByLabel("Height (cm)").fill("160");
-    await fit.getByLabel("Remember my height, weight and fit on my account").check();
+    await expect(fit.getByTestId("fit-measure")).toContainText("Add a photo of you");
 
+    // A waist-up photo can't be measured: no size advice, and it says why.
     await panel.getByLabel("I agree to use my photo for try-on").check();
-    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await portraitPhoto() });
+    const portrait = await portraitPhoto();
+    const waistUp = await sharp(portrait).extract({ left: 0, top: 0, width: 600, height: 520 }).jpeg().toBuffer();
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "half.jpg", mimeType: "image/jpeg", buffer: waistUp });
     await expect(panel.getByRole("radio", { name: "Photo 1" })).toBeVisible();
+    await expect(fit.getByTestId("fit-measure")).toContainText("We need to see you down to your hips", { timeout: 30_000 });
+    await expect(fit.getByTestId("fit-recommended")).toHaveCount(0);
+
+    // A full-length photo is measured on this device.
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: portrait });
+    await expect(panel.getByRole("radio", { name: "Photo 2" })).toBeVisible();
+    await expect(fit.getByTestId("fit-measure")).toHaveText("Measured from your photo.", { timeout: 30_000 });
+    const recommended = (await fit.getByTestId("fit-recommended").textContent()) ?? "";
+    expect(["S", "M", "L"]).toContain(recommended);
+    // Much too small: the report says where.
+    await fit.getByLabel("Size to try").selectOption("XS");
+    await expect(fit.getByTestId("fit-report")).toContainText("tight by");
+    await expect(fit.getByTestId("fit-length")).toContainText("the hem lands");
+    await fit.getByRole("button", { name: `Try ${recommended}` }).click();
+    await expect(fit.getByTestId("fit-report")).not.toContainText("tight by");
+    await fit.getByLabel("Remember my height and fit on my account").check();
+
     await panel.getByRole("button", { name: "Try it on" }).click();
-    await expect(panel.getByTestId("try-on-fit-shown")).toContainText("Showing size M at 160 cm, 57 kg", { timeout: 30_000 });
+    await expect(panel.getByTestId("try-on-fit-shown")).toContainText(`Showing size ${recommended} at 160 cm (regular fit)`, { timeout: 30_000 });
     // A different size offers an update; nothing reruns by itself.
-    await fit.getByLabel("Size to try").selectOption("L");
-    await expect(panel.getByTestId("try-on-fit-stale")).toContainText("This try-on shows size M");
+    await fit.getByLabel("Size to try").selectOption(recommended === "L" ? "M" : "L");
+    await expect(panel.getByTestId("try-on-fit-stale")).toContainText(`This try-on shows size ${recommended}`);
 
     // Remembered on the account.
     await page.reload();
     await page.getByRole("button", { name: "Try on", exact: true }).click();
     await expect(page.getByTestId("fit-section").getByLabel("Height (cm)")).toHaveValue("160");
-    await expect(page.getByTestId("fit-section").getByLabel("Weight (kg)")).toHaveValue("57");
     await page.getByTestId("fit-section").getByRole("button", { name: "Forget them" }).click();
     await expect(page.getByTestId("try-on-panel")).toContainText("removed from your account");
     await page.reload();

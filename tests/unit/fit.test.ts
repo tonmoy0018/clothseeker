@@ -1,64 +1,79 @@
 import { describe, expect, it } from "vitest";
 
 import { SIZE_ORDER } from "@/lib/catalog/size-chart";
-import { estimateGirths, fitInputSchema, fitReport, garmentLengthCm, gradedLength, hemPlace, widthFactor } from "@/lib/fit/fit";
+import { fitInputSchema, fitReport, garmentLengthCm, gradedLength, hemPlace, widthFactor, type BodyGirth } from "@/lib/fit/fit";
 
-// Fit from height and weight: estimated girths, the recommended size for a Fitted / Regular / Relaxed
-// preference, how the chosen size fits, where the hem lands, and how wide the try-on draws it.
+// Fit from height and the measurements taken from the photo: the recommended size for a Fitted /
+// Regular / Relaxed preference, how the chosen size fits, where the hem lands, and how wide the try-on
+// draws it.
 
 const ALL = SIZE_ORDER;
+const measured = (...cm: number[]): BodyGirth[] => cm.map((c) => ({ cm: c, estimated: false }));
+/** The middle of size M in the women's chart. */
+const MIDDLE_M = measured(89, 71, 95);
 
-describe("estimating the body", () => {
-  it("puts the typical person in the middle of size M, and grows with weight per height", () => {
-    expect(estimateGirths("dress", { heightCm: 160, weightKg: 57 })).toEqual([89, 71, 95]);
-    expect(estimateGirths("shirt", { heightCm: 172, weightKg: 68 })).toEqual([97, 83, 39.5]);
-    const [bust, waist] = estimateGirths("dress", { heightCm: 160, weightKg: 75 });
-    expect(bust).toBeGreaterThan(98);
-    // The waist follows weight more than the bust does.
-    expect((waist ?? 0) / 71).toBeGreaterThan((bust ?? 0) / 89);
-  });
-
-  it("accepts sensible heights and weights only", () => {
-    expect(fitInputSchema.safeParse({ heightCm: "165", weightKg: "58", preference: "regular" }).success).toBe(true);
-    expect(fitInputSchema.safeParse({ heightCm: 90, weightKg: 58, preference: "regular" }).success).toBe(false);
-    expect(fitInputSchema.safeParse({ heightCm: 165, weightKg: 58.5, preference: "regular" }).success).toBe(false);
-    expect(fitInputSchema.safeParse({ heightCm: 165, weightKg: 58, preference: "baggy" }).success).toBe(false);
+describe("the customer's input", () => {
+  it("is their height and how they like clothes to fit, nothing else", () => {
+    expect(fitInputSchema.safeParse({ heightCm: "165", preference: "regular" }).data).toEqual({ heightCm: 165, preference: "regular" });
+    expect(fitInputSchema.safeParse({ heightCm: 90, preference: "regular" }).success).toBe(false);
+    expect(fitInputSchema.safeParse({ heightCm: 165.5, preference: "regular" }).success).toBe(false);
+    expect(fitInputSchema.safeParse({ heightCm: 165, preference: "baggy" }).success).toBe(false);
   });
 });
 
 describe("recommending a size", () => {
-  const recommend = (heightCm: number, weightKg: number, preference: "fitted" | "regular" | "relaxed", sizes = ALL) => fitReport("dress", { heightCm, weightKg, preference }, sizes, null, null).recommended;
+  const recommend = (girths: BodyGirth[], preference: "fitted" | "regular" | "relaxed", sizes = ALL) => fitReport("dress", { heightCm: 160, preference }, girths, sizes, null, null).recommended;
 
   it("picks the size made for the body", () => {
-    expect(recommend(160, 57, "regular")).toBe("M");
-    expect(recommend(160, 45, "regular")).toBe("XS");
-    expect(recommend(160, 74, "regular")).toBe("XL");
+    expect(recommend(MIDDLE_M, "regular")).toBe("M");
+    expect(recommend(measured(80, 62, 86), "regular")).toBe("XS");
+    expect(recommend(measured(102, 84, 108), "regular")).toBe("XL");
     // A waist beyond XL's range: the next size up, rather than a tight one.
-    expect(recommend(160, 78, "regular")).toBe("XXL");
+    expect(recommend(measured(102, 95, 108), "regular")).toBe("XXL");
   });
 
   it("goes smaller for Fitted and bigger for Relaxed, never tight", () => {
-    const fitted = recommend(160, 60, "fitted");
-    const relaxed = recommend(160, 60, "relaxed");
+    const body = measured(91, 73, 97);
+    const fitted = recommend(body, "fitted");
+    const relaxed = recommend(body, "relaxed");
     expect(ALL.indexOf(relaxed ?? "M")).toBeGreaterThan(ALL.indexOf(fitted ?? "M"));
-    const report = fitReport("dress", { heightCm: 160, weightKg: 60, preference: "fitted" }, ALL, fitted, null);
+    const report = fitReport("dress", { heightCm: 160, preference: "fitted" }, body, ALL, fitted, null);
     expect(report.chosen?.lines.some((l) => l.status === "tight")).toBe(false);
   });
 
   it("only recommends sizes on sale", () => {
-    expect(recommend(160, 45, "regular", ["M", "L"])).toBe("M");
+    expect(recommend(measured(80, 62, 86), "regular", ["M", "L"])).toBe("M");
+  });
+
+  it("counts a guessed measurement for less than a measured one", () => {
+    // Bust and hips say S; a waist the photo didn't show (guessed big) mustn't outvote them.
+    const body: BodyGirth[] = [
+      { cm: 84, estimated: false },
+      { cm: 72, estimated: true },
+      { cm: 90, estimated: false },
+    ];
+    expect(recommend(body, "regular")).toBe("S");
+    const lines = fitReport("dress", { heightCm: 160, preference: "regular" }, body, ALL, "S", null).chosen?.lines;
+    expect(lines?.map((l) => l.estimated)).toEqual([false, true, false]);
   });
 
   it("says how the chosen size fits, per measurement", () => {
-    const tight = fitReport("dress", { heightCm: 160, weightKg: 75, preference: "regular" }, ALL, "S", null).chosen;
+    const tight = fitReport("dress", { heightCm: 160, preference: "regular" }, measured(100, 82, 106), ALL, "S", null).chosen;
     expect(tight?.lines.map((l) => [l.label, l.status])).toEqual([
       ["Bust", "tight"],
       ["Waist", "tight"],
       ["Hip", "tight"],
     ]);
     expect(tight?.lines[0]?.byCm).toBeGreaterThan(10);
-    const loose = fitReport("dress", { heightCm: 160, weightKg: 45, preference: "regular" }, ALL, "L", null).chosen;
+    const loose = fitReport("dress", { heightCm: 160, preference: "regular" }, measured(78, 60, 84), ALL, "L", null).chosen;
     expect(loose?.lines.every((l) => l.status === "loose")).toBe(true);
+  });
+
+  it("without measurements, only says where the hem lands", () => {
+    const report = fitReport("dress", { heightCm: 165, preference: "regular" }, null, ALL, "M", 100);
+    expect(report.recommended).toBeNull();
+    expect(report.chosen).toBeNull();
+    expect(report.hem?.words).toMatch(/knee/);
   });
 });
 
@@ -89,11 +104,13 @@ describe("length", () => {
 
 describe("the try-on's width", () => {
   it("is 1 for the size made for the person, wider when it's big, narrower when it's small, within limits", () => {
-    const fit = (size: "XS" | "S" | "M" | "L" | "XL" | "XXL") => widthFactor("dress", { heightCm: 160, weightKg: 57, preference: "regular", size });
+    const fit = (size: "XS" | "S" | "M" | "L" | "XL" | "XXL", girthsCm: number[] | null = [89, 71, 95]) => widthFactor("dress", { heightCm: 160, preference: "regular", size, girthsCm });
     expect(fit("M")).toBe(1);
     expect(fit("XL")).toBeGreaterThan(1.1);
     expect(fit("XS")).toBeLessThan(0.95);
     expect(fit("XXL")).toBeLessThanOrEqual(1.3);
-    expect(widthFactor("dress", { heightCm: 150, weightKg: 120, preference: "regular", size: "XS" })).toBe(0.85);
+    expect(fit("XS", [140, 120, 150])).toBe(0.85);
+    // Not measured: drawn as made.
+    expect(fit("XL", null)).toBe(1);
   });
 });

@@ -304,7 +304,8 @@ model TryOnResult {
   inputHash   String    @map("input_hash")
   /// tryon-private key of the result image (removed when deleted).
   resultKey   String    @map("result_key")
-  /// The fit tried (height, weight, preference, size; lib/fit/fit.ts tryOnFitSchema), or null.
+  /// The fit tried (height, preference, size, girths from the photo; lib/fit/fit.ts tryOnFitSchema), or
+  /// null. Cleared when the result is deleted.
   fit         Json?
   saved       Boolean   @default(false)
   jobId       String    @unique @map("job_id") @db.Uuid
@@ -890,13 +891,12 @@ enum FitPreference {
   relaxed
 }
 
-/// A customer's height, weight and fit preference for try-on, kept only when they tick "Remember on my
+/// A customer's height and fit preference for try-on, kept only when they tick "Remember on my
 /// account" (lib/fit/profile.ts). Personal data: they can delete it, and it goes with the account.
 model BodyProfile {
   id            String        @id @default(uuid()) @db.Uuid
   userId        String        @unique @map("user_id") @db.Uuid
   heightCm      Int           @map("height_cm")
-  weightKg      Int           @map("weight_kg")
   fitPreference FitPreference @map("fit_preference")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")

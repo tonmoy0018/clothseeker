@@ -8,6 +8,7 @@ import { startOfDhakaDay, DAILY_SUBMISSION_LIMIT, SUBMISSION_LIMIT_MESSAGE } fro
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
 import { tryOnFitSchema, type TryOnFit } from "@/lib/fit/fit";
 import type { PrismaClient } from "@/lib/db/client";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { checkDesign, DesignError } from "@/lib/design/service";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
 import type { StorageAdapter } from "@/lib/storage/adapter";
@@ -141,7 +142,8 @@ export async function deleteTryOnPhoto(db: PrismaClient, storage: StorageAdapter
   await storage.remove(BUCKETS.tryonPrivate, [photo.storageKey, ...results.map((r) => r.resultKey)]);
   await db.$transaction(async (tx) => {
     await tx.tryOnPhoto.update({ where: { id: photo.id }, data: { deletedAt: now } });
-    await tx.tryOnResult.updateMany({ where: { photoId: photo.id, deletedAt: null }, data: { deletedAt: now } });
+    // The fit (height, measurements) goes with the picture.
+    await tx.tryOnResult.updateMany({ where: { photoId: photo.id, deletedAt: null }, data: { deletedAt: now, fit: Prisma.DbNull } });
     await tx.auditLog.create({
       data: { actorId: actor.id, actorRole: actor.role, action: "tryon.photo_deleted", targetType: "try_on_photo", targetId: photo.id, metadata: { results: results.length } },
     });
@@ -266,7 +268,7 @@ export type TryOnResultView = {
   photoSaved: boolean;
   saved: boolean;
   garmentHash: string;
-  /** The fit it shows (height, weight, preference, size), or null when made without one. */
+  /** The fit it shows (height, preference, size, measured girths), or null when made without one. */
   fit: TryOnFit | null;
   expiresAt: string | null;
 };
@@ -345,7 +347,7 @@ export async function cleanupTryOnMedia(db: PrismaClient, storage: StorageAdapte
   await storage.remove(BUCKETS.tryonPrivate, [...photos.map((p) => p.storageKey), ...results.map((r) => r.resultKey)]);
   await db.$transaction(async (tx) => {
     const p = await tx.tryOnPhoto.updateMany({ where: { id: { in: photos.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now } });
-    const r = await tx.tryOnResult.updateMany({ where: { id: { in: results.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now } });
+    const r = await tx.tryOnResult.updateMany({ where: { id: { in: results.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now, fit: Prisma.DbNull } });
     await tx.auditLog.create({
       data: { actorId: null, actorRole: "SYSTEM", action: "tryon.cleanup", targetType: "try_on_media", targetId: null, metadata: { photos: p.count, results: r.count, olderThan: cutoff.toISOString() } },
     });
