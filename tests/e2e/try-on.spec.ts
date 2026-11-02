@@ -94,6 +94,24 @@ test.describe("@supabase virtual try-on", () => {
     expect(uploads).toEqual([]);
   });
 
+  test("photos of any size are used: a huge one is shrunk on the device, a tiny one enlarged", async ({ page }) => {
+    test.setTimeout(120_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/products/linen-wrap-dress");
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    const panel = page.getByTestId("try-on-panel");
+    await panel.getByLabel("I agree to use my photo for try-on").check();
+    // About 7000×12400 px and well over 10 MB (more than the upload limit allows as it is).
+    const huge = await sharp(await portraitPhoto()).resize(7000, 12444).sharpen({ sigma: 2 }).jpeg({ quality: 100, chromaSubsampling: "4:4:4" }).toBuffer();
+    expect(huge.length).toBeGreaterThan(10 * 1024 * 1024);
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "huge.jpg", mimeType: "image/jpeg", buffer: huge });
+    await expect(panel.getByRole("radio", { name: "Photo 1" })).toBeVisible({ timeout: 60_000 });
+    // 90×160 px.
+    const tiny = await sharp(await portraitPhoto()).resize(90, 160).jpeg().toBuffer();
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "tiny.jpg", mimeType: "image/jpeg", buffer: tiny });
+    await expect(panel.getByRole("radio", { name: "Photo 2" })).toBeVisible({ timeout: 60_000 });
+  });
+
   test("signed-out visitors are asked to sign in", async ({ page }) => {
     await page.goto("/products/linen-wrap-dress");
     await page.getByRole("button", { name: "Try on", exact: true }).click();

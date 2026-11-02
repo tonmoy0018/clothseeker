@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
-import { ImageValidationError, MAX_UPLOAD_BYTES, processImage } from "@/lib/media/process-image";
+import { ImageValidationError, MAX_UPLOAD_BYTES, outputSize, processImage } from "@/lib/media/process-image";
 
 function solid(width: number, height: number) {
   return sharp({ create: { width, height, channels: 3, background: { r: 200, g: 120, b: 90 } } });
@@ -60,6 +60,21 @@ describe("processImage", () => {
     await expectCode(processImage(garment, "garment"), "TOO_SMALL");
   });
 
+  it("takes customers' photos of any size, enlarging small ones to a working size", async () => {
+    const tiny = await solid(40, 60).jpeg().toBuffer();
+    const tryOn = await processImage(tiny, "tryOnPhoto");
+    expect([tryOn.width, tryOn.height]).toEqual([768, 1152]);
+    const ai = await processImage(tiny, "aiInput");
+    expect(Math.min(ai.width, ai.height)).toBe(256);
+    const logo = await processImage(await solid(20, 20).png().toBuffer(), "designUpload");
+    expect([logo.width, logo.height]).toEqual([200, 200]);
+    // A very long, thin picture is enlarged only as far as the longest side allows.
+    expect(outputSize(10, 1000, { maxOutputEdge: 1600, enlargeTo: 768 })).toEqual({ width: 1600, height: 1600 });
+    // Large ones are still shrunk; mid-sized ones are kept as they are.
+    expect(outputSize(3000, 4000, { maxOutputEdge: 1600, enlargeTo: 768 })).toEqual({ width: 1600, height: 1600 });
+    expect(outputSize(900, 1200, { maxOutputEdge: 1600, enlargeTo: 768 })).toEqual({ width: 1200, height: 1200 });
+  });
+
   it("rejects empty and oversize uploads before decoding", async () => {
     await expectCode(processImage(new Uint8Array(0), "productPhoto"), "EMPTY");
     await expectCode(processImage(new Uint8Array(MAX_UPLOAD_BYTES + 1), "productPhoto"), "TOO_LARGE");
@@ -83,6 +98,8 @@ describe("processImage", () => {
     const input = await sharp({ create: { width: 300, height: 300, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 0 } } }).png().toBuffer();
     const out = await processImage(input, "designUpload");
     expect((await sharp(out.data).metadata()).hasAlpha).toBe(true);
-    await expect(processImage(await solid(150, 150).png().toBuffer(), "designUpload")).rejects.toBeInstanceOf(ImageValidationError);
+    // Small ones are enlarged, not refused, and keep their transparency.
+    const small = await processImage(await sharp({ create: { width: 150, height: 150, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 0 } } }).png().toBuffer(), "designUpload");
+    expect([small.width, (await sharp(small.data).metadata()).hasAlpha]).toEqual([200, true]);
   });
 });

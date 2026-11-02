@@ -145,7 +145,7 @@ browser: polls → /customize/{product}?design=…[&job=round][&alts=a,b]
 `app/(shop)/customize/[productId]/ai-box.tsx`, with server actions in `ai-actions.ts`:
 
 - **Instruction and examples.** There is a 500-character box and example chips ("Pastel florals on the skirt", "Make it evening-ready in emerald", "Like option 2 but darker"), plus the note "Clothing brand logos can't be used." and "N of 10 AI rounds left today".
-- **Photos.** Up to 3 photos of up to 10 MB each. Each one is downscaled **in the browser** to at most 2000 px (as JPEG) before upload, so requests stay under Vercel's 4.5 MB body limit. The server then re-encodes it (`processImage("aiInput")`).
+- **Photos.** Up to 3 photos of any size. Each one is downscaled **in the browser** to at most 2000 px (as JPEG, compressed further if needed) before upload, so requests stay under Vercel's 4.5 MB body limit. The server then re-encodes it (`processImage("aiInput")`), enlarging small ones to 256 px on the shorter side.
 - **Generate** queues a job. The box shows four loading cards and polls `getJobStatusAction` every 2 s, stopping when the job finishes or fails, after 10 minutes, or when the page is left. A cache hit says it didn't use a round.
 - **Results.** Each option card has **Pick** and **Refine**. Refine sets "Refers to option N" for the next instruction. Typing "option 2" while results are on screen refers to that option automatically. **Generate again** repeats the last request with fresh results.
 - **Pick** revalidates the option on the server, then replaces the working design as one undoable step. Its colours, pattern, style, text and motif become ordinary editable layers, and the price updates.

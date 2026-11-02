@@ -265,7 +265,7 @@ export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignI
             />
           </label>
         )}
-        <span className="text-xs text-muted-foreground">Up to 3 photos, 10 MB each.</span>
+        <span className="text-xs text-muted-foreground">Up to 3 photos, any size.</span>
       </div>
       <p className="text-xs text-muted-foreground">Clothing brand logos can&apos;t be used.</p>
 

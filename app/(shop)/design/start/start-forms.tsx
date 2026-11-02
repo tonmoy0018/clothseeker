@@ -142,7 +142,7 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
               <Image src={preview} alt="Your dress photo" fill unoptimized className="object-cover" />
             </span>
           )}
-          <p className="text-xs text-muted-foreground">JPEG, PNG or WebP up to 10 MB. Clothing brand logos can&apos;t be used.</p>
+          <p className="text-xs text-muted-foreground">JPEG, PNG or WebP, any size. Clothing brand logos can&apos;t be used.</p>
         </section>
 
         <section className="flex flex-col gap-3 rounded-xl border p-5" data-testid="start-description">

@@ -6,6 +6,8 @@ import sharp from "sharp";
 // - Only raster JPEG/PNG/WebP are accepted (libvips can also read SVG, PDF, TIFF… — all rejected).
 // - Re-encoding drops EXIF/GPS/ICC metadata (sharp strips it unless asked to keep it).
 // - Output is resized to a sane maximum so stored files stay small and predictable.
+// - Customers' photos may be any size (decided 2026-11-02): small ones are enlarged to a working size
+//   instead of refused. Team uploads (catalogue photos, garments, masks) keep their quality minimums.
 
 /** Vercel Hobby rejects request bodies over 4.5 MB, so uploads are capped at 4 MB. */
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -23,20 +25,28 @@ export type ImagePurpose =
   | "tryOnPhoto"
   | "tryOnResult";
 
-const RULES: Record<ImagePurpose, { minEdge: number; maxOutputEdge: number; output: "webp" | "mask-png" }> = {
+type Rule = {
+  minEdge: number;
+  maxOutputEdge: number;
+  /** Smaller images are enlarged so their shorter side reaches this (within maxOutputEdge). */
+  enlargeTo?: number;
+  output: "webp" | "mask-png";
+};
+
+const RULES: Record<ImagePurpose, Rule> = {
   productPhoto: { minEdge: 600, maxOutputEdge: 2000, output: "webp" },
   garment: { minEdge: 800, maxOutputEdge: 2000, output: "webp" },
   styleReference: { minEdge: 300, maxOutputEdge: 1000, output: "webp" },
   // Region masks: single-channel, lossless so edges stay crisp. Resized to the garment at render time.
   mask: { minEdge: 400, maxOutputEdge: 2000, output: "mask-png" },
   // Customer images/logos for design layers. WebP keeps transparency (alpha) from PNG uploads.
-  designUpload: { minEdge: 200, maxOutputEdge: 2000, output: "webp" },
-  // Photos attached to an AI design request (inspiration, a logo of their own…).
-  aiInput: { minEdge: 200, maxOutputEdge: 1600, output: "webp" },
+  designUpload: { minEdge: 1, enlargeTo: 200, maxOutputEdge: 2000, output: "webp" },
+  // Photos attached to an AI design request (inspiration, a logo of their own…) or a problem report.
+  aiInput: { minEdge: 1, enlargeTo: 256, maxOutputEdge: 1600, output: "webp" },
   // Motifs returned by an image provider (untrusted bytes, same checks as uploads).
   aiMotif: { minEdge: 128, maxOutputEdge: 1024, output: "webp" },
   // A customer's photo for virtual try-on (metadata such as GPS is stripped by re-encoding).
-  tryOnPhoto: { minEdge: 400, maxOutputEdge: 1600, output: "webp" },
+  tryOnPhoto: { minEdge: 1, enlargeTo: 768, maxOutputEdge: 1600, output: "webp" },
   // A try-on result returned by a provider (untrusted bytes).
   tryOnResult: { minEdge: 256, maxOutputEdge: 1600, output: "webp" },
 };
@@ -101,9 +111,10 @@ export async function processImage(input: Uint8Array, purpose: ImagePurpose): Pr
   }
 
   try {
+    const { width: outWidth, height: outHeight } = outputSize(width, height, rules);
     const pipeline = sharp(input, options)
       .rotate() // apply EXIF orientation before the metadata is dropped
-      .resize({ width: rules.maxOutputEdge, height: rules.maxOutputEdge, fit: "inside", withoutEnlargement: true });
+      .resize({ width: outWidth, height: outHeight, fit: "inside", kernel: "lanczos3" });
     if (rules.output === "mask-png") {
       // Transparent pixels count as black (outside the region).
       const { data, info } = await pipeline
@@ -120,4 +131,19 @@ export async function processImage(input: Uint8Array, purpose: ImagePurpose): Pr
   } catch {
     throw new ImageValidationError("UNSUPPORTED", "That image couldn't be processed. Try exporting it again as JPEG or PNG.");
   }
+}
+
+/**
+ * The stored size: at most maxOutputEdge on the longer side; images whose shorter side is below
+ * `enlargeTo` are scaled up to it, as far as maxOutputEdge allows. Orientation-independent (the image
+ * may be rotated by its EXIF data), so both sides get the same box.
+ */
+export function outputSize(width: number, height: number, rules: Pick<Rule, "maxOutputEdge" | "enlargeTo">): { width: number; height: number } {
+  const long = Math.max(width, height);
+  const short = Math.min(width, height);
+  const shrink = Math.min(1, rules.maxOutputEdge / long);
+  const grow = rules.enlargeTo && short < rules.enlargeTo ? Math.min(rules.enlargeTo / short, rules.maxOutputEdge / long) : 1;
+  const scale = grow > 1 ? grow : shrink;
+  const edge = Math.max(1, Math.round(long * scale));
+  return { width: edge, height: edge };
 }
