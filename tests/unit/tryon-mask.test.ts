@@ -120,15 +120,15 @@ describe("tryOnMask with a fit", () => {
 
   it("is wider for a size too big and narrower for one too small", () => {
     const as = tryOnMask(pose(), null, W, H, "ankles");
-    const loose = tryOnMask(pose(), null, W, H, "ankles", { width: 1.2, hemLevel: null });
-    const tight = tryOnMask(pose(), null, W, H, "ankles", { width: 0.88, hemLevel: null });
+    const loose = tryOnMask(pose(), null, W, H, "ankles", { fit: { width: 1.2, hemLevel: null } });
+    const tight = tryOnMask(pose(), null, W, H, "ankles", { fit: { width: 0.88, hemLevel: null } });
     expect(count(loose, 700)).toBeGreaterThan(count(as, 700));
     expect(count(tight, 700)).toBeLessThan(count(as, 700));
   });
 
   it("ends a dress where its hem lands, keeping the photo below it", () => {
     // Knee level: 0.285 of their height above the floor → the knee points (y 680).
-    const knee = tryOnMask(pose(), null, W, H, "ankles", { width: 1, hemLevel: 0.285 });
+    const knee = tryOnMask(pose(), null, W, H, "ankles", { fit: { width: 1, hemLevel: 0.285 } });
     if (!knee) throw new Error("no mask");
     const at = (x: number, y: number) => knee[y * W + x] === 255;
     expect(at(420, 650)).toBe(true);
@@ -138,8 +138,55 @@ describe("tryOnMask with a fit", () => {
   });
 
   it("reaches the ankles as before when the hem would be at or below them", () => {
-    const long = tryOnMask(pose(), null, W, H, "ankles", { width: 1, hemLevel: 0.01 });
+    const long = tryOnMask(pose(), null, W, H, "ankles", { fit: { width: 1, hemLevel: 0.01 } });
     expect(long?.[850 * W + 500]).toBe(255);
+  });
+});
+
+describe("tryOnMask keeps the body's shape", () => {
+  /** A slim person: torso 100 px wide down to the hips, legs below, arms (with a gap) by the sides. */
+  const slim = (x: number, y: number) => {
+    if (y < 60 || y > 900) return 0;
+    if (y < 200) return Math.abs(x - 500) <= 30 ? 1 : 0;
+    if (y <= 480 && Math.abs(x - 500) <= 50) return 1;
+    if (y > 480 && (Math.abs(x - 460) <= 25 || Math.abs(x - 540) <= 25)) return 1;
+    return y <= 480 && Math.abs(Math.abs(x - 500) - 85) <= 10 ? 1 : 0;
+  };
+  const at = (m: Uint8Array | null, x: number, y: number) => m?.[y * W + x] === 255;
+
+  it("hugs the person's outline above the hips, where the plain outline would be wider", () => {
+    const followed = tryOnMask(pose(), slim, W, H, "ankles");
+    const plain = tryOnMask(pose(), null, W, H, "ankles");
+    expect(at(followed, 553, 300)).toBe(true); // just past the side: a small margin
+    expect(at(plain, 562, 300)).toBe(true);
+    expect(at(followed, 562, 300)).toBe(false); // the gap between arm and body stays
+    expect(at(followed, 580, 300)).toBe(true); // the arm itself (sleeves may change)
+    expect(at(followed, 610, 300)).toBe(false);
+    // A person mask that missed them: the plain outline, not nothing.
+    expect(at(tryOnMask(pose(), () => 0, W, H, "ankles"), 562, 300)).toBe(true);
+  });
+
+  it("lets a size too big stand off the body, and never cuts into the body for one too small", () => {
+    const loose = tryOnMask(pose(), slim, W, H, "ankles", { fit: { width: 1.3, hemLevel: null } });
+    const tight = tryOnMask(pose(), slim, W, H, "ankles", { fit: { width: 0.85, hemLevel: null } });
+    expect(at(loose, 562, 300)).toBe(true);
+    for (const x of [452, 500, 548]) expect(at(tight, x, 300)).toBe(true);
+  });
+
+  it("lets a skirt stand away from the legs below the hips, but not a shirt", () => {
+    expect(at(tryOnMask(pose(), slim, W, H, "ankles"), 580, 650)).toBe(true);
+    expect(at(tryOnMask(pose(), null, W, H, "hips"), 578, 520)).toBe(true);
+    expect(at(tryOnMask(pose(), slim, W, H, "hips"), 578, 520)).toBe(false);
+  });
+
+  it("keeps the wrists (bracelets, a watch) and anything marked to keep", () => {
+    const m = tryOnMask(pose(), null, W, H, "hips");
+    expect(at(m, 585, 465)).toBe(false);
+    expect(at(m, 582, 420)).toBe(true); // the forearm above it
+    const hair = (x: number, y: number) => (Math.abs(x - 530) <= 8 && y < 260 ? 1 : 0);
+    const kept = tryOnMask(pose(), null, W, H, "hips", { keep: hair });
+    expect(at(kept, 530, 230)).toBe(false);
+    expect(at(kept, 500, 230)).toBe(true);
   });
 });
 

@@ -9,6 +9,7 @@ import type { Readable, Writable } from "node:stream";
 import sharp from "sharp";
 import { z } from "zod";
 
+import { hairMask } from "@/lib/tryon/hair";
 import { blendTryOn, tryOnCrop, tryOnMask, type Box } from "@/lib/tryon/mask";
 import type { Pose } from "@/lib/vision/movenet";
 import { maskAtSmooth, type PersonMask } from "@/lib/vision/segment";
@@ -61,7 +62,11 @@ export class LocalTryOn implements TryOnProvider {
     const { width, height } = info;
     const [analysis, person] = await Promise.all([this.options.body.analyse(request.person.data), this.options.body.personMask(request.person.data)]);
     const reach = request.reach ?? (request.category === "Dress" ? "ankles" : "hips");
-    const mask = analysis.pose ? tryOnMask(analysis.pose, (x, y) => maskAtSmooth(person, x, y), width, height, reach, request.fit) : null;
+    const personAt = (x: number, y: number) => maskAtSmooth(person, x, y);
+    // Hair falling over the shoulders stays in front of the new garment.
+    const hair = analysis.pose ? hairMask(rgb, width, height, analysis.pose, personAt) : null;
+    const keep = hair ? (x: number, y: number) => hair[Math.round(y) * width + Math.round(x)] ?? 0 : undefined;
+    const mask = analysis.pose ? tryOnMask(analysis.pose, personAt, width, height, reach, { fit: request.fit, keep }) : null;
     if (!mask) {
       // The photo check refuses these before; a photo that slips through gets the same message.
       throw new AiJobRejected("PHOTO_BODY_NOT_VISIBLE");

@@ -3,9 +3,15 @@ import { BODY_LEVELS } from "@/lib/fit/fit";
 import type { Keypoint, Pose } from "@/lib/vision/movenet";
 
 // The area of a customer's photo a local try-on model repaints (lib/ai/tryon-local.ts): their own
-// clothes where the new garment goes, plus room around them, so a dress can be wider than the jeans
-// it replaces and sleeves can be drawn or removed. The face, hands, feet and background outside it are
-// kept as they are. Built from the on-device body points and person mask; pure, so it's unit-tested.
+// clothes where the new garment goes. Above the hips it hugs their outline (the person mask) with a
+// small margin, so the model can't draw their shoulders, sides or arms any wider than they are; below
+// the hips a skirt may stand away from the legs. The face, wrists (and what's on them), hands, feet, the
+// background and, when it can be told apart, hair over the shoulders are kept as they are. Built from
+// the on-device body points and person mask; pure, so it's unit-tested.
+//
+// Tried and dropped (2026-11-02): keeping or showing the model bare arms past the sleeves, so it can't
+// move them. Arms resting in front of the body then split the garment and the model drew two (a crop
+// top over a denim skirt); arms beside the body got cut-off sleeves.
 
 /** How far down the garment reaches: shirts to below the hips, panjabis to the knees, dresses to the ankles. */
 export type TryOnReach = GarmentTypeInfo["tryOnReach"];
@@ -53,16 +59,37 @@ function profile(points: readonly { y: number; v: number }[]): (y: number) => nu
  */
 export type MaskFit = { width: number; hemLevel: number | null };
 
+/** How far past the person's outline the garment may be drawn above the hips, in shoulder widths. */
+const BODY_MARGIN = 0.06;
+
+export type MaskOptions = {
+  fit?: MaskFit;
+  /** Pixels never to repaint: hair falling over the shoulders (lib/tryon/hair.ts). */
+  keep?: PersonAt;
+};
+
 /**
  * The try-on mask: 255 where the model may repaint, 0 where the photo is kept. Only the shoulders are
  * needed: hips, knees and ankles out of the picture (a half-body photo or selfie) are guessed below it,
  * and the mask simply stops at the photo's edge. Null when the shoulders aren't found.
  *
- * With a `fit`, the outline is as wide as that size sits on them and ends where its hem lands. Below the
- * hem the photo is kept (their own legs, or what they wear on them): repainting legs alone, the model
- * draws trousers.
+ * Above the hips (and for shirts all the way down) the mask stays within BODY_MARGIN of the person's
+ * outline, so their body keeps its shape; `keep` marks other pixels never to repaint (hair falling over
+ * the shoulders, lib/tryon/hair.ts).
+ *
+ * With a `fit`, a size too big may stand further from the body (never closer: a tight size doesn't make
+ * anyone slimmer) and the mask ends where its hem lands. Below the hem the photo is kept (their own
+ * legs, or what they wear on them): repainting legs alone, the model draws trousers.
  */
-export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, height: number, reach: TryOnReach, fit?: MaskFit): Uint8Array | null {
+export function tryOnMask(
+  pose: Pose,
+  person: PersonAt | null,
+  width: number,
+  height: number,
+  reach: TryOnReach,
+  options: MaskOptions = {},
+): Uint8Array | null {
+  const { fit, keep } = options;
   const { leftShoulder: ls, rightShoulder: rs, leftHip: lh, rightHip: rh } = pose;
   if (!seen(ls) || !seen(rs)) return null;
   const shoulders = mid(ls, rs);
@@ -133,7 +160,7 @@ export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, he
     arms.push([shoulder, elbow, span * 0.2]);
     if (seen(wrist)) arms.push([elbow, wrist, span * 0.16]);
   }
-  // Hands stay: a disc just past each wrist.
+  // Hands stay, with the wrist and what's on it (bracelets, a watch): a disc around the end of each arm.
   const hands: P[] = [];
   for (const [elbow, wrist] of [
     [pose.leftElbow, pose.leftWrist],
@@ -143,26 +170,59 @@ export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, he
     const dx = seen(elbow) ? wrist.x - elbow.x : 0;
     const dy = seen(elbow) ? wrist.y - elbow.y : 1;
     const length = Math.max(1e-6, Math.hypot(dx, dy));
-    hands.push({ x: wrist.x + (dx / length) * span * 0.22, y: wrist.y + (dy / length) * span * 0.22 });
+    hands.push({ x: wrist.x + (dx / length) * span * 0.1, y: wrist.y + (dy / length) * span * 0.1 });
   }
   const handRadius = span * 0.2;
 
+  // Where a skirt may start standing away from the legs (dresses and panjabis only).
+  const skirtFrom = reach === "hips" ? Infinity : hips.y + torso * 0.1;
+  const looser = Math.max(0, widthScale - 1);
+
   const out = new Uint8Array(width * height);
+  const onPerson = new Uint8Array(width);
+  const fromPerson = new Float32Array(width);
   const bottom = Math.min(height - 1, Math.ceil(hem));
   for (let y = Math.max(0, Math.floor(top)); y <= bottom; y += 1) {
     const c = centre(y);
-    const h = half(y) * widthScale;
+    let anyone = false;
+    if (person) {
+      for (let x = 0; x < width; x += 1) {
+        onPerson[x] = person(x, y) >= PERSON ? 1 : 0;
+        anyone ||= onPerson[x] === 1;
+      }
+    }
+    // Only where the person mask found them on this row (it can miss someone the body points found).
+    const followBody = anyone && y < skirtFrom;
+    // Following the body, the outline is only an upper bound, never narrower than as made.
+    const h = half(y) * (followBody ? Math.max(1, widthScale) : widthScale);
+    if (followBody) rowDistances(onPerson, fromPerson);
+    const margin = span * BODY_MARGIN + looser * half(y);
     for (let x = 0; x < width; x += 1) {
-      const p = { x, y };
+      if (followBody && (fromPerson[x] ?? Infinity) > margin) continue;
+      if (keep && keep(x, y) >= PERSON) continue;
       if (hands.some((hand) => Math.hypot(x - hand.x, y - hand.y) < handRadius)) continue;
       const inOutline = Math.abs(x - c) <= h;
-      const onArm = arms.some(([a, b, r]) => distanceToSegment(p, a, b) <= r);
+      const onArm = arms.some(([a, b, r]) => distanceToSegment({ x, y }, a, b) <= r);
       // Own clothes sticking out further (a wide skirt, baggy sleeves) are repainted too.
-      const ownClothes = person !== null && person(x, y) >= PERSON && Math.abs(x - c) <= h * 1.8;
+      const ownClothes = onPerson[x] === 1 && Math.abs(x - c) <= h * 1.8;
       if (inOutline || onArm || ownClothes) out[y * width + x] = 255;
     }
   }
   return out;
+}
+
+/** For each pixel of a row, how far it is (in pixels, along the row) from the nearest person pixel. */
+function rowDistances(onPerson: Uint8Array, out: Float32Array): void {
+  let last = -Infinity;
+  for (let x = 0; x < onPerson.length; x += 1) {
+    if (onPerson[x]) last = x;
+    out[x] = x - last;
+  }
+  last = Infinity;
+  for (let x = onPerson.length - 1; x >= 0; x -= 1) {
+    if (onPerson[x]) last = x;
+    out[x] = Math.min(out[x] ?? Infinity, last - x);
+  }
 }
 
 export type Box = { left: number; top: number; width: number; height: number };

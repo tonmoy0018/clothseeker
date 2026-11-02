@@ -107,7 +107,7 @@ Decided 2026-11-02: customers type **only their height**, choose the size to try
 - **The picture** (local try-on only):
   - **What the job carries:** `fit` (height, size, and `girthsCm` from the browser or null). It's part of the cache key, so a new size, height or photo measurement is a new try-on. The girths are the customer's own, measured on their device; they only shape their own preview and are bounds-checked (20–250 cm, exactly 3).
   - **What the worker does:** it turns the fit into `widthFactor` (the size's middle against the bust/chest: 1 = made for them or not measured, up to 1.3 loose, down to 0.85 tight) and the hem level.
-  - **What `LocalTryOn` does:** it widens or narrows both the mask (`tryOnMask(…, fit)`) and the garment picture (a wider garment is drawn looser, tested), and ends the mask at the hem.
+  - **What `LocalTryOn` does:** it widens or narrows the garment picture (a wider garment is drawn looser, tested), lets the mask stand further off the body for a size too big (never closer for a size too small: a tight size doesn't make anyone slimmer), and ends the mask at the hem.
   - **Below the hem the photo is kept** (their own legs or legwear). When we repainted the legs alone, the model drew trousers.
   - The Hugging Face provider ignores the fit; the report still shows.
 - **Remembering** (`lib/fit/profile.ts`, `body_profiles`): only when the customer ticks "Remember my height on my account". "Forget it" deletes it, and it goes with the account. Measurements from photos are never stored on the account. A result's `fit` is cleared when the result is deleted (by the customer or the 24-hour cleanup). Height and measurements are never logged.
@@ -125,7 +125,16 @@ Decided 2026-11-02: customers type **only their height**, choose the size to try
 - about 2.3 GB in `~/.cache/clothseeker/local-tryon` (`LOCAL_TRYON_DIR`), outside the iCloud-synced project. It writes `verified.json` last; the worker refuses to start with `TRYON_PROVIDER=local` until it's there and every file has its size.
 
 **How a try-on runs** (`LocalTryOn.tryOn`):
-1. **The mask** (`tryOnMask`, `lib/tryon/mask.ts`, pure and unit-tested): only the shoulders are needed; hips, knees and ankles out of the picture are guessed below it, and a sideways stance keeps a body-wide mask (the width is never below what the head height or torso suggests). From the on-device pose and person mask (`NodeVision`, also used for the photo check), the area to repaint is the lower neck down to where the garment reaches (`GARMENT_TYPES[type].tryOnReach`: shirts below the hips, panjabis to the knees, dresses to the ankles), widening towards the hem so a skirt can be wider than the legs, plus both arms to the wrists (sleeves may change) and any of the person's own clothes sticking out further. The face, hands, feet and backdrop are kept.
+1. **The mask** (`tryOnMask`, `lib/tryon/mask.ts`, pure and unit-tested): only the shoulders are needed; hips, knees and ankles out of the picture are guessed below it, and a sideways stance keeps a body-wide mask (the width is never below what the head height or torso suggests). From the on-device pose and person mask (`NodeVision`, also used for the photo check), the area to repaint is the lower neck down to where the garment reaches (`GARMENT_TYPES[type].tryOnReach`: shirts below the hips, panjabis to the knees, dresses to the ankles), plus both arms down to just above the wrists (sleeves may change) and any of the person's own clothes sticking out further.
+   - **The body keeps its shape** (2026-11-02): above the hips, and for shirts all the way down, the mask stays within 6% of the shoulder width (`BODY_MARGIN`) of the person's outline. So the model can't draw shoulders, sides or arms wider than they are. Below the hips a skirt may stand away from the legs.
+   - **Kept as they are:**
+     - the face, hands, feet and backdrop;
+     - the wrists, with bracelets or a watch;
+     - hair falling over the shoulders, when it can be told apart (`hairMask` in `lib/tryon/hair.ts`). There is no hair model on the device, so hair is found by shade: much darker than the lit face, growing from the head. When hair isn't much darker than the skin, or the growth spills into the neck or chest (shadowed dark skin, a dark top), nothing is kept and the hair is repainted as before.
+   - **Not solved:**
+     - Arms inside the mask can still be moved by the model, for example drawn closer to the body.
+     - Necklaces under the new neckline are lost.
+     - We tried keeping bare arms past the sleeves, or showing them to the model. On a seated photo with the arms resting on the lap, the model then drew two garments (a crop top over a denim skirt). On a standing photo, the sleeves came out cut off. So both were dropped.
 2. **A 3:4 crop** around the mask (`tryOnCrop`), written with the mask and the garment to a private temporary folder, deleted afterwards.
 3. **The model** (`worker/local-tryon/catvton_server.py`): one Python process, started on the first try-on and kept loaded (`CatVtonProcess`), one try-on at a time over stdin/stdout JSON lines. It stops after 10 idle minutes to give the memory back, and is killed when a try-on runs out of time. It gets only `PATH`, `HOME` and its own settings (never the worker's keys), runs offline (`HF_HUB_OFFLINE`), and its output never reaches our logs.
 4. **Back into the photo** (`blendTryOn`): only the softened mask area takes the model's picture, so the face, hands and background keep the photo's full sharpness.
@@ -164,7 +173,8 @@ Without these it swapped and took over a minute per step.
 - `tests/unit/fit.test.ts`: height-only input, the size made for the body (never tight; guessed measurements count less), the per-measurement report, length-only without measurements, hem places, length grading and the width factor.
 - `tests/unit/fit-measure.test.ts`: measuring a drawn person of known widths (full-length and from the joints), arms beside the body ignored, a waist hidden by a loose top and a men's neck guessed, and each reason a photo can't be measured.
 - `tests/integration/fit-profile.test.ts`: remembering, updating and forgetting a profile, owner-only, refused for admins and impossible values, deleted with the account.
-- `tests/unit/tryon-mask.test.ts`: the local try-on's mask (neck to hem, arms, hands and face kept, room for a skirt, own clothes), the 3:4 crop and the blend.
+- `tests/unit/tryon-mask.test.ts`: the local try-on's mask (neck to hem, arms, hands, wrists and face kept, hugging the body's outline above the hips, room for a skirt, a loose size standing off the body and a tight one never cutting into it, own clothes, pixels marked to keep), the 3:4 crop and the blend.
+- `tests/unit/tryon-hair.test.ts`: hair over the shoulders found on a drawn person; nothing kept when the hair is as light as the skin, or when a dark top or shadowed neck would be taken for hair.
 - `tests/unit/tryon-local.test.ts`: `LocalTryOn` with a fake model (only the mask area changes, crop and settings, temporary files deleted, no body → refused); `CatVtonProcess` with a fake process (loaded once, keys never passed, failures mapped, killed on timeout and restarted, load timeout).
 - `tests/integration/try-on.test.ts`:
   - consent, upload validation, design and product try-ons
