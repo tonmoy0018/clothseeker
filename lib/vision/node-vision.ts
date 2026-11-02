@@ -9,12 +9,13 @@ import { modelPath, VISION_MODELS } from "./assets";
 import { fitSquare, type FitBox } from "./geometry";
 import { decodeMovenet, MOVENET_SIZE, movenetInput } from "./movenet";
 import { meanBrightness, type PhotoAnalysis } from "./photo-check";
+import { SELFIE_SIZE, selfieInput, type PersonMask } from "./segment";
 import { decodeYunet, YUNET_SIZE, yunetInput } from "./yunet";
 
 // The on-device body and face models, run in Node by the worker (our own machine; no third party sees
 // the photo). Same model files as the browser (public/vision/, `pnpm vision:fetch`), same decoding.
 
-const MODEL_IDS = ["pose", "face"] as const;
+const MODEL_IDS = ["pose", "face", "mask"] as const;
 
 /** Where the worker finds the model files; missing files mean `pnpm vision:fetch` hasn't run. */
 export function nodeModelFile(id: (typeof MODEL_IDS)[number]): string {
@@ -51,6 +52,7 @@ function floats(tensor: ort.Tensor | undefined): Float32Array {
 
 export class NodeVision {
   private sessions: Promise<{ pose: ort.InferenceSession; face: ort.InferenceSession }> | null = null;
+  private maskSession: Promise<ort.InferenceSession> | null = null;
 
   private load() {
     ort.env.wasm.numThreads = 1;
@@ -59,6 +61,17 @@ export class NodeVision {
       face: await ort.InferenceSession.create(await readFile(nodeModelFile("face"))),
     }))();
     return this.sessions;
+  }
+
+  /** How likely each pixel is part of the person (the local try-on's mask, lib/tryon/mask.ts). */
+  async personMask(image: Buffer): Promise<PersonMask> {
+    ort.env.wasm.numThreads = 1;
+    this.maskSession ??= readFile(nodeModelFile("mask")).then((file) => ort.InferenceSession.create(file));
+    const session = await this.maskSession;
+    const meta = await sharp(image).rotate().metadata();
+    const { rgba, box } = await letterbox(image, meta.autoOrient.width, meta.autoOrient.height, SELFIE_SIZE);
+    const out = await session.run({ pixel_values: new ort.Tensor("float32", selfieInput(rgba), [1, 3, SELFIE_SIZE, SELFIE_SIZE]) });
+    return { alpha: floats(out.alphas), box };
   }
 
   async analyse(image: Buffer): Promise<PhotoAnalysis> {

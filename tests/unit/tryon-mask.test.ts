@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+
+import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import { blendTryOn, tryOnCrop, tryOnMask } from "@/lib/tryon/mask";
+
+// The area of a customer's photo the local try-on model may repaint: their clothes and room around
+// them, never the face, hands, feet or the backdrop far from the body.
+
+const W = 1000;
+const H = 1000;
+const at = (x: number, y: number, score = 0.9): Keypoint => ({ x, y, score });
+function pose(overrides: Partial<Pose> = {}): Pose {
+  return {
+    nose: at(500, 120),
+    leftEye: at(510, 110),
+    rightEye: at(490, 110),
+    leftEar: at(520, 115),
+    rightEar: at(480, 115),
+    leftShoulder: at(560, 220),
+    rightShoulder: at(440, 220),
+    // Arms hanging by the sides.
+    leftElbow: at(580, 350),
+    rightElbow: at(420, 350),
+    leftWrist: at(585, 470),
+    rightWrist: at(415, 470),
+    leftHip: at(540, 470),
+    rightHip: at(460, 470),
+    leftKnee: at(540, 680),
+    rightKnee: at(460, 680),
+    leftAnkle: at(540, 880),
+    rightAnkle: at(460, 880),
+    ...overrides,
+  };
+}
+
+function mask(reach: "hips" | "knees" | "ankles", overrides: Partial<Pose> = {}, person: ((x: number, y: number) => number) | null = null): (x: number, y: number) => boolean {
+  const out = tryOnMask(pose(overrides), person, W, H, reach);
+  if (!out) throw new Error("no mask");
+  return (x, y) => out[Math.round(y) * W + Math.round(x)] === 255;
+}
+
+describe("tryOnMask", () => {
+  it("repaints the torso, the lower neck and the arms, but not the face or the backdrop", () => {
+    const m = mask("hips");
+    expect(m(500, 300)).toBe(true); // chest
+    expect(m(500, 190)).toBe(true); // lower neck: collars and necklines are redrawn
+    expect(m(575, 300)).toBe(true); // upper arm: sleeves may change
+    expect(m(500, 120)).toBe(false); // nose
+    expect(m(500, 150)).toBe(false); // chin
+    expect(m(100, 300)).toBe(false); // backdrop
+  });
+
+  it("keeps the hands", () => {
+    const m = mask("hips");
+    expect(m(586, 500)).toBe(false);
+    expect(m(414, 500)).toBe(false);
+  });
+
+  it("reaches as far down as the garment: shirts below the hips, panjabis to the knees, dresses to the ankles", () => {
+    const shirt = mask("hips");
+    const panjabi = mask("knees");
+    const dress = mask("ankles");
+    expect(shirt(500, 500)).toBe(true);
+    expect(shirt(500, 650)).toBe(false);
+    expect(panjabi(500, 650)).toBe(true);
+    expect(panjabi(500, 800)).toBe(false);
+    expect(dress(500, 850)).toBe(true);
+    expect(dress(500, 950)).toBe(false); // feet
+  });
+
+  it("leaves room for a skirt to be wider than the legs it covers", () => {
+    const dress = mask("ankles");
+    // Well outside the legs (460–540) near the hem.
+    expect(dress(415, 860)).toBe(true);
+    expect(dress(585, 860)).toBe(true);
+  });
+
+  it("also repaints the person's own clothes that stick out further, within reason", () => {
+    // A wide own skirt (the person mask) out to 320–680 at knee height.
+    const person = (x: number, y: number) => (y > 600 && y < 700 && x > 320 && x < 680 ? 1 : 0);
+    const without = mask("knees");
+    const withSkirt = mask("knees", {}, person);
+    expect(without(335, 650)).toBe(false);
+    expect(withSkirt(335, 650)).toBe(true);
+  });
+
+  it("guesses the legs when the model doesn't see them, and refuses without shoulders and hips", () => {
+    const unseen = at(0, 0, 0.05);
+    const dress = mask("ankles", { leftKnee: unseen, rightKnee: unseen, leftAnkle: unseen, rightAnkle: unseen });
+    expect(dress(500, 700)).toBe(true);
+    expect(tryOnMask(pose({ leftHip: unseen }), null, W, H, "hips")).toBeNull();
+  });
+});
+
+describe("tryOnCrop and blendTryOn", () => {
+  it("picks the largest 3:4 box that holds the mask, inside the photo", () => {
+    const width = 1200;
+    const height = 1000;
+    const m = new Uint8Array(width * height);
+    for (let y = 100; y < 900; y += 1) for (let x = 900; x < 1000; x += 1) m[y * width + x] = 255;
+    const box = tryOnCrop(m, width, height);
+    // Centred on the mask it would stick out on the right, so it stops at the edge.
+    expect(box).toEqual({ left: 450, top: 0, width: 750, height: 1000 });
+  });
+
+  it("is the photo itself when the photo is already 3:4", () => {
+    const m = new Uint8Array(300 * 400);
+    m[200 * 300 + 150] = 255;
+    expect(tryOnCrop(m, 300, 400)).toEqual({ left: 0, top: 0, width: 300, height: 400 });
+  });
+
+  it("takes the model's pixels inside the mask and keeps the photo's elsewhere", () => {
+    const photo = Uint8Array.from([10, 10, 10, 10, 10, 10, 10, 10, 10]);
+    const result = Uint8Array.from([200, 200, 200, 200, 200, 200, 200, 200, 200]);
+    blendTryOn(photo, result, Uint8Array.from([0, 255, 128]));
+    expect([...photo]).toEqual([10, 10, 10, 200, 200, 200, 105, 105, 105]);
+  });
+});

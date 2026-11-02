@@ -18,7 +18,7 @@ Node 26 works, but Prisma 7 prints an "unsupported Node.js version" warning on i
 pnpm install
 ```
 
-`postinstall` runs `prisma generate`, which writes the client to `lib/generated/prisma/` (gitignored). `pnpm dev` and `pnpm build` first run `pnpm vision:fetch`, which downloads the on-device vision models from Hugging Face (about 10 MB, checked by SHA-256) into `public/vision/` (gitignored); see [live-try-on.md](live-try-on.md). `pnpm-workspace.yaml` allows build scripts only for `esbuild`, `prisma`, `@prisma/engines` and `supabase`.
+`postinstall` runs `prisma generate`, which writes the client to `lib/generated/prisma/` (gitignored). `pnpm dev` and `pnpm build` first run `pnpm vision:fetch`, which downloads the on-device vision models from Hugging Face (about 10 MB, checked by SHA-256) into `public/vision/` (gitignored); see [live-try-on.md](live-try-on.md). For try-ons on this machine (`TRYON_PROVIDER=local`), run `pnpm tryon:setup` once: it installs a Python with PyTorch (with `uv`, `brew install uv`) and downloads about 2.3 GB of models, checked by SHA-256, into `~/.cache/clothseeker/local-tryon`, outside the iCloud-synced project ([try-on.md](try-on.md#local-try-on)). `pnpm-workspace.yaml` allows build scripts only for `esbuild`, `prisma`, `@prisma/engines` and `supabase`.
 
 ## 3. Start local Supabase
 
@@ -65,7 +65,8 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `AI_FAKE_DELAY_MS` | Optional, default 1500 | Worker-only | Latency of the fake providers |
 | `AI_JOB_TIMEOUT_MS` | Optional, default 180000 | Worker-only | Limit for one AI job attempt |
 | `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |
-| `TRYON_PROVIDER` | Optional: `fake` (default) or `huggingface` | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
+| `TRYON_PROVIDER` | Optional: `fake` (default), `huggingface` or `local` (run `pnpm tryon:setup` first) | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
+| `LOCAL_TRYON_DIR`, `LOCAL_TRYON_STEPS`, `LOCAL_TRYON_WIDTH` | Optional; default `~/.cache/clothseeker/local-tryon`, 30 and 384 | Worker-only | Local try-on: where the model lives, steps, picture width ([try-on.md](try-on.md#local-try-on)) |
 | `HF_TOKEN` | Optional free Hugging Face token (`hf_…`) | **Worker-only secret** | Raises the shared ZeroGPU allowance |
 | `EMAIL_PROVIDER`, `SMTP_URL`, `EMAIL_FROM` | Optional: `log` (default) or `smtp`; `pnpm env:local` sets smtp → Mailpit (`smtp://127.0.0.1:55425`) | Worker-only (`SMTP_URL` may hold a password in production) | Customer emails ([notifications.md](notifications.md)); inbox at http://127.0.0.1:55424 |
 | `TRYON_SPACES`, `TRYON_TIMEOUT_MS` | Optional; default `jallenjia/Change-Clothes-AI,yisol/IDM-VTON,levihsu/OOTDiffusion,franciszzj/Leffa` and 240000 | Worker-only | Try-on Spaces (in order) and per-attempt limit |

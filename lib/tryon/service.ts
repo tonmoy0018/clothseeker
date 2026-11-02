@@ -213,8 +213,9 @@ export async function createTryOnJob(db: PrismaClient, storage: StorageAdapter, 
   }
 
   // v2: ready-made dresses are cut out of their photo before try-on; v3: IDM-VTON Spaces first; v4: the
-  // garment is described to the model (lib/tryon/describe.ts). Earlier results are redone.
-  const inputHash = aiInputHash({ v: 4, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash });
+  // garment is described to the model (lib/tryon/describe.ts); v5: the local try-on model
+  // (TRYON_PROVIDER=local). Earlier results are redone.
+  const inputHash = aiInputHash({ v: 5, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash });
   const cached = await db.tryOnResult.findFirst({ where: { customerId: actor.id, inputHash, deletedAt: null }, orderBy: { createdAt: "desc" }, select: { jobId: true } });
   if (cached) {
     return { jobId: cached.jobId, cached: true };

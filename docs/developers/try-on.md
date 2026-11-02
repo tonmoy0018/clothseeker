@@ -20,7 +20,7 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 - **No upload without consent.** The panel lists what happens to the photo (`TRYON_CONSENT_POINTS` in `lib/tryon/rules.ts`):
   - it is used only for the preview
   - it is checked for quality on the customer's device and on our worker, and isn't sent anywhere for that
-  - it is sent to a third-party AI service (a public Hugging Face Space)
+  - it is processed by an AI try-on model, on ClothSeeker's own computer (`local`) or at a third-party service (a public Hugging Face Space, `huggingface`)
   - it is never used to train AI
   - it is deleted after 24 hours unless saved
 - The upload control stays disabled until the box is ticked. The server refuses any upload whose `consent` isn't exactly `"yes"` (tested), and stores `consentAt` on each photo.
@@ -33,6 +33,7 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
   - It's idempotent: it only touches rows not yet deleted.
   - Each run that deleted something writes one `tryon.cleanup` audit row (system actor, counts only). Tested.
 - Try-on photos are never used for training by ClothSeeker. Worker logs contain ids and pass/fail flags only, never images.
+- **With `TRYON_PROVIDER=local`** the photo never leaves the worker's machine: masking and the model both run there ([Local try-on](#local-try-on)).
 - **Before real customers use the Hugging Face provider:** the photo goes to a public demo Space whose owner could see it. (Until 2026-10-29 Gemini also checked each try-on photo, which sent it to Google's free tier; the check now runs on-device, see below.) Use a private or paid endpoint, or keep `TRYON_PROVIDER=fake`, and say so in the privacy policy.
 
 ## Photo checks
@@ -62,6 +63,7 @@ The first failure decides the message, light first (`photoProblem`).
 |---|---|---|
 | `fake` (default) | `FakeTryOn` lays the garment over the middle of the photo. Deterministic, instant, nothing leaves the machine. | Development, tests, CI |
 | `huggingface` | `HuggingFaceTryOn` (`lib/ai/tryon-hf.ts`) calls free public Gradio Spaces with `@gradio/client`, in the order of `TRYON_SPACES` | Real previews |
+| `local` | `LocalTryOn` (`lib/ai/tryon-local.ts`): CatVTON on the worker's own machine ([below](#local-try-on)). Photos stay here, no daily GPU allowance; about 2–2.5 minutes per try-on on an 8 GB M1 | Real previews, private |
 
 **Spaces and their dress modes** (default order, best first):
 - `jallenjia/Change-Clothes-AI` (IDM-VTON with a dress mode) uses `/tryon` with `category: "dresses"` or `"upper_body"`, the person photo as the editor's background and automatic masking (`is_checked: true`).
@@ -75,7 +77,7 @@ The first failure decides the message, light first (`photoProblem`).
 - designs: the main colour's name, the product name and each chosen style (`stylePhrase`: "v-neck neckline", "short sleeves", "sleeveless", "midi length"), e.g. "a navy linen wrap dress, v-neck neckline, short sleeves";
 - ready-made items: the product name and the first sentence of the team's description.
 
-The other Spaces have no text input and ignore it. The cache key is `v: 4` since descriptions were added, so older results are redone.
+The other Spaces have no text input and ignore it. The cache key is `v: 4` since descriptions were added and `v: 5` since the local try-on, so older results are redone.
 
 **Failures:**
 - A space that errors or sleeps → the next space is tried.
@@ -83,6 +85,31 @@ The other Spaces have no text input and ignore it. The cache key is `v: 4` since
 - Anything else → retried by the job runner (2 retries with backoff).
 - Each attempt is limited by `TRYON_TIMEOUT_MS` (default 240 s).
 - Space error texts are never copied into our errors or logs, because they may echo inputs.
+
+## Local try-on
+
+`TRYON_PROVIDER=local` runs the try-on on the worker's machine instead of a public Space. Set it up once with `pnpm tryon:setup` (`scripts/setup-local-tryon.ts`):
+- a Python 3.11 virtual environment with pinned packages (`LOCAL_TRYON_PACKAGES`), made with `uv` if installed;
+- the models from Hugging Face at **pinned commits**, each checked by **SHA-256** (`LOCAL_TRYON_FILES` in `lib/ai/tryon-local-setup.ts`), **safetensors and JSON only** (no pickles): Stable Diffusion 1.5 inpainting's UNet (fp16), the `sd-vae-ft-mse` image encoder/decoder, and CatVTON's **DressCode** attention weights;
+- about 2.3 GB in `~/.cache/clothseeker/local-tryon` (`LOCAL_TRYON_DIR`), outside the iCloud-synced project. It writes `verified.json` last; the worker refuses to start with `TRYON_PROVIDER=local` until it's there and every file has its size.
+
+**How a try-on runs** (`LocalTryOn.tryOn`):
+1. **The mask** (`tryOnMask`, `lib/tryon/mask.ts`, pure and unit-tested): from the on-device pose and person mask (`NodeVision`, also used for the photo check), the area to repaint is the lower neck down to where the garment reaches (`GARMENT_TYPES[type].tryOnReach`: shirts below the hips, panjabis to the knees, dresses to the ankles), widening towards the hem so a skirt can be wider than the legs, plus both arms to the wrists (sleeves may change) and any of the person's own clothes sticking out further. The face, hands, feet and backdrop are kept.
+2. **A 3:4 crop** around the mask (`tryOnCrop`), written with the mask and the garment to a private temporary folder, deleted afterwards.
+3. **The model** (`worker/local-tryon/catvton_server.py`): one Python process, started on the first try-on and kept loaded (`CatVtonProcess`), one try-on at a time over stdin/stdout JSON lines. It stops after 10 idle minutes to give the memory back, and is killed when a try-on runs out of time. It gets only `PATH`, `HOME` and its own settings (never the worker's keys), runs offline (`HF_HUB_OFFLINE`), and its output never reaches our logs.
+4. **Back into the photo** (`blendTryOn`): only the softened mask area takes the model's picture, so the face, hands and background keep the photo's full sharpness.
+
+**Speed and memory on the Mac mini (8 GB M1, 2026-11-02):** about 2–2.5 minutes per try-on at 384×512 with 30 steps (`LOCAL_TRYON_STEPS`, `LOCAL_TRYON_WIDTH`), plus about 20 s to load the model the first time. To fit next to the Supabase stacks (OrbStack keeps 4 GB), the server:
+- caps the GPU's share of memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO` 0.55);
+- runs attention one head at a time, with float32 scores (half-precision scores overflow and give a black picture);
+- runs the two guidance passes one after the other;
+- runs the image encoder/decoder on the CPU (on the GPU it needs over 1 GB of scratch).
+
+Without these it swapped and took over a minute per step.
+
+**Quality (tested on the AI-generated test woman in a T-shirt and leggings):** the smocked dress (square neckline, smocked bodice, puff sleeves, maxi length, mint) and the strapless floral maxi came out as a photo of her wearing them, with bare arms where the garment has none. CatVTON's "mix" weights (trained at 1024 px) drew garbage on the forearms at this size; the DressCode weights, trained at 512×384, don't. Limits: the garment is re-drawn at 384×512 and scaled up, so fine prints and smocking are softer than the face around them; notches in a catalogue cut-out show at the hem.
+
+**Licence:** CatVTON's weights are **CC BY-NC-SA 4.0, non-commercial**. Fine for this academic project; license or replace them before any commercial launch ([licences.md](licences.md)).
 
 ## Feasibility results (2026-10-09, `ai-scripts/tryon-feasibility.ts`)
 
@@ -103,6 +130,8 @@ The other Spaces have no text input and ignore it. The cache key is `v: 4` since
   - consent values, staleness rules and upload photo checks
   - garment canvas, the fake check and the fake try-on
   - `HuggingFaceTryOn` against a mocked Gradio client: dress parameters, token, fallback, quota → `TRYON_LIMIT`, abort, and no leaking of Space errors
+- `tests/unit/tryon-mask.test.ts`: the local try-on's mask (neck to hem, arms, hands and face kept, room for a skirt, own clothes), the 3:4 crop and the blend.
+- `tests/unit/tryon-local.test.ts`: `LocalTryOn` with a fake model (only the mask area changes, crop and settings, temporary files deleted, no body → refused); `CatVtonProcess` with a fake process (loaded once, keys never passed, failures mapped, killed on timeout and restarted, load timeout).
 - `tests/integration/try-on.test.ts`:
   - consent, upload validation, design and product try-ons
   - cache, the daily limit, photo rejection, timeout → retry, `TRYON_LIMIT`

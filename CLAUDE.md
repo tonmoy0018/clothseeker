@@ -44,7 +44,7 @@ This replaces the original marketplace brief (decided 2026-10-06): seller onboar
 | AI abstraction | Provider interfaces in `lib/ai/` |
 | PlannerProvider | Gemini free tier: text/images, structured JSON, dress matching, brand-logo checking |
 | ImageProvider | Cloudflare Workers AI or Hugging Face |
-| TryOnProvider | Public Hugging Face Space/API |
+| TryOnProvider | Public Hugging Face Space/API, or CatVTON on the worker's own machine (`TRYON_PROVIDER=local`, approved 2026-11-02) |
 | Background removal | `@imgly/background-removal` (in the browser) |
 | Payments / shipping | Sandbox/mock payment gateway; mocked courier updates |
 | Deployment | Vercel Hobby + Supabase |
@@ -227,6 +227,7 @@ docs/developers/
   - The limit is 5 per Dhaka day. `TryOnProvider` defaults to the fake; `huggingface` calls free public Spaces: rough preview, a tiny shared GPU allowance, and photos leave our systems.
 - **On-device vision** (`lib/vision/*`, [docs/developers/live-try-on.md](docs/developers/live-try-on.md)): Hugging Face models (pinned by SHA-256, `pnpm vision:fetch` → `public/vision/`, never committed) run in a Web Worker with ONNX Runtime Web; the live mirror and photo checks never upload camera frames. Keep fitting/decoding pure and unit-tested; browser-only code (canvas, worker) stays at the edges.
 - **Live mirror realism** ([docs/developers/live-try-on.md](docs/developers/live-try-on.md)): the garment is fitted per side to the person mask's outline (`measureOutline`/`fitToOutline`), the hem swings (`ClothSway`), and uncovered own clothes become skin or backdrop (`lib/vision/uncover.ts`). Never paint skin below the upper chest (no bare torso where a garment doesn't reach). Check changes on the fake-camera videos, standing and moving.
+- **Local try-on** (`TRYON_PROVIDER=local`, `lib/ai/tryon-local.ts`, set up with `pnpm tryon:setup`): CatVTON in a Python process the worker keeps loaded (`worker/local-tryon/catvton_server.py`); the worker masks the body itself (`lib/tryon/mask.ts`) and blends only the mask back. Models are pinned by commit and SHA-256, safetensors only, in `~/.cache/clothseeker/local-tryon` (never in the repo: it's on iCloud). The Python gets no worker secrets and runs offline. On the 8 GB Mac keep its memory settings (sliced fp32-score attention, encoder on CPU, MPS cap); the CatVTON weights are non-commercial.
 - Try-on photos are checked by `TryOnPhotoChecker` (`AiProviders.photoCheck`): with real try-on, the on-device models in the worker (`LocalPhotoChecker`); the browser runs the same rules before upload (`lib/vision/photo-check.ts`). Never send try-on photos to Gemini. Per-job-type timeouts go in `AiWorkerDeps.timeoutsMs`.
 - **Start from a photo/description** (`lib/ai/starts.ts`, worker `dress-match.ts`): the planner may only pick an offered dress (`parseDressMatch`), and its colours, pattern and style are fitted via `matchToSpec` → `variationToSpec`. The result is a DRAFT design with `startedFrom` and `referencePhotoKey`; descriptions also queue a design round (`?job=` makes the AI box poll it).
 - Motif images that are unusable or refused cost only that option's motif, never the round.
@@ -293,6 +294,7 @@ Run everything and fix all errors. Write or update tests for the changed busines
 - The worker runs only while the Mac mini is on. Jobs must survive restarts (stuck-job recovery).
 - Clients poll job status. Realtime subscriptions are optional, for later.
 - Gemini's **free tier may use submitted prompts/images to improve Google's products**. Fine for testing with our own photos; before real customers use AI photo uploads, switch to a paid tier or disclose it in the privacy policy.
+- The local try-on takes about 2–2.5 minutes per try-on on the 8 GB Mac mini and competes with the local Supabase stacks for memory; one at a time.
 - Free try-on Spaces give a rough preview and a tiny daily GPU allowance shared by the whole store (feasibility results in `docs/developers/try-on.md`). Real traffic needs a paid or self-hosted try-on model.
 
 ## Decided

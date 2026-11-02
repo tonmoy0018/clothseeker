@@ -48,6 +48,7 @@ async function main(): Promise<number> {
 
   const prisma = createPrismaClient(env.DATABASE_URL);
   let health: Server | null = null;
+  let closeTryOn: (() => void) | undefined;
   const shutdown = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
@@ -70,6 +71,7 @@ async function main(): Promise<number> {
     const storage = new SupabaseStorageAdapter(() => supabase);
     const payments = new MockPaymentProvider(env.MOCK_PAYMENT_WEBHOOK_SECRET);
     const providers = getAiProviders(env);
+    closeTryOn = () => providers.tryOn.close?.();
     const ai: AiWorkerDeps = {
       db: prisma,
       storage,
@@ -130,6 +132,7 @@ async function main(): Promise<number> {
     return 1;
   } finally {
     health?.close();
+    closeTryOn?.();
     await prisma.$disconnect();
     log.info("worker.stopped");
   }

@@ -338,7 +338,7 @@ export function TryOnPanel({
       )}
       {phase.kind === "waiting" && (
         <div className="flex aspect-[3/4] max-w-60 animate-pulse items-center justify-center rounded-lg bg-muted p-4 text-center text-xs text-muted-foreground" data-testid="try-on-loading" aria-live="polite">
-          {phase.running ? `Putting the ${noun} on you… this can take a minute.` : "Waiting for the try-on service…"}
+          {phase.running ? `Putting the ${noun} on you… this can take a couple of minutes.` : "Waiting for the try-on service…"}
         </div>
       )}
 

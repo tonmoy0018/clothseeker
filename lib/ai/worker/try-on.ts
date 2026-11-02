@@ -125,13 +125,13 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
 
   // 2. The garment as try-on models expect it.
   const garment = await garmentImage(deps, job, input.source, input.garmentHash);
-  const category = GARMENT_TYPES[garment.type].tryOnCategory;
+  const { tryOnCategory: category, tryOnReach: reach } = GARMENT_TYPES[garment.type];
   if (signal.aborted) {
     throw new AiProviderError("job aborted", true, "TIMEOUT");
   }
 
   // 3. Try-on, then treat the returned bytes like any upload.
-  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment.image, mimeType: "image/png" }, category, description: garment.description }, signal);
+  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment.image, mimeType: "image/png" }, category, reach, description: garment.description }, signal);
   let image;
   try {
     image = await processImage(raw, "tryOnResult");

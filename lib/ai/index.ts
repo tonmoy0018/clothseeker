@@ -5,8 +5,10 @@ import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./fake";
 import { GeminiPlanner } from "./gemini";
 import { LocalPhotoChecker } from "./photo-check-local";
 import { HuggingFaceTryOn } from "./tryon-hf";
+import { CatVtonProcess, LocalTryOn } from "./tryon-local";
+import { localTryOnPaths, localTryOnReady } from "./tryon-local-setup";
 import type { AiProviders } from "./types";
-import { nodeModelsPresent } from "@/lib/vision/node-vision";
+import { NodeVision, nodeModelsPresent } from "@/lib/vision/node-vision";
 
 // Picks the AI providers from the worker's environment. Only the worker calls this.
 
@@ -24,6 +26,9 @@ type ProviderEnv = Pick<
   | "TRYON_PROVIDER"
   | "HF_TOKEN"
   | "TRYON_SPACES"
+  | "LOCAL_TRYON_DIR"
+  | "LOCAL_TRYON_STEPS"
+  | "LOCAL_TRYON_WIDTH"
 >;
 
 export class AiConfigError extends Error {
@@ -54,11 +59,20 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
   // Real try-ons get the real photo check: the on-device models, run here in the worker.
   let tryOn;
   let photoCheck;
-  if (env.TRYON_PROVIDER === "huggingface") {
+  if (env.TRYON_PROVIDER === "huggingface" || env.TRYON_PROVIDER === "local") {
     if (!nodeModelsPresent()) {
-      throw new AiConfigError("The on-device vision models are missing: run `pnpm vision:fetch` (needed when TRYON_PROVIDER=huggingface)");
+      throw new AiConfigError(`The on-device vision models are missing: run \`pnpm vision:fetch\` (needed when TRYON_PROVIDER=${env.TRYON_PROVIDER})`);
     }
-    tryOn = new HuggingFaceTryOn({ spaces: env.TRYON_SPACES, token: env.HF_TOKEN });
+    if (env.TRYON_PROVIDER === "local") {
+      const paths = localTryOnPaths(env.LOCAL_TRYON_DIR);
+      if (!localTryOnReady(paths)) {
+        throw new AiConfigError("The local try-on model isn't set up: run `pnpm tryon:setup` (needed when TRYON_PROVIDER=local)");
+      }
+      const runner = new CatVtonProcess({ python: paths.python, weights: paths.weights });
+      tryOn = new LocalTryOn({ runner, body: new NodeVision(), steps: env.LOCAL_TRYON_STEPS, width: env.LOCAL_TRYON_WIDTH });
+    } else {
+      tryOn = new HuggingFaceTryOn({ spaces: env.TRYON_SPACES, token: env.HF_TOKEN });
+    }
     photoCheck = new LocalPhotoChecker();
   } else {
     tryOn = new FakeTryOn(env.AI_FAKE_DELAY_MS);

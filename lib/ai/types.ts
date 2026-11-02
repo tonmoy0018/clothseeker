@@ -98,6 +98,8 @@ export type TryOnRequest = {
   garment: ProviderImage;
   /** What kind of garment it is, in try-on models' terms (lib/catalog/garment-types.ts). */
   category: GarmentTypeInfo["tryOnCategory"];
+  /** How far down it covers the body (used by the local try-on's mask). */
+  reach?: GarmentTypeInfo["tryOnReach"];
   /** A short description of the garment from catalogue words (lib/tryon/describe.ts), when known. */
   description?: string;
 };
@@ -106,6 +108,8 @@ export interface TryOnProvider {
   readonly name: string;
   /** Returns the person wearing the garment (image bytes, untrusted until re-encoded). */
   tryOn(request: TryOnRequest, signal: AbortSignal): Promise<Buffer>;
+  /** Releases what it holds (the local model's process) when the worker stops. */
+  close?(): void;
 }
 
 /** Checks a try-on photo: one person, facing forward, good light, body visible. */

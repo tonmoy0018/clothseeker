@@ -16,7 +16,7 @@ export const TRYON_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const TRYON_CONSENT_POINTS = [
   "Your photo is used only to show this dress on you.",
   "Your photo is checked for quality on your own device and on ClothSeeker's computer; it isn't sent anywhere for that.",
-  "To make the preview, your photo is sent to a third-party AI service (a public Hugging Face Space).",
+  "To make the preview, your photo is processed by an AI try-on model, either on ClothSeeker's own computer or at a third-party AI service (a public Hugging Face Space).",
   "ClothSeeker never uses your photos to train AI.",
   "Unless you choose to save them, your photo and try-on results are deleted after 24 hours. You can delete them yourself at any time.",
 ] as const;

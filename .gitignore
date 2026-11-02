@@ -57,3 +57,7 @@ next-env.d.ts
 
 # on-device vision files (models from Hugging Face, ONNX Runtime): pnpm vision:fetch
 /public/vision/
+
+# Python caches (worker/local-tryon)
+__pycache__/
+*.pyc

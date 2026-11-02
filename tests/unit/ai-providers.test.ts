@@ -230,6 +230,8 @@ describe("getAiProviders", () => {
     AI_FAKE_DELAY_MS: 0,
     TRYON_PROVIDER: "fake" as const,
     TRYON_SPACES: ["levihsu/OOTDiffusion"],
+    LOCAL_TRYON_STEPS: 30,
+    LOCAL_TRYON_WIDTH: 384,
   };
 
   it("uses the fakes by default and the real adapters when configured", () => {

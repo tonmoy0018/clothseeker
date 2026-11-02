@@ -47,8 +47,20 @@ const aiEnvShape = {
   AI_FAKE_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(1_500),
   /** Hard limit for one attempt at an AI job. */
   AI_JOB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(180_000),
-  /** Virtual try-on: deterministic fake (default) or free public Hugging Face Spaces. */
-  TRYON_PROVIDER: z.enum(["fake", "huggingface"]).default("fake"),
+  /** Virtual try-on: deterministic fake (default), free public Hugging Face Spaces, or a model on this machine. */
+  TRYON_PROVIDER: z.enum(["fake", "huggingface", "local"]).default("fake"),
+  /** TRYON_PROVIDER=local: where `pnpm tryon:setup` put the model and its Python (default ~/.cache/clothseeker/local-tryon). */
+  LOCAL_TRYON_DIR: z.string().startsWith("/").max(500).optional(),
+  /** TRYON_PROVIDER=local: denoising steps (fewer is faster and rougher). */
+  LOCAL_TRYON_STEPS: z.coerce.number().int().min(10).max(50).default(30),
+  /** TRYON_PROVIDER=local: the model's picture width in pixels (height is 4/3 of it). 384 suits an 8 GB Mac. */
+  LOCAL_TRYON_WIDTH: z.coerce
+    .number()
+    .int()
+    .min(192)
+    .max(768)
+    .refine((w) => w % 24 === 0, "a multiple of 24")
+    .default(384),
   /** Optional free Hugging Face account token; raises the shared ZeroGPU allowance. */
   HF_TOKEN: z.string().regex(/^hf_[A-Za-z0-9]{20,}$/).optional(),
   /** Comma-separated Spaces tried in order (see lib/ai/tryon-hf.ts). */

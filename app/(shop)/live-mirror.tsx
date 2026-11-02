@@ -310,7 +310,7 @@ export function LiveMirror({
         setReal({ kind: "error", message: "The try-on service is very busy right now. Please try again later." });
         return;
       }
-      setReal({ kind: "working", step: job.position === "running" ? `Putting the ${noun} on you… usually under a minute.` : "Waiting for the try-on service…" });
+      setReal({ kind: "working", step: job.position === "running" ? `Putting the ${noun} on you… this can take a couple of minutes.` : "Waiting for the try-on service…" });
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
   }

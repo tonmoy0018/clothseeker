@@ -29,6 +29,7 @@
     "db:check": "tsx scripts/check-connections.ts",
     "env:local": "tsx scripts/write-local-env.ts",
     "vision:fetch": "tsx scripts/fetch-vision-assets.ts",
+    "tryon:setup": "tsx scripts/setup-local-tryon.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

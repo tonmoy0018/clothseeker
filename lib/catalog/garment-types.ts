@@ -32,13 +32,15 @@ export type GarmentTypeInfo = {
   groups: readonly StyleGroup[];
   /** The garment category try-on models expect (OOTDiffusion's names). */
   tryOnCategory: "Dress" | "Upper-body";
+  /** How far down it covers the body, for the local try-on's mask (lib/tryon/mask.ts). */
+  tryOnReach: "hips" | "knees" | "ankles";
 };
 
 export const GARMENT_TYPES: Record<GarmentType, GarmentTypeInfo> = {
-  dress: { label: "Dress", noun: "dress", audience: "women", groups: ["neckline", "sleeveLength", "dressLength"], tryOnCategory: "Dress" },
-  shirt: { label: "Shirt", noun: "shirt", audience: "men", groups: ["collar", "sleeveLength", "fit"], tryOnCategory: "Upper-body" },
+  dress: { label: "Dress", noun: "dress", audience: "women", groups: ["neckline", "sleeveLength", "dressLength"], tryOnCategory: "Dress", tryOnReach: "ankles" },
+  shirt: { label: "Shirt", noun: "shirt", audience: "men", groups: ["collar", "sleeveLength", "fit"], tryOnCategory: "Upper-body", tryOnReach: "hips" },
   // A panjabi is worn over trousers, so try-on treats it as a (long) top.
-  panjabi: { label: "Panjabi", noun: "panjabi", audience: "men", groups: ["collar", "sleeveLength", "length"], tryOnCategory: "Upper-body" },
+  panjabi: { label: "Panjabi", noun: "panjabi", audience: "men", groups: ["collar", "sleeveLength", "length"], tryOnCategory: "Upper-body", tryOnReach: "knees" },
 };
 
 export function styleGroupsOf(type: GarmentType): readonly StyleGroup[] {
