@@ -231,13 +231,13 @@ export class FakePhotoChecker implements TryOnPhotoChecker {
   async checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck> {
     await delay(Math.min(this.delayMs, 300), signal);
     const { channels } = await sharp(image.data).greyscale().stats();
-    const meta = await sharp(image.data).metadata();
     const brightness = channels[0]?.mean ?? 0;
+    // Finds "a person" in any photo except a nearly black one (like the real check, only that refuses).
     return {
       onePerson: true,
       facingForward: true,
       goodLight: brightness >= 60,
-      bodyVisible: (meta.height ?? 0) >= (meta.width ?? 1),
+      bodyVisible: brightness >= 20,
     };
   }
 }

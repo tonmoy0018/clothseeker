@@ -84,11 +84,30 @@ describe("tryOnMask", () => {
     expect(withSkirt(335, 650)).toBe(true);
   });
 
-  it("guesses the legs when the model doesn't see them, and refuses without shoulders and hips", () => {
+  it("guesses the legs when the model doesn't see them, and needs only the shoulders", () => {
     const unseen = at(0, 0, 0.05);
     const dress = mask("ankles", { leftKnee: unseen, rightKnee: unseen, leftAnkle: unseen, rightAnkle: unseen });
     expect(dress(500, 700)).toBe(true);
-    expect(tryOnMask(pose({ leftHip: unseen }), null, W, H, "hips")).toBeNull();
+    expect(tryOnMask(pose({ leftShoulder: unseen }), null, W, H, "hips")).toBeNull();
+  });
+
+  it("works on a half-body photo: the garment runs down to the photo's edge", () => {
+    const unseen = at(0, 0, 0.05);
+    const below = { leftHip: unseen, rightHip: unseen, leftKnee: unseen, rightKnee: unseen, leftAnkle: unseen, rightAnkle: unseen };
+    // The photo ends at the waist (y 420).
+    const out = tryOnMask(pose(below), null, W, 420, "ankles");
+    if (!out) throw new Error("no mask");
+    const m = (x: number, y: number) => out[y * W + x] === 255;
+    expect(m(500, 300)).toBe(true);
+    expect(m(500, 419)).toBe(true);
+    expect(m(500, 120)).toBe(false);
+  });
+
+  it("stays body-wide for someone standing sideways, whose shoulders overlap", () => {
+    // Shoulders 20 px apart, but the head (nose to shoulders 100 px) says the body is far wider.
+    const side = mask("hips", { leftShoulder: at(510, 220), rightShoulder: at(490, 220), leftHip: at(505, 470), rightHip: at(495, 470) });
+    expect(side(560, 330)).toBe(true);
+    expect(side(440, 330)).toBe(true);
   });
 });
 

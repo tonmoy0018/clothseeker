@@ -282,8 +282,8 @@ export function TryOnPanel({
           </Button>
         )}
         <p className="text-xs text-muted-foreground">
-          Best: just you, facing the camera, in good light, shoulders to knees visible. The preview follows the shape of what you&apos;re wearing, so
-          for a {noun} wear something of a similar shape and length.
+          Any photo of you works, from a selfie to a full-length photo, upright or sideways. The more of you it shows, the more of the {noun}
+          you&apos;ll see.
         </p>
       </div>
 

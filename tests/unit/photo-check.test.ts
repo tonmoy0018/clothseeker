@@ -46,28 +46,28 @@ const face = (x = 260): Face => ({ x, y: 70, width: 80, height: 100, score: 0.9,
 const analysis = (overrides: Partial<PhotoAnalysis> = {}): PhotoAnalysis => ({ width: W, height: H, pose: facingPose(), faces: [face()], brightness: 150, ...overrides });
 
 describe("try-on photo rules", () => {
-  it("accepts one person facing the camera, in good light, shoulders to knees in the picture", () => {
+  it("notes one person facing the camera in good light", () => {
     expect(judgeTryOnPhoto(analysis())).toEqual({ onePerson: true, facingForward: true, goodLight: true, bodyVisible: true });
   });
 
-  it("names the first problem, light first", () => {
+  it("uses any photo with a person's shoulders in it, refusing only one with nobody found", () => {
     const problem = (a: Partial<PhotoAnalysis>) => {
       const check = judgeTryOnPhoto(analysis(a));
       return isUsable(check) ? "OK" : photoProblem(check);
     };
-    expect(problem({ faces: [face(100), face(400)] })).toBe("PHOTO_NOT_ONE_PERSON");
-    expect(problem({ brightness: 30, faces: [face(100), face(400)] })).toBe("PHOTO_TOO_DARK");
-    // Turned away: no face, or the shoulders the wrong way round, or as narrow as the face.
-    expect(problem({ faces: [] })).toBe("PHOTO_NOT_FACING");
+    // Other people, dim light, turned sideways or away: still used (noted for the metrics).
+    expect(problem({ faces: [face(100), face(400)], brightness: 30 })).toBe("OK");
+    expect(problem({ faces: [] })).toBe("OK");
     const p = facingPose();
-    expect(problem({ pose: { ...p, leftShoulder: p.rightShoulder, rightShoulder: p.leftShoulder } })).toBe("PHOTO_NOT_FACING");
-    expect(problem({ pose: facingPose({ leftShoulder: { x: 340, y: 230, score: 0.9 }, rightShoulder: { x: 260, y: 230, score: 0.9 } }) })).toBe("PHOTO_NOT_FACING");
-    // Knees unsure, or guessed at the very edge of the picture (cut off).
-    expect(problem({ pose: facingPose({ leftKnee: { x: 345, y: 720, score: 0.1 } }) })).toBe("PHOTO_BODY_NOT_VISIBLE");
-    expect(problem({ pose: facingPose({ rightKnee: { x: 255, y: 995, score: 0.8 } }) })).toBe("PHOTO_BODY_NOT_VISIBLE");
-    // Nobody at all: told the body isn't visible (not "face the camera").
-    const nobody = Object.fromEntries(KEYPOINT_NAMES.map((n) => [n, { x: 0, y: 0, score: 0.01 }]));
+    expect(problem({ pose: { ...p, leftShoulder: p.rightShoulder, rightShoulder: p.leftShoulder } })).toBe("OK");
+    expect(judgeTryOnPhoto(analysis({ faces: [] })).facingForward).toBe(false);
+    // Half-body photo or selfie: no hips or knees in the picture.
+    const unseen = { x: 0, y: 0, score: 0.05 };
+    expect(problem({ pose: facingPose({ leftHip: unseen, rightHip: unseen, leftKnee: unseen, rightKnee: unseen, leftAnkle: unseen, rightAnkle: unseen }) })).toBe("OK");
+    // Nobody at all.
+    const nobody = Object.fromEntries(KEYPOINT_NAMES.map((n) => [n, unseen]));
     expect(problem({ faces: [], pose: { ...facingPose(), ...nobody } })).toBe("PHOTO_BODY_NOT_VISIBLE");
+    expect(problem({ pose: null })).toBe("PHOTO_BODY_NOT_VISIBLE");
   });
 
   it("measures brightness inside the picture only, not the letterbox padding", () => {
@@ -93,10 +93,10 @@ describe.skipIf(!nodeModelsPresent())("the worker's on-device photo check (real 
     expect(await check(man)).toBe("OK");
   }, 30_000);
 
-  it("refuses cropped, dark and group photos with the exact reason", async () => {
+  it("also accepts half-body, landscape, dim and group photos", async () => {
     const top = await sharp(woman).extract({ left: 0, top: 0, width: 600, height: 560 }).jpeg().toBuffer();
-    expect(await check(top)).toBe("PHOTO_BODY_NOT_VISIBLE");
-    expect(await check(await sharp(woman).modulate({ brightness: 0.2 }).jpeg().toBuffer())).toBe("PHOTO_TOO_DARK");
+    expect(await check(top)).toBe("OK");
+    expect(await check(await sharp(woman).modulate({ brightness: 0.4 }).jpeg().toBuffer())).toBe("OK");
     const pair = await sharp({ create: { width: 1200, height: 1067, channels: 3, background: "#ddd" } })
       .composite([
         { input: woman, left: 0, top: 0 },
@@ -104,6 +104,11 @@ describe.skipIf(!nodeModelsPresent())("the worker's on-device photo check (real 
       ])
       .jpeg()
       .toBuffer();
-    expect(await check(pair)).toBe("PHOTO_NOT_ONE_PERSON");
+    expect(await check(pair)).toBe("OK");
+  }, 30_000);
+
+  it("refuses a photo with nobody in it", async () => {
+    const empty = await sharp({ create: { width: 600, height: 800, channels: 3, background: "#cfd4da" } }).jpeg().toBuffer();
+    expect(await check(empty)).toBe("PHOTO_BODY_NOT_VISIBLE");
   }, 30_000);
 });

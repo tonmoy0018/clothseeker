@@ -38,11 +38,13 @@ describe("try-on rules", () => {
     expect(productSignature("a", "k1")).not.toBe(productSignature("a", "k2"));
   });
 
-  it("checks photo shape and light at upload", () => {
+  it("accepts any orientation and lighting at upload, refusing only all-black or all-white photos", () => {
     expect(photoShapeProblem({ width: 600, height: 900, meanBrightness: 120 })).toBeNull();
-    expect(photoShapeProblem({ width: 900, height: 600, meanBrightness: 120 })).toMatch(/portrait/);
-    expect(photoShapeProblem({ width: 600, height: 900, meanBrightness: 20 })).toMatch(/too dark/);
-    expect(photoShapeProblem({ width: 600, height: 900, meanBrightness: 250 })).toMatch(/too bright/);
+    expect(photoShapeProblem({ width: 900, height: 600, meanBrightness: 120 })).toBeNull();
+    expect(photoShapeProblem({ width: 600, height: 900, meanBrightness: 20 })).toBeNull();
+    expect(photoShapeProblem({ width: 600, height: 900, meanBrightness: 245 })).toBeNull();
+    expect(photoShapeProblem({ width: 600, height: 900, meanBrightness: 3 })).toMatch(/completely dark/);
+    expect(photoShapeProblem({ width: 600, height: 900, meanBrightness: 253 })).toMatch(/completely white/);
   });
 });
 
@@ -63,11 +65,12 @@ describe("garment preparation and fakes", () => {
     expect([data[0], data[1], data[2]]).toEqual([255, 255, 255]);
   });
 
-  it("the fake photo check rejects dark and landscape photos", async () => {
+  it("the fake photo check finds someone in any photo but a nearly black one", async () => {
     const checker = new FakePhotoChecker();
     expect(await checker.checkTryOnPhoto({ data: await grey(600, 900, 140), mimeType: "image/webp" }, signal)).toEqual({ onePerson: true, facingForward: true, goodLight: true, bodyVisible: true });
-    expect((await checker.checkTryOnPhoto({ data: await grey(600, 900, 30), mimeType: "image/webp" }, signal)).goodLight).toBe(false);
-    expect((await checker.checkTryOnPhoto({ data: await grey(900, 600, 140), mimeType: "image/webp" }, signal)).bodyVisible).toBe(false);
+    expect(await checker.checkTryOnPhoto({ data: await grey(600, 900, 30), mimeType: "image/webp" }, signal)).toMatchObject({ goodLight: false, bodyVisible: true });
+    expect((await checker.checkTryOnPhoto({ data: await grey(900, 600, 140), mimeType: "image/webp" }, signal)).bodyVisible).toBe(true);
+    expect((await checker.checkTryOnPhoto({ data: await grey(600, 900, 10), mimeType: "image/webp" }, signal)).bodyVisible).toBe(false);
   });
 
   it("the fake try-on is deterministic and keeps the photo size", async () => {

@@ -38,18 +38,14 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 
 ## Photo checks
 
-All checks use the same rules, `judgeTryOnPhoto` in [`lib/vision/photo-check.ts`](../../lib/vision/photo-check.ts), on the findings of the on-device body and face models ([live-try-on.md](live-try-on.md)):
-- **light:** mean brightness at least 55 of 255;
-- **one person:** at most one face;
-- **facing the camera:** one face, the person's left shoulder on the picture's right, and the shoulders at least 1.6× as wide as the face;
-- **body visible:** shoulders, hips and knees found, each at least 2.5% inside the picture's edges, so a knee guessed at the edge counts as cut off.
-
-The first failure decides the message, light first (`photoProblem`).
+**Any photo with a person in it can be used** (decided 2026-11-02): selfies, waist-up and half-body photos, landscape photos, side views, dim light and photos with other people in them. The garment goes on the main person and simply continues past the photo's edge. All checks use the same rules, `judgeTryOnPhoto` in [`lib/vision/photo-check.ts`](../../lib/vision/photo-check.ts), on the findings of the on-device body and face models ([live-try-on.md](live-try-on.md)):
+- **refused only when no person is found:** both shoulders must be found somewhere in the picture ("We couldn't find you in this photo. Use one where your shoulders can be seen.");
+- light, the number of faces and facing the camera are still measured (`goodLight`, `onePerson`, `facingForward`) and logged by the worker, but no longer refuse a photo.
 
 1. **In the browser, before upload** (`photoProblemOnDevice`, `lib/vision/check-photo.ts`): the models run on the customer's device and an unusable photo is refused instantly with the exact reason ("We can't see you from your shoulders to your knees…"). Nothing is uploaded. If the models can't run on that device, the photo is uploaded and checked by the worker instead.
-2. **At upload** (`photoShapeProblem`): portrait orientation, not too dark, not blown out.
+2. **At upload** (`photoShapeProblem`): only a practically all-black or all-white photo is refused; any orientation is fine.
 3. **In the worker, once per photo** (`TryOnPhotoChecker`): the check customers can't skip. With `TRYON_PROVIDER=huggingface` it's `LocalPhotoChecker`, the same models run in Node on our own machine (about 0.3 s per photo); the worker refuses to start if `pnpm vision:fetch` hasn't run. With the fake try-on it's `FakePhotoChecker` (rejects dark or landscape photos). A failure ends the job with the specific message and doesn't count toward the limit. Passing sets `try_on_photos.checked_at`, so the photo isn't checked again.
-- **Test photos:** `tests/fixtures/tryon-woman.jpg` and `tryon-man.jpg` are AI-generated (FLUX.1 schnell) people who don't exist, so they can be used in tests and screenshots. The real-model tests (`tests/unit/photo-check.test.ts`) check that they pass, and that cropped, darkened and two-person versions fail with the right reason.
+- **Test photos:** `tests/fixtures/tryon-woman.jpg` and `tryon-man.jpg` are AI-generated (FLUX.1 schnell) people who don't exist, so they can be used in tests and screenshots. The real-model tests (`tests/unit/photo-check.test.ts`) check that they pass, that waist-up, darkened and two-person versions pass too, and that an empty photo is refused.
 
 ## Limits, cache and "Update try-on"
 
@@ -94,7 +90,7 @@ The other Spaces have no text input and ignore it. The cache key is `v: 4` since
 - about 2.3 GB in `~/.cache/clothseeker/local-tryon` (`LOCAL_TRYON_DIR`), outside the iCloud-synced project. It writes `verified.json` last; the worker refuses to start with `TRYON_PROVIDER=local` until it's there and every file has its size.
 
 **How a try-on runs** (`LocalTryOn.tryOn`):
-1. **The mask** (`tryOnMask`, `lib/tryon/mask.ts`, pure and unit-tested): from the on-device pose and person mask (`NodeVision`, also used for the photo check), the area to repaint is the lower neck down to where the garment reaches (`GARMENT_TYPES[type].tryOnReach`: shirts below the hips, panjabis to the knees, dresses to the ankles), widening towards the hem so a skirt can be wider than the legs, plus both arms to the wrists (sleeves may change) and any of the person's own clothes sticking out further. The face, hands, feet and backdrop are kept.
+1. **The mask** (`tryOnMask`, `lib/tryon/mask.ts`, pure and unit-tested): only the shoulders are needed; hips, knees and ankles out of the picture are guessed below it, and a sideways stance keeps a body-wide mask (the width is never below what the head height or torso suggests). From the on-device pose and person mask (`NodeVision`, also used for the photo check), the area to repaint is the lower neck down to where the garment reaches (`GARMENT_TYPES[type].tryOnReach`: shirts below the hips, panjabis to the knees, dresses to the ankles), widening towards the hem so a skirt can be wider than the legs, plus both arms to the wrists (sleeves may change) and any of the person's own clothes sticking out further. The face, hands, feet and backdrop are kept.
 2. **A 3:4 crop** around the mask (`tryOnCrop`), written with the mask and the garment to a private temporary folder, deleted afterwards.
 3. **The model** (`worker/local-tryon/catvton_server.py`): one Python process, started on the first try-on and kept loaded (`CatVtonProcess`), one try-on at a time over stdin/stdout JSON lines. It stops after 10 idle minutes to give the memory back, and is killed when a try-on runs out of time. It gets only `PATH`, `HOME` and its own settings (never the worker's keys), runs offline (`HF_HUB_OFFLINE`), and its output never reaches our logs.
 4. **Back into the photo** (`blendTryOn`): only the softened mask area takes the model's picture, so the face, hands and background keep the photo's full sharpness.

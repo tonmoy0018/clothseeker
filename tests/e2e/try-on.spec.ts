@@ -89,7 +89,7 @@ test.describe("@supabase virtual try-on", () => {
       if (request.method() === "POST" && (request.postData() ?? "").includes('filename="photo.jpg"')) uploads.push(request.url());
     });
     await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await emptyPhoto() });
-    await expect(panel).toContainText("We can't see you from your shoulders to your knees", { timeout: 60_000 });
+    await expect(panel).toContainText("We couldn't find you in this photo", { timeout: 60_000 });
     await expect(panel.getByRole("radio", { name: "Photo 1" })).toHaveCount(0);
     expect(uploads).toEqual([]);
   });

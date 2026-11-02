@@ -46,7 +46,7 @@ async function customizableProduct() {
   return { product, spec };
 }
 
-/** A portrait "photo" of the given grey level (the fake check rejects mean brightness < 60). */
+/** A "photo" of the given grey level (the fake check finds nobody below mean brightness 20). */
 function photo(grey = 140, width = 600, height = 900) {
   return sharp({ create: { width, height, channels: 3, background: { r: grey, g: grey, b: grey } } }).jpeg().toBuffer();
 }
@@ -97,12 +97,14 @@ describe("consent and photos", () => {
     expect((await listTryOnPhotos(db, storage, customer, now)).map((p) => p.id)).toEqual([view.id]);
   });
 
-  it("rejects landscape, dark and non-image uploads", async () => {
+  it("accepts landscape and dim photos, rejects all-black and non-image uploads", async () => {
     const customer = await createUser();
-    await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: await photo(140, 900, 600), consent: "yes" }), "UPLOAD_INVALID");
-    await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: await photo(20), consent: "yes" }), "UPLOAD_INVALID");
+    await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: await photo(2), consent: "yes" }), "UPLOAD_INVALID");
     await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: Buffer.from("<svg/>"), consent: "yes" }), "UPLOAD_INVALID");
     expect(await db.tryOnPhoto.count()).toBe(0);
+    await uploadTryOnPhoto(db, storage, customer, { bytes: await photo(140, 900, 600), consent: "yes" });
+    await uploadTryOnPhoto(db, storage, customer, { bytes: await photo(30), consent: "yes" });
+    expect(await db.tryOnPhoto.count()).toBe(2);
   });
 
   it("admins can't upload try-on photos", async () => {
@@ -170,10 +172,11 @@ describe("try-on jobs", () => {
   it("a photo that fails the check gets a friendly message and uses no try-on", async () => {
     const customer = await createUser();
     const { spec } = await customizableProduct();
-    const dim = await uploaded(customer, 50);
+    // Nearly black: the (fake) check finds nobody in it.
+    const dim = await uploaded(customer, 12);
     const queued = await tryOnDesign(customer, dim.id, spec);
     await runAiJobs(deps());
-    expect(await getTryOnStatus(db, storage, customer, queued.jobId)).toEqual({ state: "failed", message: AI_FAILURE_MESSAGES.PHOTO_TOO_DARK, code: "PHOTO_TOO_DARK" });
+    expect(await getTryOnStatus(db, storage, customer, queued.jobId)).toEqual({ state: "failed", message: AI_FAILURE_MESSAGES.PHOTO_BODY_NOT_VISIBLE, code: "PHOTO_BODY_NOT_VISIBLE" });
     expect(await db.aIJob.findUniqueOrThrow({ where: { id: queued.jobId } })).toMatchObject({ status: "FAILED", attempts: 1 });
     expect((await getTryOnQuota(db, customer)).used).toBe(0);
   });

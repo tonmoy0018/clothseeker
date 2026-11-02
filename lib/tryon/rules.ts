@@ -56,14 +56,13 @@ export type PhotoShape = { width: number; height: number; meanBrightness: number
 
 /** Cheap checks done at upload, before anything is queued. Returns a friendly problem, or null. */
 export function photoShapeProblem(photo: PhotoShape): string | null {
-  if (photo.width > photo.height * 1.05) {
-    return "Use a portrait (upright) photo that shows you from your shoulders to your knees.";
+  // Any orientation and lighting is fine (the try-on finds the person; see judgeTryOnPhoto). Only a
+  // photo that is practically all black or all white has nothing to try anything on.
+  if (photo.meanBrightness < 8) {
+    return "This photo is completely dark. Try another one.";
   }
-  if (photo.meanBrightness < 45) {
-    return "This photo is too dark. Try one taken in good light.";
-  }
-  if (photo.meanBrightness > 245) {
-    return "This photo is too bright to see you clearly. Try another one.";
+  if (photo.meanBrightness > 250) {
+    return "This photo is completely white. Try another one.";
   }
   return null;
 }

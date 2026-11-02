@@ -20,29 +20,28 @@ export type PhotoAnalysis = {
 
 /** A keypoint the model is reasonably sure of. */
 const SEEN = 0.3;
-/** Below this mean brightness the photo is too dark for a try-on. */
+/** Below this mean brightness the photo is dim (noted, not refused). */
 const MIN_BRIGHTNESS = 55;
-/** Body points must sit this share of the photo inside its edges: a knee guessed at the edge is cut off. */
-const EDGE = 0.025;
 /** Facing the camera, the shoulders are much wider than the face; turned sideways they aren't. */
 const MIN_SHOULDERS_PER_FACE = 1.6;
 
+/**
+ * Any photo with a person in it can be used (decided 2026-11-02): the try-on only needs to find their
+ * shoulders. Half-body photos, selfies, landscape photos, side views, dim light and other people in
+ * the picture are fine: the garment goes on the main person, down to the photo's edge. The other
+ * findings are kept for the worker's log and the AI metrics, not to refuse the photo.
+ */
 export function judgeTryOnPhoto(analysis: PhotoAnalysis): TryOnPhotoCheck {
   const { pose, width, height } = analysis;
   const faces = analysis.faces ?? [];
-  const inFrame = (name: keyof Pose) => {
+  const found = (name: keyof Pose) => {
     const point = pose?.[name];
-    const [mx, my] = [width * EDGE, height * EDGE];
-    return !!point && point.score >= SEEN && point.x >= mx && point.y >= my && point.x <= width - mx && point.y <= height - my;
+    return !!point && point.score >= SEEN && point.x >= 0 && point.y >= 0 && point.x <= width && point.y <= height;
   };
-  const shoulders = inFrame("leftShoulder") && inFrame("rightShoulder");
-  const lowerBody: (keyof Pose)[] = ["leftHip", "rightHip", "leftKnee", "rightKnee"];
-  const bodyVisible = shoulders && lowerBody.every(inFrame);
+  const bodyVisible = found("leftShoulder") && found("rightShoulder");
 
-  // Facing: one face, and the person's left shoulder on the picture's right, clearly wider than the face.
-  // Only judged when there is a body to judge; an empty photo is reported as "body not visible".
   let facingForward = true;
-  if (shoulders && pose) {
+  if (bodyVisible && pose) {
     const face = faces[0];
     const span = pose.leftShoulder.x - pose.rightShoulder.x;
     facingForward = !!face && span > 0 && span >= MIN_SHOULDERS_PER_FACE * face.width;
@@ -56,20 +55,13 @@ export function judgeTryOnPhoto(analysis: PhotoAnalysis): TryOnPhotoCheck {
   };
 }
 
-/**
- * The first check a photo failed, so the customer is told exactly what to change. Light comes first: in
- * a dark photo nothing else can be judged.
- */
+/** Why a photo can't be used: only when no person was found in it. */
 export function photoProblem(check: TryOnPhotoCheck): AiFailureCode {
-  if (!check.goodLight) return "PHOTO_TOO_DARK";
-  if (!check.onePerson) return "PHOTO_NOT_ONE_PERSON";
-  if (!check.facingForward) return "PHOTO_NOT_FACING";
-  if (!check.bodyVisible) return "PHOTO_BODY_NOT_VISIBLE";
-  return "PHOTO_REJECTED";
+  return check.bodyVisible ? "PHOTO_REJECTED" : "PHOTO_BODY_NOT_VISIBLE";
 }
 
 export function isUsable(check: TryOnPhotoCheck): boolean {
-  return check.onePerson && check.facingForward && check.goodLight && check.bodyVisible;
+  return check.bodyVisible;
 }
 
 /** Mean brightness (0–255) of the picture inside a letterboxed RGBA square (padding excluded). */

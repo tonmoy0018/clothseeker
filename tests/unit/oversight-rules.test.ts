@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { averageMs, dailyCounts, failureRate, topCounts } from "@/lib/admin/ai-metrics";
 import { auditTargetHref } from "@/lib/admin/audit-log";
 import { AI_FAILURE_MESSAGES } from "@/lib/ai/errors";
-import { photoProblem } from "@/lib/vision/photo-check";
+import { isUsable, photoProblem } from "@/lib/vision/photo-check";
 import { DISPUTE_WINDOW_DAYS, disputeDeadline, disputeIneligibility } from "@/lib/disputes/rules";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -39,12 +39,11 @@ describe("AI metric calculations", () => {
 
 describe("try-on photo problems", () => {
   const ok = { onePerson: true, facingForward: true, goodLight: true, bodyVisible: true };
-  it("names the first check that failed, each with its own message", () => {
+  it("refuses only a photo with nobody found in it", () => {
     expect(photoProblem({ ...ok, bodyVisible: false })).toBe("PHOTO_BODY_NOT_VISIBLE");
-    expect(photoProblem({ ...ok, goodLight: false, bodyVisible: false })).toBe("PHOTO_TOO_DARK");
-    expect(photoProblem({ ...ok, facingForward: false })).toBe("PHOTO_NOT_FACING");
-    expect(photoProblem({ ...ok, onePerson: false })).toBe("PHOTO_NOT_ONE_PERSON");
-    expect(AI_FAILURE_MESSAGES.PHOTO_BODY_NOT_VISIBLE).toMatch(/shoulders to your knees/);
+    expect(photoProblem({ ...ok, goodLight: false, bodyVisible: false })).toBe("PHOTO_BODY_NOT_VISIBLE");
+    expect(isUsable({ onePerson: false, facingForward: false, goodLight: false, bodyVisible: true })).toBe(true);
+    expect(AI_FAILURE_MESSAGES.PHOTO_BODY_NOT_VISIBLE).toMatch(/couldn't find you/);
   });
 });
 

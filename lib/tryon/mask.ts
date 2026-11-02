@@ -46,20 +46,29 @@ function profile(points: readonly { y: number; v: number }[]): (y: number) => nu
 }
 
 /**
- * The try-on mask: 255 where the model may repaint, 0 where the photo is kept. Null when the shoulders
- * and hips aren't found (the photo check refuses such photos earlier).
+ * The try-on mask: 255 where the model may repaint, 0 where the photo is kept. Only the shoulders are
+ * needed: hips, knees and ankles out of the picture (a half-body photo or selfie) are guessed below it,
+ * and the mask simply stops at the photo's edge. Null when the shoulders aren't found.
  */
 export function tryOnMask(pose: Pose, person: PersonAt | null, width: number, height: number, reach: TryOnReach): Uint8Array | null {
   const { leftShoulder: ls, rightShoulder: rs, leftHip: lh, rightHip: rh } = pose;
-  if (![ls, rs, lh, rh].every(seen)) return null;
+  if (!seen(ls) || !seen(rs)) return null;
   const shoulders = mid(ls, rs);
-  const hips = mid(lh, rh);
-  const span = Math.max(1, Math.hypot(ls.x - rs.x, ls.y - rs.y));
+  const nose = pose.nose;
+  // Shoulder width; turned sideways the shoulders overlap, so it's never taken below what the head
+  // height (nose to shoulders) or the torso length suggests.
+  const hipsSeen = seen(lh) && seen(rh);
+  const span = Math.max(
+    1,
+    Math.hypot(ls.x - rs.x, ls.y - rs.y),
+    seen(nose) ? (shoulders.y - nose.y) * 1.6 : 0,
+    hipsSeen ? (mid(lh, rh).y - shoulders.y) * 0.55 : 0,
+  );
+  const hips = hipsSeen ? mid(lh, rh) : { x: shoulders.x, y: shoulders.y + span * 1.5 };
   const torso = Math.max(span * 0.5, hips.y - shoulders.y);
-  const hipSpan = Math.hypot(lh.x - rh.x, lh.y - rh.y);
+  const hipSpan = hipsSeen ? Math.hypot(lh.x - rh.x, lh.y - rh.y) : span * 0.7;
 
   // Top: the lower neck (necklines and collars are redrawn), never the chin.
-  const nose = pose.nose;
   const top = seen(nose) ? Math.max(nose.y + (shoulders.y - nose.y) * 0.6, shoulders.y - span * 0.35) : shoulders.y - span * 0.2;
 
   // Legs: guessed below the picture or from the knees when the model doesn't see them.
