@@ -153,7 +153,7 @@ describe("try-on jobs", () => {
     const seen: TryOnRequest[] = [];
     const recording: TryOnProvider = { name: "recording", tryOn: async (request, signal) => (seen.push(request), new FakeTryOn().tryOn(request, signal)) };
     // Girths measured from the photo in the browser: the middle of size M.
-    const fit: TryOnFit = { heightCm: 160, preference: "regular", size: "M", girthsCm: [89, 71, 95] };
+    const fit: TryOnFit = { heightCm: 160, size: "M", girthsCm: [89, 71, 95] };
     const start = (f: unknown) => createTryOnJob(db, storage, customer, { photoId: pic.id, source: { kind: "product", productId: product.id }, fit: f });
 
     const first = await start(fit);
@@ -168,7 +168,7 @@ describe("try-on jobs", () => {
     expect((await start({ ...fit, heightCm: 175 })).cached).toBe(false);
     expect((await start({ ...fit, girthsCm: [100, 82, 106] })).cached).toBe(false);
     // A photo that couldn't be measured: only the length follows the fit.
-    const unmeasured = await start({ heightCm: 160, preference: "regular", size: "XL" });
+    const unmeasured = await start({ heightCm: 160, size: "XL" });
     expect(unmeasured.cached).toBe(false);
     await expectTryOnError(start({ ...fit, heightCm: 300 }), "INVALID");
     await expectTryOnError(start({ ...fit, girthsCm: [89, 71] }), "INVALID");
@@ -179,7 +179,7 @@ describe("try-on jobs", () => {
     const customer = await createUser();
     const { product } = await customizableProduct();
     const pic = await uploaded(customer);
-    await createTryOnJob(db, storage, customer, { photoId: pic.id, source: { kind: "product", productId: product.id }, fit: { heightCm: 160, preference: "regular", size: "M", girthsCm: [89, 71, 95] } });
+    await createTryOnJob(db, storage, customer, { photoId: pic.id, source: { kind: "product", productId: product.id }, fit: { heightCm: 160, size: "M", girthsCm: [89, 71, 95] } });
     await processNextJob(deps());
     expect((await db.tryOnResult.findFirstOrThrow()).fit).not.toBeNull();
     await deleteTryOnPhoto(db, storage, customer, pic.id);

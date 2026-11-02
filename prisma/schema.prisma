@@ -304,7 +304,7 @@ model TryOnResult {
   inputHash   String    @map("input_hash")
   /// tryon-private key of the result image (removed when deleted).
   resultKey   String    @map("result_key")
-  /// The fit tried (height, preference, size, girths from the photo; lib/fit/fit.ts tryOnFitSchema), or
+  /// The fit tried (height, size, girths from the photo; lib/fit/fit.ts tryOnFitSchema), or
   /// null. Cleared when the result is deleted.
   fit         Json?
   saved       Boolean   @default(false)
@@ -885,21 +885,15 @@ model Notification {
 
 // ─── Fit ──────────────────────────────────────────────────────────────────────
 
-enum FitPreference {
-  fitted
-  regular
-  relaxed
-}
 
-/// A customer's height and fit preference for try-on, kept only when they tick "Remember on my
+/// A customer's height for try-on, kept only when they tick "Remember on my
 /// account" (lib/fit/profile.ts). Personal data: they can delete it, and it goes with the account.
 model BodyProfile {
-  id            String        @id @default(uuid()) @db.Uuid
-  userId        String        @unique @map("user_id") @db.Uuid
-  heightCm      Int           @map("height_cm")
-  fitPreference FitPreference @map("fit_preference")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  heightCm  Int      @map("height_cm")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -1,17 +1,17 @@
 "use client";
 
 import type { GarmentType } from "@/lib/catalog/garment-types";
-import { FIT_PREFERENCE_LABEL, FIT_PREFERENCES, fitInputSchema, fitReport, type BodyGirth, type FitInput, type FitPreference } from "@/lib/fit/fit";
+import { fitInputSchema, fitReport, type BodyGirth, type FitInput } from "@/lib/fit/fit";
 import type { Size } from "@/lib/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
 // "Your fit" in the try-on panel: height (the only thing the customer types) plus the measurements taken
-// from their photo on this device, and a Fitted / Regular / Relaxed choice, give a fit report for each
-// size and a recommended size; the try-on then shows that size on them.
+// from their photo on this device give the size made for them and a fit report for the size they
+// choose; the try-on then shows that size on them.
 
 export type FitGarment = { type: GarmentType; sizes: readonly Size[]; lengthCm: number | null };
 
-export type FitDraft = { height: string; preference: FitPreference; size: Size | null; remember: boolean };
+export type FitDraft = { height: string; size: Size | null; remember: boolean };
 
 /** What the selected photo told us about the body. */
 export type FitMeasure =
@@ -22,7 +22,7 @@ export type FitMeasure =
 
 /** The draft as a valid fit input, or null while the height is missing or out of range. */
 export function fitInputOf(draft: FitDraft): FitInput | null {
-  const parsed = fitInputSchema.safeParse({ heightCm: draft.height, preference: draft.preference });
+  const parsed = fitInputSchema.safeParse({ heightCm: draft.height });
   return parsed.success ? parsed.data : null;
 }
 
@@ -66,7 +66,7 @@ export function FitSection({
   disabled: boolean;
 }) {
   const input = fitInputOf(draft);
-  const problem = draft.height !== "" && !input ? fitInputSchema.safeParse({ heightCm: draft.height, preference: draft.preference }).error?.issues[0]?.message : null;
+  const problem = draft.height !== "" && !input ? fitInputSchema.safeParse({ heightCm: draft.height }).error?.issues[0]?.message : null;
   const girths = input && measure.kind === "measured" ? measure.girths(input.heightCm) : null;
   const report = input ? fitReport(garment.type, input, girths, garment.sizes, draft.size, garment.lengthCm) : null;
   const set = (patch: Partial<FitDraft>) => onChange({ ...draft, ...patch });
@@ -88,23 +88,6 @@ export function FitSection({
             onChange={(e) => set({ height: e.target.value })}
           />
         </label>
-        <div className="flex flex-col gap-1 text-xs">
-          <span id="fit-preference">How you like it to fit</span>
-          <div className="flex gap-1" role="radiogroup" aria-labelledby="fit-preference">
-            {FIT_PREFERENCES.map((p) => (
-              <button
-                key={p}
-                type="button"
-                role="radio"
-                aria-checked={draft.preference === p}
-                onClick={() => set({ preference: p })}
-                className={cn("h-8 rounded-md border px-2.5 text-sm", draft.preference === p ? "bg-foreground text-background" : "bg-background hover:bg-muted")}
-              >
-                {FIT_PREFERENCE_LABEL[p]}
-              </button>
-            ))}
-          </div>
-        </div>
         <label className="flex flex-col gap-1 text-xs">
           Size to try
           <select className="h-8 rounded-md border bg-background px-2 text-sm" value={draft.size ?? ""} onChange={(e) => set({ size: garment.sizes.find((s) => s === e.target.value) ?? null })}>
@@ -129,7 +112,7 @@ export function FitSection({
         <div className="flex flex-col gap-2 text-sm" data-testid="fit-report" aria-live="polite">
           {report.recommended && (
             <p>
-              Recommended for a {FIT_PREFERENCE_LABEL[draft.preference].toLowerCase()} fit: <strong data-testid="fit-recommended">{report.recommended}</strong>
+              Your size: <strong data-testid="fit-recommended">{report.recommended}</strong>
               {draft.size !== report.recommended && (
                 <button type="button" className="ml-2 text-xs underline" onClick={() => set({ size: report.recommended })}>
                   Try {report.recommended}
@@ -175,7 +158,8 @@ export function FitSection({
           {girths && (
             <p className="text-xs text-muted-foreground">
               {girths.some((g) => g.estimated) && "* Guessed from your other measurements: the photo doesn't show it. "}
-              Measured from one photo, so treat them as a guide: loose clothes make you look bigger.
+              Like it looser or closer? Try the next size up or down. Measured from one photo, so treat them as a guide: loose clothes make you
+              look bigger.
             </p>
           )}
         </div>
@@ -184,11 +168,11 @@ export function FitSection({
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <label className="flex items-center gap-1.5">
           <input type="checkbox" className="size-4" checked={draft.remember} onChange={(e) => set({ remember: e.target.checked })} />
-          Remember my height and fit on my account
+          Remember my height on my account
         </label>
         {savedProfile && (
           <button type="button" className="text-destructive underline" onClick={onForget}>
-            Forget them
+            Forget it
           </button>
         )}
       </div>

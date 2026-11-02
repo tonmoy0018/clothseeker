@@ -112,7 +112,7 @@ test.describe("@supabase virtual try-on", () => {
     await expect(panel.getByRole("radio", { name: "Photo 2" })).toBeVisible({ timeout: 60_000 });
   });
 
-  test("fit: height plus the photo give a recommended size and a report; the try-on shows that size; remembered on request", async ({ page }) => {
+  test("fit: height plus the photo give your size and a report; the try-on shows that size; remembered on request", async ({ page }) => {
     test.setTimeout(120_000);
     await signUpFreshCustomer(page);
     await page.goto("/products/linen-wrap-dress");
@@ -120,6 +120,7 @@ test.describe("@supabase virtual try-on", () => {
     const panel = page.getByTestId("try-on-panel");
     const fit = panel.getByTestId("fit-section");
     await expect(fit.getByLabel("Weight (kg)")).toHaveCount(0);
+    await expect(fit.getByRole("radio")).toHaveCount(0);
     await fit.getByLabel("Height (cm)").fill("90");
     await expect(fit.getByRole("alert")).toContainText("Height must be 120–220 cm.");
     await fit.getByLabel("Height (cm)").fill("160");
@@ -146,10 +147,10 @@ test.describe("@supabase virtual try-on", () => {
     await expect(fit.getByTestId("fit-length")).toContainText("the hem lands");
     await fit.getByRole("button", { name: `Try ${recommended}` }).click();
     await expect(fit.getByTestId("fit-report")).not.toContainText("tight by");
-    await fit.getByLabel("Remember my height and fit on my account").check();
+    await fit.getByLabel("Remember my height on my account").check();
 
     await panel.getByRole("button", { name: "Try it on" }).click();
-    await expect(panel.getByTestId("try-on-fit-shown")).toContainText(`Showing size ${recommended} at 160 cm (regular fit)`, { timeout: 30_000 });
+    await expect(panel.getByTestId("try-on-fit-shown")).toHaveText(`Showing size ${recommended} at 160 cm.`, { timeout: 30_000 });
     // A different size offers an update; nothing reruns by itself.
     await fit.getByLabel("Size to try").selectOption(recommended === "L" ? "M" : "L");
     await expect(panel.getByTestId("try-on-fit-stale")).toContainText(`This try-on shows size ${recommended}`);
@@ -158,7 +159,7 @@ test.describe("@supabase virtual try-on", () => {
     await page.reload();
     await page.getByRole("button", { name: "Try on", exact: true }).click();
     await expect(page.getByTestId("fit-section").getByLabel("Height (cm)")).toHaveValue("160");
-    await page.getByTestId("fit-section").getByRole("button", { name: "Forget them" }).click();
+    await page.getByTestId("fit-section").getByRole("button", { name: "Forget it" }).click();
     await expect(page.getByTestId("try-on-panel")).toContainText("removed from your account");
     await page.reload();
     await page.getByRole("button", { name: "Try on", exact: true }).click();

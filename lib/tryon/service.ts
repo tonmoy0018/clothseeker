@@ -268,7 +268,7 @@ export type TryOnResultView = {
   photoSaved: boolean;
   saved: boolean;
   garmentHash: string;
-  /** The fit it shows (height, preference, size, measured girths), or null when made without one. */
+  /** The fit it shows (height, size, measured girths), or null when made without one. */
   fit: TryOnFit | null;
   expiresAt: string | null;
 };

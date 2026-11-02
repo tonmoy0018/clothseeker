@@ -60,7 +60,7 @@ export async function getTryOnOverviewAction(): Promise<TryOnOverview> {
   return { photos, quota, profile };
 }
 
-/** "Remember my height, weight and fit on my account" (only when the customer ticks it). */
+/** "Remember my height on my account" (only when the customer ticks it). */
 export async function saveBodyProfileAction(input: unknown): Promise<{ status: "ok" } | Failure> {
   const user = await customer();
   if (isFailure(user)) {

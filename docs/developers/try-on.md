@@ -84,7 +84,7 @@ The other Spaces have no text input and ignore it. The cache key is `v: 4` since
 
 ## Fit (height and the photo)
 
-Decided 2026-11-02: customers type **only their height**, pick **Fitted / Regular / Relaxed**, and see a **fit report** while the try-on **shows that size on them**. Their body measurements come from the try-on photo they chose. (A first version also asked for weight; it was dropped the same day, in migration `20261102130302_fit_height_only`.) `lib/fit/fit.ts` and `lib/fit/measure.ts` are pure and shared by the browser and the worker.
+Decided 2026-11-02: customers type **only their height**, choose the size to try, and see **their size** and a **fit report** while the try-on **shows that size on them**. Their body measurements come from the try-on photo they chose. A first version also asked for weight and a Fitted / Regular / Relaxed preference. Both were dropped the same day: the photo replaces weight (migration `20261102130302_fit_height_only`), and someone who likes clothes looser or closer simply tries the next size, which the report describes (`20261102133344_fit_no_preference`). `lib/fit/fit.ts` and `lib/fit/measure.ts` are pure and shared by the browser and the worker.
 
 - **Measuring** (`measurePhoto`, run in the browser by `lib/vision/measure-photo.ts` with the on-device pose and person-outline models; the photo is fetched from its signed URL and nothing is uploaded for this):
   - The body's height in pixels is taken from the top of the head (found in the outline above the nose) to the ankles when the whole person is in the photo. Otherwise it comes from the joints that are visible (shoulder → hip → knee → ankle) at standard proportions (`BODY_LEVELS`). The customer's height turns pixels into centimetres.
@@ -99,22 +99,22 @@ Decided 2026-11-02: customers type **only their height**, pick **Fitted / Regula
     - turned sideways or leaning (shoulders narrower than 0.55 × the torso length, or hips off to the side);
     - widths no body has (outside 0.65–1.8 × typical).
   - Loose clothes still make people look bigger, and the panel says so.
-- **Recommended size** (`fitReport`): among the sizes on sale, the one whose size-chart range ([size-chart.ts](../../lib/catalog/size-chart.ts)) best places the body where the preference wants it: near the top of the range for Fitted, the middle for Regular, the bottom for Relaxed. A size that would be tight is penalised three times as much as a loose one. The report lists, per measurement, the body, the size's range, and "fits", "tight by N cm" or "loose by N cm".
+- **Your size** (`fitReport`): among the sizes on sale, the one whose size-chart range ([size-chart.ts](../../lib/catalog/size-chart.ts)) puts the body nearest its middle. A size that would be tight is penalised three times as much as a loose one. Every seed item comes in XS–XXL. The report lists, per measurement, the body, the size's range, and "fits", "tight by N cm" or "loose by N cm".
 - **Length** (`hemPlace`): garment lengths are measured from the high point of the shoulder, on size M, and graded ±1.5 cm per size (`gradedLength`).
   - Designs use their length option (`STYLE_LENGTH_CM`: mini 85, knee 100, midi 115, maxi 140, hip 78, long 112).
   - Ready-made items use `Product.lengthCm`, which the team enters in the product form (seeded from the catalogue photos), or nothing.
   - With standard body proportions (`BODY_LEVELS`), the hem is described as "at the knee", "6 cm below the knee", "on the floor"… This needs only the height, so it shows even when the photo couldn't be measured.
 - **The picture** (local try-on only):
-  - **What the job carries:** `fit` (height, preference, size, and `girthsCm` from the browser or null). It's part of the cache key, so a new size, height or photo measurement is a new try-on. The girths are the customer's own, measured on their device; they only shape their own preview and are bounds-checked (20–250 cm, exactly 3).
+  - **What the job carries:** `fit` (height, size, and `girthsCm` from the browser or null). It's part of the cache key, so a new size, height or photo measurement is a new try-on. The girths are the customer's own, measured on their device; they only shape their own preview and are bounds-checked (20–250 cm, exactly 3).
   - **What the worker does:** it turns the fit into `widthFactor` (the size's middle against the bust/chest: 1 = made for them or not measured, up to 1.3 loose, down to 0.85 tight) and the hem level.
   - **What `LocalTryOn` does:** it widens or narrows both the mask (`tryOnMask(…, fit)`) and the garment picture (a wider garment is drawn looser, tested), and ends the mask at the hem.
   - **Below the hem the photo is kept** (their own legs or legwear). When we repainted the legs alone, the model drew trousers.
   - The Hugging Face provider ignores the fit; the report still shows.
-- **Remembering** (`lib/fit/profile.ts`, `body_profiles`): only when the customer ticks "Remember my height and fit on my account". "Forget them" deletes it, and it goes with the account. Measurements from photos are never stored on the account. A result's `fit` is cleared when the result is deleted (by the customer or the 24-hour cleanup). Height and measurements are never logged.
+- **Remembering** (`lib/fit/profile.ts`, `body_profiles`): only when the customer ticks "Remember my height on my account". "Forget it" deletes it, and it goes with the account. Measurements from photos are never stored on the account. A result's `fit` is cleared when the result is deleted (by the customer or the 24-hour cleanup). Height and measurements are never logged.
 - **The panel** (`app/(shop)/fit-section.tsx`): an optional section above "Try it on".
   - Each photo is measured once, when it's first chosen.
   - With no size chosen, the try-on uses the recommended one.
-  - A result shows "Showing size M at 165 cm (regular fit)", or "(length only)" when the photo wasn't measured.
+  - A result shows "Showing size M at 165 cm.", or "… (length only)" when the photo wasn't measured.
   - Changing the size, height or photo offers "Update try-on" (it never reruns by itself).
 
 ## Local try-on
@@ -161,7 +161,7 @@ Without these it swapped and took over a minute per step.
   - consent values, staleness rules and upload photo checks
   - garment canvas, the fake check and the fake try-on
   - `HuggingFaceTryOn` against a mocked Gradio client: dress parameters, token, fallback, quota → `TRYON_LIMIT`, abort, and no leaking of Space errors
-- `tests/unit/fit.test.ts`: height-only input, the recommended size per preference (never tight; guessed measurements count less), the per-measurement report, length-only without measurements, hem places, length grading and the width factor.
+- `tests/unit/fit.test.ts`: height-only input, the size made for the body (never tight; guessed measurements count less), the per-measurement report, length-only without measurements, hem places, length grading and the width factor.
 - `tests/unit/fit-measure.test.ts`: measuring a drawn person of known widths (full-length and from the joints), arms beside the body ignored, a waist hidden by a loose top and a men's neck guessed, and each reason a photo can't be measured.
 - `tests/integration/fit-profile.test.ts`: remembering, updating and forgetting a profile, owner-only, refused for admins and impossible values, deleted with the account.
 - `tests/unit/tryon-mask.test.ts`: the local try-on's mask (neck to hem, arms, hands and face kept, room for a skirt, own clothes), the 3:4 crop and the blend.

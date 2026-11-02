@@ -3,9 +3,8 @@ import { describe, expect, it } from "vitest";
 import { SIZE_ORDER } from "@/lib/catalog/size-chart";
 import { fitInputSchema, fitReport, garmentLengthCm, gradedLength, hemPlace, widthFactor, type BodyGirth } from "@/lib/fit/fit";
 
-// Fit from height and the measurements taken from the photo: the recommended size for a Fitted /
-// Regular / Relaxed preference, how the chosen size fits, where the hem lands, and how wide the try-on
-// draws it.
+// Fit from height and the measurements taken from the photo: the size made for the body, how the chosen
+// size fits, where the hem lands, and how wide the try-on draws it.
 
 const ALL = SIZE_ORDER;
 const measured = (...cm: number[]): BodyGirth[] => cm.map((c) => ({ cm: c, estimated: false }));
@@ -13,36 +12,35 @@ const measured = (...cm: number[]): BodyGirth[] => cm.map((c) => ({ cm: c, estim
 const MIDDLE_M = measured(89, 71, 95);
 
 describe("the customer's input", () => {
-  it("is their height and how they like clothes to fit, nothing else", () => {
-    expect(fitInputSchema.safeParse({ heightCm: "165", preference: "regular" }).data).toEqual({ heightCm: 165, preference: "regular" });
-    expect(fitInputSchema.safeParse({ heightCm: 90, preference: "regular" }).success).toBe(false);
-    expect(fitInputSchema.safeParse({ heightCm: 165.5, preference: "regular" }).success).toBe(false);
-    expect(fitInputSchema.safeParse({ heightCm: 165, preference: "baggy" }).success).toBe(false);
+  it("is their height, nothing else", () => {
+    expect(fitInputSchema.safeParse({ heightCm: "165", weightKg: 60, preference: "relaxed" }).data).toEqual({ heightCm: 165 });
+    expect(fitInputSchema.safeParse({ heightCm: 90 }).success).toBe(false);
+    expect(fitInputSchema.safeParse({ heightCm: 165.5 }).success).toBe(false);
   });
 });
 
 describe("recommending a size", () => {
-  const recommend = (girths: BodyGirth[], preference: "fitted" | "regular" | "relaxed", sizes = ALL) => fitReport("dress", { heightCm: 160, preference }, girths, sizes, null, null).recommended;
+  const recommend = (girths: BodyGirth[], sizes = ALL) => fitReport("dress", { heightCm: 160 }, girths, sizes, null, null).recommended;
 
   it("picks the size made for the body", () => {
-    expect(recommend(MIDDLE_M, "regular")).toBe("M");
-    expect(recommend(measured(80, 62, 86), "regular")).toBe("XS");
-    expect(recommend(measured(102, 84, 108), "regular")).toBe("XL");
+    expect(recommend(MIDDLE_M)).toBe("M");
+    expect(recommend(measured(80, 62, 86))).toBe("XS");
+    expect(recommend(measured(102, 84, 108))).toBe("XL");
     // A waist beyond XL's range: the next size up, rather than a tight one.
-    expect(recommend(measured(102, 95, 108), "regular")).toBe("XXL");
+    expect(recommend(measured(102, 95, 108))).toBe("XXL");
   });
 
-  it("goes smaller for Fitted and bigger for Relaxed, never tight", () => {
-    const body = measured(91, 73, 97);
-    const fitted = recommend(body, "fitted");
-    const relaxed = recommend(body, "relaxed");
-    expect(ALL.indexOf(relaxed ?? "M")).toBeGreaterThan(ALL.indexOf(fitted ?? "M"));
-    const report = fitReport("dress", { heightCm: 160, preference: "fitted" }, body, ALL, fitted, null);
-    expect(report.chosen?.lines.some((l) => l.status === "tight")).toBe(false);
+  it("never recommends a size that would be tight", () => {
+    for (const bust of [80, 84, 88, 92, 96, 100, 104, 108]) {
+      const body = measured(bust, bust - 18, bust + 6);
+      const size = recommend(body);
+      const report = fitReport("dress", { heightCm: 160 }, body, ALL, size, null);
+      expect(report.chosen?.lines.some((l) => l.status === "tight")).toBe(false);
+    }
   });
 
   it("only recommends sizes on sale", () => {
-    expect(recommend(measured(80, 62, 86), "regular", ["M", "L"])).toBe("M");
+    expect(recommend(measured(80, 62, 86), ["M", "L"])).toBe("M");
   });
 
   it("counts a guessed measurement for less than a measured one", () => {
@@ -52,25 +50,25 @@ describe("recommending a size", () => {
       { cm: 72, estimated: true },
       { cm: 90, estimated: false },
     ];
-    expect(recommend(body, "regular")).toBe("S");
-    const lines = fitReport("dress", { heightCm: 160, preference: "regular" }, body, ALL, "S", null).chosen?.lines;
+    expect(recommend(body)).toBe("S");
+    const lines = fitReport("dress", { heightCm: 160 }, body, ALL, "S", null).chosen?.lines;
     expect(lines?.map((l) => l.estimated)).toEqual([false, true, false]);
   });
 
   it("says how the chosen size fits, per measurement", () => {
-    const tight = fitReport("dress", { heightCm: 160, preference: "regular" }, measured(100, 82, 106), ALL, "S", null).chosen;
+    const tight = fitReport("dress", { heightCm: 160 }, measured(100, 82, 106), ALL, "S", null).chosen;
     expect(tight?.lines.map((l) => [l.label, l.status])).toEqual([
       ["Bust", "tight"],
       ["Waist", "tight"],
       ["Hip", "tight"],
     ]);
     expect(tight?.lines[0]?.byCm).toBeGreaterThan(10);
-    const loose = fitReport("dress", { heightCm: 160, preference: "regular" }, measured(78, 60, 84), ALL, "L", null).chosen;
+    const loose = fitReport("dress", { heightCm: 160 }, measured(78, 60, 84), ALL, "L", null).chosen;
     expect(loose?.lines.every((l) => l.status === "loose")).toBe(true);
   });
 
   it("without measurements, only says where the hem lands", () => {
-    const report = fitReport("dress", { heightCm: 165, preference: "regular" }, null, ALL, "M", 100);
+    const report = fitReport("dress", { heightCm: 165 }, null, ALL, "M", 100);
     expect(report.recommended).toBeNull();
     expect(report.chosen).toBeNull();
     expect(report.hem?.words).toMatch(/knee/);
@@ -104,7 +102,7 @@ describe("length", () => {
 
 describe("the try-on's width", () => {
   it("is 1 for the size made for the person, wider when it's big, narrower when it's small, within limits", () => {
-    const fit = (size: "XS" | "S" | "M" | "L" | "XL" | "XXL", girthsCm: number[] | null = [89, 71, 95]) => widthFactor("dress", { heightCm: 160, preference: "regular", size, girthsCm });
+    const fit = (size: "XS" | "S" | "M" | "L" | "XL" | "XXL", girthsCm: number[] | null = [89, 71, 95]) => widthFactor("dress", { heightCm: 160, size, girthsCm });
     expect(fit("M")).toBe(1);
     expect(fit("XL")).toBeGreaterThan(1.1);
     expect(fit("XS")).toBeLessThan(0.95);

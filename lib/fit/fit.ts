@@ -5,25 +5,19 @@ import { SIZE_ORDER, sizeChartFor } from "@/lib/catalog/size-chart";
 import type { Size } from "@/lib/generated/prisma/enums";
 
 // How a size fits a customer, from their height and their photo (decided 2026-11-02: height is all they
-// type; a Fitted / Regular / Relaxed choice, a report and a try-on picture that follows the fit). Pure
-// and shared by the browser (the report) and the worker (the try-on's shape), so both agree.
+// type; they choose the size, and get a report and a try-on picture that follows the fit). Pure and
+// shared by the browser (the report) and the worker (the try-on's shape), so both agree.
 //
 // Body girths come from the try-on photo (lib/fit/measure.ts), measured on the customer's device. They
 // are ESTIMATES (a front photo shows width, not depth, and clothes add to it); the report says so.
 
-export const FIT_PREFERENCES = ["fitted", "regular", "relaxed"] as const;
-export type FitPreference = (typeof FIT_PREFERENCES)[number];
-
-export const FIT_PREFERENCE_LABEL: Record<FitPreference, string> = { fitted: "Fitted", regular: "Regular", relaxed: "Relaxed" };
-
 export const fitInputSchema = z.object({
   heightCm: z.coerce.number().int("Enter your height in whole centimetres.").min(120, "Height must be 120–220 cm.").max(220, "Height must be 120–220 cm."),
-  preference: z.enum(FIT_PREFERENCES),
 });
 export type FitInput = z.infer<typeof fitInputSchema>;
 
 /**
- * A try-on's fit: the customer's height and preference, the size they're trying, and the girths measured
+ * A try-on's fit: the customer's height, the size they're trying, and the girths measured
  * from their photo in the size chart's order (null when the photo couldn't be measured: then only the
  * length follows the fit). Measured in the customer's browser; they only shape their own preview.
  */
@@ -40,9 +34,6 @@ export type BodyGirth = { cm: number; estimated: boolean };
 const IMPORTANCE: Record<Audience, readonly number[]> = { women: [1, 0.6, 0.8], men: [1, 0.6, 0.4] };
 /** An estimated measurement counts half as much as a measured one. */
 const ESTIMATED_IMPORTANCE = 0.5;
-
-/** Where in a size's range each preference wants the body: near the top is snug, near the bottom loose. */
-const TARGET: Record<FitPreference, number> = { fitted: 0.8, regular: 0.5, relaxed: 0.2 };
 
 export type FitStatus = "tight" | "good" | "loose";
 
@@ -61,7 +52,7 @@ export type FitLine = {
 
 export type SizeFit = { size: Size; lines: FitLine[]; score: number };
 
-function sizeFit(type: GarmentType, girths: readonly BodyGirth[], size: Size, preference: FitPreference): SizeFit | null {
+function sizeFit(type: GarmentType, girths: readonly BodyGirth[], size: Size): SizeFit | null {
   const chart = sizeChartFor(type);
   const row = chart.rows.find((r) => r.size === size);
   if (!row) return null;
@@ -72,7 +63,8 @@ function sizeFit(type: GarmentType, girths: readonly BodyGirth[], size: Size, pr
     const girth = girths[i] ?? { cm: 0, estimated: true };
     const body = girth.cm;
     const [lo, hi] = range;
-    const target = lo + TARGET[preference] * (hi - lo);
+    // The size made for a body sits in the middle of its range.
+    const target = (lo + hi) / 2;
     // Too small hurts more than too big: a garment can be worn loose, not tight.
     const weight = (importance[i] ?? 1) * (girth.estimated ? ESTIMATED_IMPORTANCE : 1);
     score += weight * (Math.abs(body - target) + (body > hi ? 3 * (body - hi) : 0));
@@ -85,7 +77,7 @@ function sizeFit(type: GarmentType, girths: readonly BodyGirth[], size: Size, pr
 }
 
 export type FitReport = {
-  /** The size of `sizes` that best matches the preference (null without measurements). */
+  /** The size of `sizes` made for this body (null without measurements). */
   recommended: Size | null;
   /** How the chosen size fits (null without measurements). */
   chosen: SizeFit | null;
@@ -94,15 +86,15 @@ export type FitReport = {
 };
 
 /**
- * The fit of `size` and the best of `sizes` (those on sale) for this person and preference. Without
- * girths (a photo that couldn't be measured) only the hem is known.
+ * The fit of `size` and the best of `sizes` (those on sale) for this person. Without girths (a photo
+ * that couldn't be measured) only the hem is known.
  */
 export function fitReport(type: GarmentType, input: FitInput, girths: readonly BodyGirth[] | null, sizes: readonly Size[], size: Size | null, lengthCm: number | null): FitReport {
   const hem = lengthCm && size ? hemPlace(input.heightCm, gradedLength(lengthCm, size)) : null;
   if (!girths) return { recommended: null, chosen: null, hem };
-  const fits = SIZE_ORDER.filter((s) => sizes.includes(s)).flatMap((s) => sizeFit(type, girths, s, input.preference) ?? []);
+  const fits = SIZE_ORDER.filter((s) => sizes.includes(s)).flatMap((s) => sizeFit(type, girths, s) ?? []);
   const best = fits.reduce<SizeFit | null>((a, b) => (a === null || b.score < a.score ? b : a), null);
-  const chosen = size ? sizeFit(type, girths, size, input.preference) : null;
+  const chosen = size ? sizeFit(type, girths, size) : null;
   return { recommended: best?.size ?? null, chosen, hem };
 }
 

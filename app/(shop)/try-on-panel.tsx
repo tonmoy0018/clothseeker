@@ -45,7 +45,6 @@ const sameFit = (a: TryOnFit | null, b: TryOnFit | null) =>
   (a !== null &&
     b !== null &&
     a.heightCm === b.heightCm &&
-    a.preference === b.preference &&
     a.size === b.size &&
     JSON.stringify(a.girthsCm) === JSON.stringify(b.girthsCm));
 
@@ -71,7 +70,7 @@ export function TryOnPanel({
   garment: TryOnGarmentFacts;
   offeredPhoto?: Blob | null;
 }) {
-  const [fitDraft, setFitDraft] = useState<FitDraft>({ height: "", preference: "regular", size: source.kind === "design" ? source.spec.size : null, remember: false });
+  const [fitDraft, setFitDraft] = useState<FitDraft>({ height: "", size: source.kind === "design" ? source.spec.size : null, remember: false });
   const [measures, setMeasures] = useState<Record<string, MeasureState>>({});
   const measuring = useRef(new Set<string>());
   const [savedProfile, setSavedProfile] = useState(false);
@@ -100,7 +99,7 @@ export function TryOnPanel({
       const profile = overview.profile;
       if (profile) {
         setSavedProfile(true);
-        setFitDraft((d) => ({ ...d, height: String(profile.heightCm), preference: profile.preference, remember: true }));
+        setFitDraft((d) => ({ ...d, height: String(profile.heightCm), remember: true }));
       }
     });
   }, [signedIn]);
@@ -271,7 +270,7 @@ export function TryOnPanel({
       if (response.status === "ok") {
         setSavedProfile(false);
         setFitDraft((d) => ({ ...d, remember: false }));
-        setNotice("Your height and fit were removed from your account.");
+        setNotice("Your height was removed from your account.");
       }
     });
   }
@@ -461,7 +460,7 @@ export function TryOnPanel({
           )}
           {result.fit && !fitStale && (
             <p className="text-xs text-muted-foreground" data-testid="try-on-fit-shown">
-              Showing size {result.fit.size} at {result.fit.heightCm} cm ({result.fit.girthsCm ? `${result.fit.preference} fit` : "length only"}).
+              Showing size {result.fit.size} at {result.fit.heightCm} cm{result.fit.girthsCm ? "" : " (length only)"}.
             </p>
           )}
           <div className="grid grid-cols-2 gap-3">
