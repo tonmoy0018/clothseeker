@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { CloudflareImage, DEFAULT_CLOUDFLARE_IMAGE_MODEL, motifPrompt } from "@/lib/ai/cloudflare";
 import { AiProviderError } from "@/lib/ai/errors";
-import { GeminiPlanner, planResponseSchema } from "@/lib/ai/gemini";
+import { GeminiGarmentShot, GeminiPlanner, planResponseSchema } from "@/lib/ai/gemini";
 import type { FetchLike } from "@/lib/ai/http";
 import { getAiProviders } from "@/lib/ai";
 import { planConstraints, summarizeSpec } from "@/lib/ai/plan";
@@ -92,6 +92,21 @@ describe("GeminiPlanner", () => {
     const variation = planResponseSchema(request.constraints);
     const items = z.object({ properties: z.object({ variations: z.object({ items: z.object({ required: z.array(z.string()) }) }) }) }).parse(variation);
     expect(items.properties.variations.items.required).toEqual(["title", "summary"]);
+  });
+
+  it("makes a product shot with the image model, and treats anything else as no shot", async () => {
+    const png = Buffer.from("fake-png-bytes");
+    const ok = mockFetch(() => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "here" }, { inlineData: { mimeType: "image/png", data: png.toString("base64") } }] } }] })));
+    const shot = new GeminiGarmentShot({ apiKey: "test-key-0123456789abcdef", model: "gemini-2.5-flash-image", fetch: ok.fetchImpl });
+    expect(await shot.productShot(request.images[0] ?? { data: png, mimeType: "image/png" }, signal)).toEqual(png);
+    expect(ok.calls[0]?.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent");
+    const body: unknown = JSON.parse(String(ok.calls[0]?.init.body));
+    expect(body).toMatchObject({ generationConfig: { responseModalities: ["IMAGE"] } });
+    // Free tier without an image allowance, a block, text only: no shot, no error.
+    for (const reply of [new Response("{}", { status: 429 }), new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "no" }] } }] })), new Response("not json")]) {
+      const denied = new GeminiGarmentShot({ apiKey: "test-key-0123456789abcdef", model: "m", fetch: mockFetch(() => reply).fetchImpl });
+      expect(await denied.productShot({ data: png, mimeType: "image/png" }, signal)).toBeNull();
+    }
   });
 
   it("parses the logo check", async () => {
@@ -232,6 +247,8 @@ describe("getAiProviders", () => {
     TRYON_SPACES: ["levihsu/OOTDiffusion"],
     LOCAL_TRYON_STEPS: 30,
     LOCAL_TRYON_WIDTH: 384,
+    GARMENT_SHOT_PROVIDER: "none" as const,
+    GEMINI_IMAGE_MODEL: "gemini-2.5-flash-image",
   };
 
   it("uses the fakes by default and the real adapters when configured", () => {
@@ -246,5 +263,9 @@ describe("getAiProviders", () => {
     });
     expect(real).toMatchObject({ planner: { name: "gemini" }, image: { name: "cloudflare" } });
     expect(() => getAiProviders({ ...env, PLANNER_PROVIDER: "gemini" })).toThrow(/GEMINI_API_KEY/);
+    // Product shots of customers' own garments: off unless asked for, and then they need the key.
+    expect(getAiProviders(env).garmentShot).toBeUndefined();
+    expect(getAiProviders({ ...env, GARMENT_SHOT_PROVIDER: "gemini", GEMINI_API_KEY: "test-key-0123456789abcdef" }).garmentShot?.name).toBe("gemini");
+    expect(() => getAiProviders({ ...env, GARMENT_SHOT_PROVIDER: "gemini" })).toThrow(/GEMINI_API_KEY/);
   });
 });

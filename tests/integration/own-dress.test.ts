@@ -10,7 +10,7 @@ import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn }
 import { createDesignRoundJob, getJobStatus } from "@/lib/ai/jobs";
 import { storedOptionsSchema } from "@/lib/ai/rounds";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";
-import type { PlannerProvider } from "@/lib/ai/types";
+import type { GarmentShotProvider, PlannerProvider } from "@/lib/ai/types";
 import { processNextJob, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import type { Actor } from "@/lib/auth/policy";
 import { getCustomizationTemplate } from "@/lib/catalog/template-loader";
@@ -38,11 +38,11 @@ beforeEach(async () => {
   await createProduct({ variants: [{ size: "M", color: "Sage", priceMinor: 320_000, stock: 3 }] });
 });
 
-function deps(planner: PlannerProvider = new FakePlanner()): AiWorkerDeps {
+function deps(planner: PlannerProvider = new FakePlanner(), garmentShot?: GarmentShotProvider): AiWorkerDeps {
   return {
     db,
     storage,
-    providers: { planner, image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker() },
+    providers: { planner, image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker(), ...(garmentShot ? { garmentShot } : {}) },
     workerId: "worker-a",
     timeoutMs: 30_000,
     backoffMs: () => 0,
@@ -52,10 +52,10 @@ function deps(planner: PlannerProvider = new FakePlanner()): AiWorkerDeps {
 /** An AI-generated catalogue photo of a dress on a plain backdrop. */
 const dressPhoto = () => readFile(path.join(process.cwd(), "prisma", "seed-photos", "cotton-tiered-midi.jpg"));
 
-async function ownDress(customer: Actor, exact: boolean, photo?: Buffer, options: { garmentType?: string; planner?: PlannerProvider } = {}) {
+async function ownDress(customer: Actor, exact: boolean, photo?: Buffer, options: { garmentType?: string; planner?: PlannerProvider; garmentShot?: GarmentShotProvider } = {}) {
   const reference = await uploadReferencePhoto(storage, customer, photo ?? (await dressPhoto()));
   const { jobId } = await startDesignFrom(db, storage, customer, { mode: "own", referenceKey: reference.key, garmentType: options.garmentType ?? "auto", exact });
-  await processNextJob(deps(options.planner));
+  await processNextJob(deps(options.planner, options.garmentShot));
   return { jobId, referenceKey: reference.key, status: await getStartStatus(db, customer, jobId) };
 }
 
@@ -112,6 +112,25 @@ describe("your own dress from a photo", () => {
     const [view] = await listMyQuotes(db, storage, ava);
     expect(view?.id).toBe(quoteId);
     expect(view?.garmentDescription).toContain("A softly gathered dress with tiers.");
+  });
+
+  it("uses an AI product shot when the image model makes one, and the customer's photo when it can't", async () => {
+    const ava = await createUser();
+    const maxi = await readFile(path.join(process.cwd(), "prisma", "seed-photos", "block-print-maxi-dress.jpg"));
+    const seen: number[] = [];
+    const making: GarmentShotProvider = { name: "test", productShot: async (image) => (seen.push(image.data.length), maxi) };
+    const made = await ownDress(ava, false, undefined, { garmentShot: making });
+    if (made.status.state !== "done") throw new Error(`expected done, got ${JSON.stringify(made.status)}`);
+    expect(seen).toHaveLength(1);
+    const product = await db.product.findUniqueOrThrow({ where: { id: made.status.result.productId } });
+    expect(product.description).toContain("AI product shot");
+    // The customer's own photo stays the reference.
+    expect(await db.design.findUniqueOrThrow({ where: { id: made.status.result.designId } })).toMatchObject({ referencePhotoKey: expect.stringContaining("/references/") });
+
+    const refusing: GarmentShotProvider = { name: "test", productShot: async () => null };
+    const plain = await ownDress(ava, false, undefined, { garmentShot: refusing });
+    if (plain.status.state !== "done") throw new Error("expected done");
+    expect((await db.product.findUniqueOrThrow({ where: { id: plain.status.result.productId } })).description).not.toContain("AI product shot");
   });
 
   it("still works when the AI can't read the photo: named and cut out as before", async () => {

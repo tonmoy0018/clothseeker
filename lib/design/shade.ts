@@ -1,14 +1,22 @@
 // Recolouring a garment PHOTO (template `recolor: "shade"`): the new colour takes the photo's light and
 // shadow. A dark navy dress can become pale pink, which multiplying can't do. Each pixel's brightness is
 // stretched between the region's darkest and brightest fabric (2nd and 98th percentile), then scales
-// the new colour from SHADE_MIN (deep folds) to SHADE_MAX (highlights).
+// the new colour from SHADE_MIN (deep folds) to SHADE_MAX (highlights). Dark fabric (black, navy) is
+// mostly near its darkest, so stretching would show most of the new colour dim: there the typical
+// brightness (`mid`) shows the colour at DARK_NORMAL, and folds and highlights move it from there.
 // Pure and shared by the server renderer and the browser preview, so both paint the same pixels.
 
 const SHADE_MIN = 0.45;
 const SHADE_MAX = 1.05;
 const MIN_SPREAD = 0.06;
 
-export type ShadeRange = { low: number; high: number };
+/** `mid` (dark fabric only): the fabric's typical brightness, shown at close to the true colour. */
+export type ShadeRange = { low: number; high: number; mid?: number };
+
+/** Fabric whose typical (median) brightness is below this is "dark" (shiny trims and edges don't count). */
+const DARK_FABRIC = 0.3;
+/** How strongly the new colour shows at dark fabric's typical brightness. */
+const DARK_NORMAL = 0.95;
 
 /** Perceived brightness (0–1) of an sRGB pixel. */
 export function luminance(r: number, g: number, b: number): number {
@@ -42,7 +50,8 @@ export function shadeRange(rgb: ArrayLike<number>, channels: number, mask: Array
   };
   const low = at(0.02);
   const high = at(0.98);
-  if (high - low >= MIN_SPREAD) return { low, high };
+  const mid = at(0.5);
+  if (high - low >= MIN_SPREAD) return mid < DARK_FABRIC ? { low, high, mid } : { low, high };
   // Nearly flat fabric: place it high in a minimal range, so it shows close to the true colour.
   const middle = (low + high) / 2;
   return { low: middle - 0.7 * MIN_SPREAD, high: middle + 0.3 * MIN_SPREAD };
@@ -50,6 +59,10 @@ export function shadeRange(rgb: ArrayLike<number>, channels: number, mask: Array
 
 /** The factor applied to the new colour at a pixel of this brightness. */
 export function shadeFactor(brightness: number, range: ShadeRange): number {
+  if (range.mid !== undefined) {
+    const offset = (brightness - range.mid) / (range.high - range.low);
+    return Math.min(SHADE_MAX, Math.max(SHADE_MIN, DARK_NORMAL + offset * (SHADE_MAX - SHADE_MIN)));
+  }
   const t = Math.min(1, Math.max(0, (brightness - range.low) / (range.high - range.low)));
   return SHADE_MIN + (SHADE_MAX - SHADE_MIN) * t;
 }

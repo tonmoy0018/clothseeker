@@ -1,9 +1,11 @@
 import sharp from "sharp";
 
 import type { GarmentType } from "@/lib/catalog/garment-types";
+import { slugify } from "@/lib/text/slug";
 import type { PlacementArea } from "@/types/template";
 
 import { alignGarmentPhoto, frameGarmentPhoto, maskPng, PHOTO_HEIGHT, PHOTO_WIDTH, type AlignedPhoto, type PhotoBox } from "./align";
+import type { PartHint } from "./parts";
 import type { Mask } from "./segment";
 import type { StyleChoice } from "./style-files";
 
@@ -47,18 +49,55 @@ export async function photoPicture(raw: Buffer, type: GarmentType, side: "front"
   return pictureFrom(await alignGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders"), type, side, match);
 }
 
+/** A part of a customer's own garment: its region id and label, and its mask (grey PNG + working size). */
+export type OwnRegion = { id: string; label: string; png: Buffer; work: Mask };
+
+/** A region id from a part's name: lowercase words joined by hyphens, unique, never an area id. */
+function regionId(label: string, taken: Set<string>): string {
+  const base = slugify(label, 30) || "part";
+  let id = base;
+  for (let n = 2; taken.has(id) || id === "whole-front" || id.endsWith("-print"); n += 1) id = `${base}-${n}`;
+  taken.add(id);
+  return id;
+}
+
 /**
  * A customer's own garment photo (lib/own-dress): the whole garment, cut out onto a studio backdrop and
- * cut into its parts, with the picture's real size for the print areas.
+ * cut into ITS parts (the AI's `hints`: jacket body, inner shirt…), or, without usable hints, into the
+ * shape-based parts (sleeves, bodice, skirt for dresses; one body for tops). Print areas cover the whole
+ * front and each sizeable part.
  */
 export async function ownPhotoPicture(
   raw: Buffer,
   type: GarmentType,
-  match: StyleChoice,
   within?: PhotoBox,
-): Promise<{ picture: PhotoPicture; pictureCm: { w: number; h: number } }> {
-  const framed = await frameGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders", within);
-  return { picture: await pictureFrom(framed, type, "front", match), pictureCm: framed.pictureCm };
+  hints?: readonly PartHint[],
+): Promise<{ image: Buffer; regions: OwnRegion[]; printAreas: PlacementArea[] }> {
+  const framed = await frameGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders", within, hints);
+  const taken = new Set<string>();
+  let regions: OwnRegion[];
+  if (framed.hintedParts && hints) {
+    regions = framed.hintedParts.flatMap((part, i) => {
+      const hint = hints[i];
+      return hint && part.area > 0 && part.work.data.some((v) => v === 1) ? [{ id: regionId(hint.label, taken), label: hint.label, png: part.png, work: part.work }] : [];
+    });
+  } else {
+    const picture = await pictureFrom(framed, type, "front", {});
+    regions = await Promise.all(
+      photoRegionsFor(type).flatMap(({ id, label }) => {
+        const work = picture.workMasks[id];
+        const png = picture.masks[id];
+        return work && png ? [Promise.resolve({ id: regionId(id, taken), label, png, work })] : [];
+      }),
+    );
+  }
+  const total = regions.reduce((n, r) => n + r.work.data.reduce((m, v) => m + v, 0), 0);
+  const printAreas = [
+    ...printArea("whole-front", "Whole front", regions.map((r) => r.work), framed.pictureCm),
+    // Each part big enough to print on gets its own area.
+    ...regions.flatMap((r) => (r.work.data.reduce((m, v) => m + v, 0) >= total * 0.1 ? printArea(`${r.id}-print`, r.label.slice(0, 40), [r.work], framed.pictureCm) : [])),
+  ];
+  return { image: await sharp(framed.image).webp({ quality: 90 }).toBuffer(), regions, printAreas };
 }
 
 async function pictureFrom(aligned: AlignedPhoto, type: GarmentType, side: "front" | "back", match: StyleChoice): Promise<PhotoPicture> {
@@ -112,23 +151,25 @@ function boundingBox(masks: readonly Mask[]): Box | null {
  * trim to the fabric: customers can place items anywhere on the garment, and whatever falls off the
  * chosen style's outline isn't printed.
  */
-/** `pictureCm` overrides the catalogue framing's size (a customer's own photo, framed whole). */
-export function printAreasFor(type: GarmentType, pictures: readonly PhotoPicture[], pictureCm?: { w: number; h: number }): PlacementArea[] {
-  const cm = pictureCm ?? PICTURE_CM[type === "dress" ? "dress" : "top"];
+/** One print area over everything on these masks (front), trimmed to the fabric; none if they're empty. */
+function printArea(id: string, label: string, masks: readonly Mask[], cm: { w: number; h: number }, side: "front" | "back" = "front"): PlacementArea[] {
   const round = (v: number) => Math.round(v * 10_000) / 10_000;
-  const area = (id: string, label: string, side: "front" | "back", regions: readonly PhotoRegion[]): PlacementArea[] => {
-    const masks = pictures.filter((p) => p.side === side).flatMap((p) => regions.flatMap((r) => p.workMasks[r] ?? []));
-    const box = boundingBox(masks);
-    if (!box) return [];
-    const pad = 0.005;
-    const x = Math.max(0, box.x0 - pad);
-    const y = Math.max(0, box.y0 - pad);
-    const w = Math.min(1, box.x1 + pad) - x;
-    const h = Math.min(1, box.y1 + pad) - y;
-    const widthCm = Math.min(100, Math.round(w * cm.w * 2) / 2);
-    const heightCm = Math.min(150, Math.round(h * cm.h * 2) / 2);
-    return [{ id, label, side, rect: { x: round(x), y: round(y), w: round(w), h: round(h) }, widthCm, heightCm, clipToFabric: true }];
-  };
+  const box = boundingBox(masks);
+  if (!box) return [];
+  const pad = 0.005;
+  const x = Math.max(0, box.x0 - pad);
+  const y = Math.max(0, box.y0 - pad);
+  const w = Math.min(1, box.x1 + pad) - x;
+  const h = Math.min(1, box.y1 + pad) - y;
+  const widthCm = Math.min(100, Math.round(w * cm.w * 2) / 2);
+  const heightCm = Math.min(150, Math.round(h * cm.h * 2) / 2);
+  return [{ id, label, side, rect: { x: round(x), y: round(y), w: round(w), h: round(h) }, widthCm, heightCm, clipToFabric: true }];
+}
+
+export function printAreasFor(type: GarmentType, pictures: readonly PhotoPicture[]): PlacementArea[] {
+  const cm = PICTURE_CM[type === "dress" ? "dress" : "top"];
+  const area = (id: string, label: string, side: "front" | "back", regions: readonly PhotoRegion[]): PlacementArea[] =>
+    printArea(id, label, pictures.filter((p) => p.side === side).flatMap((p) => regions.flatMap((r) => p.workMasks[r] ?? [])), cm, side);
   const all = photoRegionsFor(type).map((r) => r.id);
   return [
     // Area ids differ from region ids (bodice, skirt…): a template's ids must be unique across both.

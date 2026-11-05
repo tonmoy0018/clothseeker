@@ -1,6 +1,7 @@
 import sharp from "sharp";
 
-import { findGarment, splitGarment, type GarmentParts, type Mask, type RgbImage } from "./segment";
+import { assignParts, type PartHint } from "./parts";
+import { findGarment, maskArea, splitGarment, type GarmentParts, type Mask, type RgbImage } from "./segment";
 
 // Lines garment photos up so every style picture of a dress has the same framing: shoulders at the
 // same height, centred, and the same shoulders-to-waist size, so the body is the same size in every
@@ -181,6 +182,8 @@ const SHOULDER_CM: Record<AlignBy, number> = { torso: 37, shoulders: 46 };
 export type FramedPhoto = AlignedPhoto & {
   /** Real size of the whole picture in cm, from the garment's shoulder width. */
   pictureCm: { w: number; h: number };
+  /** With part hints (lib/garment-photo/parts.ts): each hinted part's mask, in the hints' order. */
+  hintedParts: { png: Buffer; work: Mask; area: number }[] | null;
 };
 
 /**
@@ -189,12 +192,24 @@ export type FramedPhoto = AlignedPhoto & {
  * part masks moved along. Unlike alignGarmentPhoto there's no catalogue framing to match, so nothing of
  * the garment is cut off or blown up. Throws SegmentationError if no garment is found.
  */
-export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso", within?: PhotoBox): Promise<FramedPhoto> {
+export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso", within?: PhotoBox, hints?: readonly PartHint[]): Promise<FramedPhoto> {
   // A customer's garment may be more than one colour (a jacket open over a shirt).
   const { parts, scale } = await analysePhoto(input, 800, "several", within);
   const meta = await sharp(input).metadata();
   const sourceW = meta.width ?? 1;
   const sourceH = meta.height ?? 1;
+
+  // The AI's parts of this garment: each pixel to the part that explains it best, and only what lies in
+  // some part's box stays garment (no mannequin neck, no trousers under a jacket).
+  let hinted: Mask[] | null = null;
+  if (hints && hints.length >= 2) {
+    const assigned = assignParts(await readRgb(input, 800), parts.garment, parts, hints);
+    const used = assigned.parts.filter((m) => maskArea(m) > 0).length;
+    if (used >= 2 && maskArea(assigned.garment) >= maskArea(parts.garment) * 0.5) {
+      parts.garment = assigned.garment;
+      hinted = assigned.parts;
+    }
+  }
 
   // The garment's box in the source photo.
   let x0 = parts.garment.width;
@@ -272,6 +287,8 @@ export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso
     return { png: grey, work };
   };
 
+  const hintedParts = hinted ? await Promise.all(hinted.map(async (m) => ({ ...(await moveMask(m)), area: maskArea(m) }))) : null;
+
   // Shoulders are found reliably on single garments; an outfit or an open jacket can fool it, so it's
   // kept within what a garment's shoulders can be against its own width.
   const shoulderPx = Math.min(outW, Math.max(outW * 0.45, parts.shoulderWidth * scale * factor));
@@ -280,5 +297,6 @@ export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso
     image,
     masks: { sleeves: await moveMask(parts.sleeves), bodice: await moveMask(parts.bodice), skirt: await moveMask(parts.skirt) },
     pictureCm: { w: PHOTO_WIDTH * cmPerPx, h: PHOTO_HEIGHT * cmPerPx },
+    hintedParts,
   };
 }

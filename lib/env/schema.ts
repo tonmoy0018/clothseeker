@@ -43,6 +43,12 @@ const aiEnvShape = {
   CLOUDFLARE_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   CLOUDFLARE_API_TOKEN: z.string().min(20).optional(),
   CLOUDFLARE_IMAGE_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-1-schnell"),
+  /**
+   * A customer's own garment photo turned into a clean product shot by an image model before it's cut out
+   * (lib/own-dress). "none" (default) skips it; with "gemini", a refusal or quota error falls back to the photo.
+   */
+  GARMENT_SHOT_PROVIDER: z.enum(["none", "gemini"]).default("none"),
+  GEMINI_IMAGE_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-2.5-flash-image"),
   /** Artificial latency of the fake providers, so loading states are visible in development. */
   AI_FAKE_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(1_500),
   /** Hard limit for one attempt at an AI job. */
@@ -103,9 +109,11 @@ export const workerEnvSchema = z.object({
 });
 
 /** Keys the chosen providers need but don't have. */
-export function missingAiKeys(env: { PLANNER_PROVIDER: string; IMAGE_PROVIDER: string } & Partial<Record<"GEMINI_API_KEY" | "CLOUDFLARE_ACCOUNT_ID" | "CLOUDFLARE_API_TOKEN", string>>): string[] {
+export function missingAiKeys(
+  env: { PLANNER_PROVIDER: string; IMAGE_PROVIDER: string; GARMENT_SHOT_PROVIDER?: string } & Partial<Record<"GEMINI_API_KEY" | "CLOUDFLARE_ACCOUNT_ID" | "CLOUDFLARE_API_TOKEN", string>>,
+): string[] {
   const missing: string[] = [];
-  if (env.PLANNER_PROVIDER === "gemini" && !env.GEMINI_API_KEY) {
+  if ((env.PLANNER_PROVIDER === "gemini" || env.GARMENT_SHOT_PROVIDER === "gemini") && !env.GEMINI_API_KEY) {
     missing.push("GEMINI_API_KEY");
   }
   if (env.IMAGE_PROVIDER === "cloudflare") {

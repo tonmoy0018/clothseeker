@@ -4,7 +4,7 @@ import { findBrandTerm } from "@/lib/ai/brands";
 import { GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 
 // What the AI reads in a customer's own garment photo (PlannerProvider.readGarment): what it is, where it
-// is in the photo, its style, colours and details. The answer is untrusted: it's parsed here, words are
+// is in the photo, its own parts (each with a box and its main colour), its style, colours and details. The answer is untrusted: it's parsed here, words are
 // trimmed and cleared of brand names, and anything unusable is dropped, so a bad answer only means the
 // garment is handled as if the AI hadn't been asked (lib/own-dress/build.ts).
 
@@ -32,7 +32,22 @@ const rawReadingSchema = z.object({
   colours: z.array(z.object({ name: words(24), hex: z.string().regex(/^#[0-9a-f]{6}$/i) })).max(3).nullish().catch(null),
   pattern: optionalWords(40),
   details: z.array(words(40)).max(5).nullish().catch(null),
+  /** The garment's own parts a customer could recolour separately (jacket body, inner shirt, hood…). */
+  parts: z
+    .array(
+      z.object({
+        label: words(24),
+        box: z.object({ top: z.number(), left: z.number(), bottom: z.number(), right: z.number() }),
+        hex: z.string().regex(/^#[0-9a-f]{6}$/i),
+      }),
+    )
+    .max(8)
+    .nullish()
+    .catch(null),
 });
+
+/** At most this many parts, so the Fabric tab stays usable. */
+export const MAX_PARTS = 7;
 
 /** A box as fractions (0–1) of the photo. */
 export type Box = { top: number; left: number; bottom: number; right: number };
@@ -46,7 +61,11 @@ export type GarmentReading = {
   description: string | null;
   box: Box | null;
   style: { neckline: string | null; sleeves: string | null; length: string | null };
+  /** The garment's own parts (2 or more, else none): what each is, where (a box) and its colour. */
+  parts: GarmentPart[];
 };
+
+export type GarmentPart = { label: string; box: Box; hex: string };
 
 const nonEmpty = (s: string | null | undefined) => (s ? s : null);
 
@@ -55,12 +74,24 @@ export function parseGarmentReading(raw: unknown): GarmentReading | null {
   const parsed = rawReadingSchema.safeParse(raw);
   if (!parsed.success) return null;
   const r = parsed.data;
+  const f = (v: number) => Math.min(1, Math.max(0, v / 1000));
+  const toBox = (b: { top: number; left: number; bottom: number; right: number }): Box => ({ top: f(b.top), left: f(b.left), bottom: f(b.bottom), right: f(b.right) });
   let box: Box | null = null;
   if (r.box) {
-    const f = (v: number) => Math.min(1, Math.max(0, v / 1000));
-    const candidate = { top: f(r.box.top), left: f(r.box.left), bottom: f(r.box.bottom), right: f(r.box.right) };
+    const candidate = toBox(r.box);
     // A garment fills a fair part of a photo; a sliver or an inverted box is no help.
     if (candidate.bottom - candidate.top >= 0.15 && candidate.right - candidate.left >= 0.1) box = candidate;
+  }
+  // Parts: named, with a box of some size; one name once. Fewer than two parts isn't a split.
+  const seen = new Set<string>();
+  const parts: GarmentPart[] = [];
+  for (const part of r.parts ?? []) {
+    const label = part.label;
+    const partBox = toBox(part.box);
+    if (!label || seen.has(label.toLowerCase()) || partBox.bottom - partBox.top < 0.02 || partBox.right - partBox.left < 0.02) continue;
+    seen.add(label.toLowerCase());
+    parts.push({ label: `${label.charAt(0).toUpperCase()}${label.slice(1)}`, box: partBox, hex: part.hex.toLowerCase() });
+    if (parts.length === MAX_PARTS) break;
   }
   const colours = (r.colours ?? []).map((c) => c.name).filter(Boolean);
   const extras = [
@@ -75,6 +106,7 @@ export function parseGarmentReading(raw: unknown): GarmentReading | null {
     description: description ? description.slice(0, 600) : null,
     box,
     style: { neckline: nonEmpty(r.neckline), sleeves: nonEmpty(r.sleeves), length: nonEmpty(r.length) },
+    parts: parts.length >= 2 ? parts : [],
   };
 }
 

@@ -128,4 +128,12 @@ export interface TryOnPhotoChecker {
   checkTryOnPhoto(image: ProviderImage, signal: AbortSignal): Promise<TryOnPhotoCheck>;
 }
 
-export type AiProviders = { planner: PlannerProvider; image: ImageProvider; tryOn: TryOnProvider; photoCheck: TryOnPhotoChecker };
+/** Turns a customer's own garment photo into a clean product shot of the same garment (lib/own-dress). */
+export interface GarmentShotProvider {
+  readonly name: string;
+  /** The product shot (image bytes, untrusted until re-encoded), or null when the model can't or won't (quota, refusal). */
+  productShot(image: ProviderImage, signal: AbortSignal): Promise<Buffer | null>;
+}
+
+/** `garmentShot` is optional: without it, customers' own garments are cut out of their photos as they are. */
+export type AiProviders = { planner: PlannerProvider; image: ImageProvider; tryOn: TryOnProvider; photoCheck: TryOnPhotoChecker; garmentShot?: GarmentShotProvider };

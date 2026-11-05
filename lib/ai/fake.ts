@@ -118,6 +118,11 @@ export class FakePlanner implements PlannerProvider {
       colours: [{ name: "Main colour", hex }],
       pattern: null,
       details: ["Tiered skirt"],
+      // The top third and the rest: a bodice and a skirt, both in the photo's colour.
+      parts: [
+        { label: "Bodice", box: { top: 10, left: 10, bottom: 360, right: 990 }, hex },
+        { label: "Skirt", box: { top: 340, left: 10, bottom: 990, right: 990 }, hex },
+      ],
     };
   }
 

@@ -1,5 +1,6 @@
 import { styleOptionsFor, templateStyleGroups } from "@/types/template";
 import { loadDesignContext, type DesignContext } from "@/lib/design/service";
+import { processImage } from "@/lib/media/process-image";
 import { buildOwnDress, OwnDressError, removeOwnDress } from "@/lib/own-dress/build";
 import { parseGarmentReading } from "@/lib/own-dress/read";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -79,11 +80,29 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
     throw new AiJobRejected("INTERNAL");
   }
   const photo = await checkedPhoto(deps, job, input.referenceKey, signal);
-  // What the AI reads in the photo (type, where the garment is, style, colours, details). A help, not a
-  // need: if it can't answer, the garment is cut out and named as without it.
+  // A clean product shot of the same garment, when an image model is configured and willing (it isn't on
+  // a free key without an image allowance): the garment is then read and cut out of that instead.
+  let source = photo;
+  let shot = false;
+  const garmentShot = deps.providers.garmentShot;
+  if (garmentShot) {
+    try {
+      const raw = await garmentShot.productShot(photo, signal);
+      if (raw) {
+        const image = await processImage(raw, "aiInput");
+        source = { data: image.data, mimeType: "image/webp" };
+        shot = true;
+      }
+    } catch (error) {
+      if (signal.aborted) throw new AiProviderError("job aborted", true, "TIMEOUT");
+      deps.log?.("ai.own_dress_no_shot", { jobId: job.id, error: error instanceof Error ? error.name : "unknown" });
+    }
+  }
+  // What the AI reads in the photo (type, where the garment is, its parts, style, colours, details). A
+  // help, not a need: if it can't answer, the garment is cut out and named as without it.
   let reading = null;
   try {
-    reading = parseGarmentReading(await deps.providers.planner.readGarment(photo, signal));
+    reading = parseGarmentReading(await deps.providers.planner.readGarment(source, signal));
   } catch (error) {
     if (signal.aborted) throw new AiProviderError("job aborted", true, "TIMEOUT");
     deps.log?.("ai.own_dress_unread", { jobId: job.id, error: error instanceof Error ? error.name : "unknown" });
@@ -96,10 +115,11 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
     built = await buildOwnDress(db, storage, {
       customerId: job.customerId,
       referenceKey: input.referenceKey,
-      photo: photo.data,
+      photo: source.data,
       garmentType: input.own.garmentType,
       exact: input.own.exact,
       reading,
+      shot,
     });
   } catch (error) {
     if (error instanceof OwnDressError) throw new AiJobRejected("GARMENT_NOT_FOUND");
@@ -115,7 +135,7 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
     if (finished.count !== 1) {
       throw new LostLease();
     }
-    deps.log?.("ai.start_own_dress", { jobId: job.id, exact: input.own.exact, read: reading !== null, boxed: reading?.box != null });
+    deps.log?.("ai.start_own_dress", { jobId: job.id, exact: input.own.exact, read: reading !== null, boxed: reading?.box != null, parts: reading?.parts.length ?? 0, shot });
   } catch (error) {
     // The dress belongs to this attempt only.
     await removeOwnDress(db, storage, built.productId).catch(() => undefined);

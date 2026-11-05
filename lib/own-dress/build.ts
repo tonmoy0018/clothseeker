@@ -7,7 +7,7 @@ import type { PrismaClient } from "@/lib/db/client";
 import { saveDesign } from "@/lib/design/service";
 import { SegmentationError } from "@/lib/garment-photo/segment";
 import { ownDressName, readStyle, type GarmentReading } from "@/lib/own-dress/read";
-import { ownPhotoPicture, photoRegionsFor, printAreasFor } from "@/lib/garment-photo/template";
+import { ownPhotoPicture } from "@/lib/garment-photo/template";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { buildObjectKey } from "@/lib/storage/object-key";
@@ -40,6 +40,8 @@ export type OwnDressInput = {
   exact: boolean;
   /** What the AI read in the photo (lib/own-dress/read.ts), or null when it wasn't asked or couldn't answer. */
   reading: GarmentReading | null;
+  /** `photo` is an AI product shot made from the customer's photo (the team is told so). */
+  shot?: boolean;
 };
 
 /** The style option labels say what the AI saw ("V-neck"), else "As in your photo". */
@@ -48,24 +50,25 @@ function styleOption(reading: GarmentReading | null, group: string) {
   return { ...AS_PHOTO_OPTION, label: seen ? `${seen.charAt(0).toUpperCase()}${seen.slice(1)}`.slice(0, 40) : AS_PHOTO_OPTION.label };
 }
 
-/** The template of a customer's own dress: their photo's front, cut into parts, nothing to choose but colour and additions. */
+/**
+ * The template of a customer's own dress: their photo's front, cut into ITS parts (each recolourable on
+ * its own), nothing to choose but colours and additions.
+ */
 function ownDressConfig(
   type: GarmentType,
-  picture: { image: string; masks: Partial<Record<string, string>> },
+  picture: { image: string; regions: { id: string; label: string; mask: string }[] },
   placementAreas: TemplateConfig["placementAreas"],
   reading: GarmentReading | null,
 ): TemplateConfig {
   const base = defaultTemplateConfig(type);
   const style = Object.fromEntries(templateStyleGroups(base).map((group) => [group, AS_PHOTO]));
-  const masks = Object.fromEntries(Object.entries(picture.masks).flatMap(([id, key]) => (key ? [[id, key]] : [])));
+  const masks = Object.fromEntries(picture.regions.map((r) => [r.id, r.mask]));
   return templateConfigSchema.parse({
     ...base,
     styleOptions: Object.fromEntries(templateStyleGroups(base).map((group) => [group, [styleOption(reading, group)]])),
     placementAreas,
     garmentImages: { front: picture.image },
-    regions: photoRegionsFor(type)
-      .filter(({ id }) => masks[id] !== undefined)
-      .map(({ id, label }) => ({ id, label, recolorable: true, masks: { front: masks[id] } })),
+    regions: picture.regions.map(({ id, label, mask }) => ({ id, label, recolorable: true, masks: { front: mask } })),
     styleVariants: [{ side: "front", match: style, image: picture.image, masks }],
     recolor: "shade",
     defaultStyle: style,
@@ -81,13 +84,18 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
   const type = input.garmentType === "auto" ? (reading?.garmentType ?? "dress") : input.garmentType;
   const groups = templateStyleGroups(defaultTemplateConfig(type));
   const style = Object.fromEntries(groups.map((group) => [group, AS_PHOTO]));
-  // Just the garment inside the box the AI found first (not the trousers under a jacket), then anything.
-  const attempts = reading?.box ? [reading.box, undefined] : [undefined];
+  // Just the garment inside the box the AI found, split into the parts it named; failing that, anything
+  // in the photo with the shape-based parts.
+  const hints = reading?.parts ?? [];
+  const attempts = [
+    ...(reading?.box || hints.length > 0 ? [{ within: reading?.box ?? undefined, hints }] : []),
+    { within: undefined, hints: [] },
+  ];
   let found = null;
-  for (const within of attempts) {
+  for (const { within, hints: partHints } of attempts) {
     try {
-      const attempt = await ownPhotoPicture(input.photo, type, style, within);
-      if (Object.keys(attempt.picture.masks).length > 0) {
+      const attempt = await ownPhotoPicture(input.photo, type, within, partHints);
+      if (attempt.regions.length > 0) {
         found = attempt;
         break;
       }
@@ -98,7 +106,7 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
   if (!found) {
     throw new OwnDressError("no garment found");
   }
-  const { picture, pictureCm } = found;
+  const picture = found;
 
   const productId = randomUUID();
   const uploaded: string[] = [];
@@ -110,11 +118,9 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
   };
   try {
     const image = await upload(picture.image, "webp");
-    const masks: Partial<Record<string, string>> = {};
-    for (const [region, mask] of Object.entries(picture.masks)) {
-      if (mask) masks[region] = await upload(mask, "png");
-    }
-    const config = ownDressConfig(type, { image, masks }, printAreasFor(type, [picture], pictureCm), reading);
+    const regions = [];
+    for (const region of picture.regions) regions.push({ id: region.id, label: region.label, mask: await upload(region.png, "png") });
+    const config = ownDressConfig(type, { image, regions }, picture.printAreas, reading);
     const category = await db.category.findFirst({ orderBy: { sortOrder: "asc" }, select: { id: true } });
     if (!category) throw new Error("no category to file the dress under");
     const noun = GARMENT_TYPES[type].noun;
@@ -125,7 +131,12 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
           id: productId,
           slug: `own-${productId}`,
           name: ownDressName(reading, type),
-          description: reading?.description ?? `Your own ${noun}, from your photo.`,
+          description: [
+            reading?.description ?? `Your own ${noun}, from your photo.`,
+            input.shot ? "Picture: an AI product shot made from the customer's photo (their own photo is the reference)." : null,
+          ]
+            .filter((s): s is string => s !== null)
+            .join(" "),
           categoryId: category.id,
           garmentType: type,
           status: "PRIVATE",

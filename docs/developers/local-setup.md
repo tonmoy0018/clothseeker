@@ -62,6 +62,7 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `IMAGE_PROVIDER` | Optional: `fake` (default) or `cloudflare` | Worker-only | AI motif images |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | Key required when `PLANNER_PROVIDER=gemini`. Model defaults to `gemini-3.1-flash-lite`; fallbacks (comma-separated) default to `gemini-3.5-flash-lite,gemini-3.8-flash` | **Worker-only secret** | Gemini planner |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_IMAGE_MODEL` | Required when `IMAGE_PROVIDER=cloudflare`; model defaults to FLUX.1 schnell | **Worker-only secret** | Workers AI images |
+| `GARMENT_SHOT_PROVIDER`, `GEMINI_IMAGE_MODEL` | Optional: `none` (default) or `gemini`. Turns a customer's own garment photo into a clean product shot before it's cut out. Needs `GEMINI_API_KEY`. Free keys have no image allowance (Google answers 429 and the photo is used as it is); paid keys are billed per image. Model defaults to `gemini-2.5-flash-image` | Worker-only | Own-garment product shots ([ai-pipelines.md](ai-pipelines.md)) |
 | `AI_FAKE_DELAY_MS` | Optional, default 1500 | Worker-only | Latency of the fake providers |
 | `AI_JOB_TIMEOUT_MS` | Optional, default 180000 | Worker-only | Limit for one AI job attempt |
 | `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |

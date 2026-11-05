@@ -2,7 +2,7 @@ import type { WorkerEnv } from "@/lib/env/schema";
 
 import { CloudflareImage } from "./cloudflare";
 import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./fake";
-import { GeminiPlanner } from "./gemini";
+import { GeminiGarmentShot, GeminiPlanner } from "./gemini";
 import { LocalPhotoChecker } from "./photo-check-local";
 import { HuggingFaceTryOn } from "./tryon-hf";
 import { CatVtonProcess, LocalTryOn } from "./tryon-local";
@@ -19,6 +19,8 @@ type ProviderEnv = Pick<
   | "GEMINI_API_KEY"
   | "GEMINI_MODEL"
   | "GEMINI_FALLBACK_MODELS"
+  | "GARMENT_SHOT_PROVIDER"
+  | "GEMINI_IMAGE_MODEL"
   | "CLOUDFLARE_ACCOUNT_ID"
   | "CLOUDFLARE_API_TOKEN"
   | "CLOUDFLARE_IMAGE_MODEL"
@@ -79,5 +81,14 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
     photoCheck = new FakePhotoChecker(env.AI_FAKE_DELAY_MS);
   }
 
-  return { planner, image, tryOn, photoCheck };
+  // Clean product shots of customers' own garments (optional; billed per image on paid keys).
+  let garmentShot;
+  if (env.GARMENT_SHOT_PROVIDER === "gemini") {
+    if (!env.GEMINI_API_KEY) {
+      throw new AiConfigError("GEMINI_API_KEY is required when GARMENT_SHOT_PROVIDER=gemini");
+    }
+    garmentShot = new GeminiGarmentShot({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_IMAGE_MODEL });
+  }
+
+  return { planner, image, tryOn, photoCheck, ...(garmentShot ? { garmentShot } : {}) };
 }

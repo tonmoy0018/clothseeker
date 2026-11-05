@@ -159,17 +159,29 @@ describe("recolouring photos (shade)", () => {
     expect(maskArea(several)).toBeGreaterThan(maskArea(one));
   });
 
-  it("stretches the fabric's own light and shade over the new colour", () => {
+  it("keeps a new colour true on dark fabric, with its folds", () => {
     // A dark navy region: brightness 0.10–0.30, with a mask.
     const rgb = [20, 25, 50, 60, 70, 110, 40, 45, 80, 200, 200, 200];
     const mask = [255, 255, 255, 0];
     const range = shadeRange(rgb, 3, mask, 1);
     expect(range.low).toBeCloseTo(luminance(20, 25, 50), 1);
     expect(range.high).toBeCloseTo(luminance(60, 70, 110), 1);
-    // Darkest fabric → deep shadow, brightest → full colour; a pale pink stays pale.
+    // Dark fabric: its typical brightness shows the new colour nearly true (a white stripe stays white),
+    // its darkest folds darker and its highlights brighter.
+    expect(range.mid).toBeDefined();
+    expect(shadeFactor(range.mid ?? 0, range)).toBeCloseTo(0.95);
+    expect(shadeFactor(range.low, range)).toBeLessThan(0.95);
+    expect(shadeFactor(range.high, range)).toBeGreaterThan(0.95);
+    expect(shadeFactor(1, range)).toBeCloseTo(1.05);
+  });
+
+  it("stretches light fabric's light and shade over the new colour", () => {
+    // A pale region: brightness 0.6–0.9.
+    const rgb = [150, 155, 160, 230, 230, 232, 190, 192, 195];
+    const range = shadeRange(rgb, 3, [255, 255, 255], 1);
+    expect(range.mid).toBeUndefined();
     expect(shadeFactor(range.low, range)).toBeCloseTo(0.45);
     expect(shadeFactor(range.high, range)).toBeCloseTo(1.05);
-    expect(shadeFactor(1, range)).toBeCloseTo(1.05);
   });
 
   it("copes with flat fabric (black) without dividing by zero", () => {

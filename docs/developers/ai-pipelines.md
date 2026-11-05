@@ -150,6 +150,7 @@ Its own entry is **Upload your dress** (`/design/upload`), linked from the site 
 ```
 own:    the same DRESS_MATCH job, payload.own = { garmentType ("auto" by default), exact }
 worker: brand-logo check (as above)
+        → garmentShot.productShot (optional: an AI product shot of the same garment; null = use the photo)
         → planner.readGarment → parseGarmentReading (lib/own-dress/read.ts; failures = no reading)
         → ownPhotoPicture (lib/garment-photo/template.ts → frameGarmentPhoto: the whole garment cut out
           onto the studio backdrop, cut into Sleeves/Bodice/Skirt or Body)
@@ -180,6 +181,14 @@ browser: /customize/{product}?design=… (see it → "Try it on" → "Request a 
   - **For the team.** The description, colours, print and details become the product's description. The team's quote page shows it as "What the photo shows", marked as read by AI.
 
   If the AI can't answer, the garment is built as without it (tested).
+- **Its own parts** (decided 2026-11-05). The reading includes 2–7 parts of this garment: a label, a box and the part's colour, for example jacket body and inner shirt, or bodice, waistband and skirt. Free Gemini models can't draw reliable outlines (tried: invented images, boxes only, placeholders), so each part's outline is worked out here (`assignParts`, `lib/garment-photo/parts.ts`):
+  - **Colour first.** Within the boxes, each garment pixel goes to the part whose colour it matches, so a white shirt inside an open black jacket is told apart.
+  - **Then shape and size.** Where colours match, the shape-based split decides for named sleeves, straps, bodices and skirts, and the smaller box wins (a waistband over a skirt).
+  - **Folded in.** A small same-colour part inside a bigger one would be a rectangle, so it's folded in (`separableHints`), unless it's a band across it.
+  - **Left out.** Garment pixels outside every box (a mannequin's neck, trousers under a jacket) are dropped.
+
+  Each part becomes a region the customer can recolour on its own, with its own print area. With fewer than two usable parts, the shape-based parts are used, as before.
+- **AI product shot** (approved 2026-11-05). With `GARMENT_SHOT_PROVIDER=gemini`, the photo is first sent to `GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`) for a clean product shot of the same garment, and the reading, parts and cut-out use that. Anything but a picture (on a free key Google answers 429, since there's no image allowance) means the photo is used as it is. The team is told when the picture is an AI shot, and the customer's photo stays the reference. It's billed per image once billing is on.
 - **The order on the design screen.** First the garment, then a "See it on you" step ("Try it on" opens the try-on panel), then "Get a price for your dress". The quote isn't pushed first. Both sit in the page, not in the bar pinned to the bottom, which keeps only the size and Save (a tall pinned bar covered the AI options).
 
 - **Private.** `status: PRIVATE` keeps it out of everything that shows ACTIVE products:
