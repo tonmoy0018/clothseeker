@@ -30,7 +30,11 @@ const WAITING: Record<PhotoChoice, string> = {
 
 const EXAMPLES = ["A flowy floral midi for a summer wedding", "A simple black dress with long sleeves for work", "A bright tiered dress for a beach holiday"];
 
-export function StartForms({ signedIn }: { signedIn: boolean }) {
+/**
+ * `photoOnly`: just the dress-photo part, for the "Upload your dress" page (`path` is where sign-in
+ * brings the customer back to).
+ */
+export function StartForms({ signedIn, photoOnly = false, path = "/design/start" }: { signedIn: boolean; photoOnly?: boolean; path?: string }) {
   const router = useRouter();
   const [description, setDescription] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
@@ -39,7 +43,7 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [pending, startTransition] = useTransition();
 
-  const signIn = () => router.push(`/login?next=${encodeURIComponent("/design/start")}`);
+  const signIn = () => router.push(`/login?next=${encodeURIComponent(path)}`);
 
   useEffect(() => () => (preview ? URL.revokeObjectURL(preview) : undefined), [preview]);
 
@@ -144,7 +148,7 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
   return (
     <div className="flex flex-col gap-4">
       {!signedIn && <p className="text-sm text-muted-foreground">You&apos;ll be asked to sign in first.</p>}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={cn("grid gap-4", photoOnly ? "max-w-xl" : "md:grid-cols-2")}>
         <section className="flex flex-col gap-3 rounded-xl border p-5" data-testid="start-photo">
           <h2 className="font-medium">From a dress photo</h2>
           <p className="text-sm text-muted-foreground">
@@ -212,29 +216,31 @@ export function StartForms({ signedIn }: { signedIn: boolean }) {
           <p className="text-xs text-muted-foreground">JPEG, PNG or WebP, any size. Clothing brand logos can&apos;t be used.</p>
         </section>
 
-        <section className="flex flex-col gap-3 rounded-xl border p-5" data-testid="start-description">
-          <h2 className="font-medium">From a description</h2>
-          <p className="text-sm text-muted-foreground">Describe the dress. We pick the best match and the AI design box suggests four ideas (uses one of today&apos;s AI rounds).</p>
-          <textarea
-            aria-label="Describe the dress"
-            value={description}
-            maxLength={500}
-            rows={3}
-            placeholder="e.g. A flowy floral midi for a summer wedding"
-            onChange={(e) => setDescription(e.target.value)}
-            className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
-          <div className="flex flex-wrap gap-1.5">
-            {EXAMPLES.map((example) => (
-              <button key={example} type="button" onClick={() => setDescription(example)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted">
-                {example}
-              </button>
-            ))}
-          </div>
-          <Button className="self-start" onClick={startFromDescription} disabled={busy || description.trim().length < 10}>
-            {phase.kind === "waiting" && phase.mode === "description" ? "Finding your dress…" : "Find my dress"}
-          </Button>
-        </section>
+        {!photoOnly && (
+          <section className="flex flex-col gap-3 rounded-xl border p-5" data-testid="start-description">
+            <h2 className="font-medium">From a description</h2>
+            <p className="text-sm text-muted-foreground">Describe the dress. We pick the best match and the AI design box suggests four ideas (uses one of today&apos;s AI rounds).</p>
+            <textarea
+              aria-label="Describe the dress"
+              value={description}
+              maxLength={500}
+              rows={3}
+              placeholder="e.g. A flowy floral midi for a summer wedding"
+              onChange={(e) => setDescription(e.target.value)}
+              className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {EXAMPLES.map((example) => (
+                <button key={example} type="button" onClick={() => setDescription(example)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted">
+                  {example}
+                </button>
+              ))}
+            </div>
+            <Button className="self-start" onClick={startFromDescription} disabled={busy || description.trim().length < 10}>
+              {phase.kind === "waiting" && phase.mode === "description" ? "Finding your dress…" : "Find my dress"}
+            </Button>
+          </section>
+        )}
       </div>
 
       {phase.kind === "waiting" && (

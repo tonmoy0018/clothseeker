@@ -28,6 +28,9 @@ export default async function HomePage() {
               Shop {AUDIENCES[audience].label.toLowerCase()}
             </Link>
           ))}
+          <Link href="/design/upload" className={buttonVariants({ size: "lg", variant: "outline" })}>
+            Upload your dress
+          </Link>
           <Link href="/design/start" className={buttonVariants({ size: "lg", variant: "outline" })}>
             Start from a photo or idea
           </Link>

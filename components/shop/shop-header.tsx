@@ -22,6 +22,9 @@ export async function ShopHeader() {
             {AUDIENCES[audience].label}
           </Link>
         ))}
+        <Link href="/design/upload" className="text-muted-foreground hover:text-foreground">
+          Upload your dress
+        </Link>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 whitespace-nowrap">
           {user?.role === "ADMIN" && (
             <Link href="/admin" className="text-muted-foreground hover:text-foreground">

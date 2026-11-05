@@ -12,13 +12,26 @@ import { chooseFabric, signUpFreshCustomer } from "./helpers";
 const dressPhoto = () => readFile(path.join(process.cwd(), "prisma", "seed-photos", "cotton-tiered-midi.jpg"));
 
 async function uploadAndChoose(page: Page, choice: RegExp) {
-  await page.goto("/design/start");
+  // Its own entry: the menu's "Upload your dress".
+  await page.goto("/");
+  await page.getByRole("navigation").getByRole("link", { name: "Upload your dress" }).click();
+  await expect(page.getByRole("heading", { name: "Upload your dress" })).toBeVisible();
+  await expect(page.getByTestId("start-description")).toHaveCount(0);
   await page.getByLabel("Upload a dress photo").setInputFiles({ name: "my-dress.jpg", mimeType: "image/jpeg", buffer: await dressPhoto() });
   const choices = page.getByTestId("photo-choices");
   await expect(choices).toBeVisible({ timeout: 30_000 });
   await choices.getByRole("button", { name: choice }).click();
   await expect(page).toHaveURL(/\/customize\/[0-9a-f-]{36}\?design=[0-9a-f-]{36}/, { timeout: 60_000 });
 }
+
+test("the upload page offers just the dress photo, and signed-out visitors sign in first", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "Upload your dress" }).first().click();
+  await expect(page).toHaveURL(/\/design\/upload$/);
+  await expect(page.getByTestId("start-photo")).toBeVisible();
+  await expect(page.getByTestId("start-description")).toHaveCount(0);
+  await expect(page.getByText("You'll be asked to sign in first.")).toBeVisible();
+});
 
 test.describe("@supabase your own dress", () => {
   test("make this exact dress: see it, try it on, then ask for a price; no shop price or cart", async ({ page }) => {

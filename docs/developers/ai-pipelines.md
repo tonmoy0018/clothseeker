@@ -145,6 +145,8 @@ browser: polls → /customize/{product}?design=…[&job=round][&alts=a,b]
 
 ### Your own dress (mode `own`, `lib/own-dress/build.ts`)
 
+Its own entry is **Upload your dress** (`/design/upload`), linked from the site menu and the home page. The page shows the photo part of the start form only (`StartForms photoOnly`), with the same three choices. `/design/start` keeps both the photo and the description starts.
+
 ```
 own:    the same DRESS_MATCH job, payload.own = { garmentType, exact }
 worker: brand-logo check (as above)
