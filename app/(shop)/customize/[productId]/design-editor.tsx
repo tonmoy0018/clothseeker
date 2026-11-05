@@ -783,6 +783,28 @@ export function DesignEditor(props: DesignEditorProps) {
           </div>
         </div>
 
+        {/* Your own dress: see it, try it on, then ask for a price (in the page, not the pinned bar). */}
+        {props.ownDress && (
+          <div className="mt-6 flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4" data-testid="own-dress-try-on">
+              <div className="mr-auto flex flex-col gap-0.5">
+                <span className="text-sm font-medium">See it on you</span>
+                <span className="text-xs text-muted-foreground">Try your {garment.noun} on with a photo of yourself before asking for a price.</span>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowTryOn(true);
+                  requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+                }}
+              >
+                Try it on
+              </Button>
+            </div>
+            <QuoteRequest ownDress designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+          </div>
+        )}
+
         {/* ── size, price and cart: pinned to the bottom while scrolling ── */}
         <div className="sticky bottom-0 z-10 -mx-4 mt-6 flex flex-col gap-3 border-t bg-background/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur lg:mx-0 lg:px-0">
           {(issues.length > 0 || serverIssues.length > 0 || message) && (
@@ -822,33 +844,14 @@ export function DesignEditor(props: DesignEditorProps) {
           </div>
 
           {props.ownDress ? (
-            <>
-              {/* Your own dress: see it, try it on, then ask for a price. */}
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4" data-testid="own-dress-try-on">
-                <div className="mr-auto flex flex-col gap-0.5">
-                  <span className="text-sm font-medium">See it on you</span>
-                  <span className="text-xs text-muted-foreground">Try your {garment.noun} on with a photo of yourself before asking for a price.</span>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowTryOn(true);
-                    requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-                  }}
-                >
-                  Try it on
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="mr-auto text-sm text-muted-foreground" data-testid="own-dress-price">
-                  Made to order from your photo: the ClothSeeker team prices it.
-                </p>
-                <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
-                  {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
-                </Button>
-              </div>
-              <QuoteRequest ownDress designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
-            </>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="mr-auto text-sm text-muted-foreground" data-testid="own-dress-price">
+                Made to order from your photo: the ClothSeeker team prices it.
+              </p>
+              <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
+                {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
+              </Button>
+            </div>
           ) : (
             <>
               <div id="price-details" hidden={!showPrice}>

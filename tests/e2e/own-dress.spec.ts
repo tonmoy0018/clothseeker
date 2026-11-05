@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { chooseFabric, signUpFreshCustomer } from "./helpers";
+import { chooseFabric, openDesignTab, signUpFreshCustomer } from "./helpers";
 
 // @supabase — a customer's own dress from their photo: made exactly as it is, or customised, and priced
 // by the team through a quote. Needs the local Supabase stack and the worker (fake AI providers).
@@ -58,6 +58,21 @@ test.describe("@supabase your own dress", () => {
     await quote.getByRole("button", { name: "Request a price" }).click();
     await expect(page).toHaveURL(/\/account\/quotes\/[0-9a-f-]{36}$/);
     await expect(page.getByTestId("quote-status")).toHaveText("Waiting for our reply");
+  });
+
+  test("customise this dress with AI ideas: four options on your own dress, pick one", async ({ page }) => {
+    test.setTimeout(120_000);
+    await signUpFreshCustomer(page);
+    await uploadAndChoose(page, /^Customize this dress/);
+    await openDesignTab(page, "AI ideas");
+    const box = page.getByTestId("ai-box");
+    await box.getByLabel("Describe your idea").fill("Make it emerald with a gold border");
+    await box.getByRole("button", { name: "Generate 4 ideas" }).click();
+    await expect(box.getByTestId("ai-option")).toHaveCount(4, { timeout: 30_000 });
+    await box.getByRole("button", { name: "Pick option 1" }).click();
+    await expect(page.getByRole("status")).toContainText("Applied option 1");
+    // Still your own dress, priced by the team.
+    await expect(page.getByTestId("own-dress-price")).toBeVisible();
   });
 
   test("customise this dress: recolour it on the photo, save, then ask for a price", async ({ page }) => {

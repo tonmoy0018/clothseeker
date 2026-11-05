@@ -15,8 +15,9 @@ import { parseTemplateConfig, templateConfigSchema, templateImageKeys, templateS
 
 // A customer's own dress, made from their photo (decided 2026-11-02): the whole garment is cut out onto
 // a studio backdrop like the catalogue's photos and cut into parts (lib/garment-photo/template.ts), and
-// becomes a PRIVATE product with its own template, owned by the customer. They may recolour it and add text, decorations,
-// prints and finishes, but not change its cut (one style option per group: as in the photo). It's made
+// becomes a PRIVATE product with its own template, owned by the customer. They may recolour it, add text,
+// decorations, prints and finishes, and ask the AI design box for ideas (rounds count towards the usual
+// daily limit), but not change its cut (one style option per group: as in the photo). It's made
 // to order: the team prices it through a quote (lib/quotes), so it's never sold directly.
 
 /** The one style option of each group: the garment's cut as it is in the photo. */
@@ -113,7 +114,7 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
           },
         },
       });
-      const template = await tx.customizationTemplate.create({ data: { productId, config, isActive: true, aiEnabled: false }, select: { id: true, version: true } });
+      const template = await tx.customizationTemplate.create({ data: { productId, config, isActive: true, aiEnabled: true }, select: { id: true, version: true } });
       return template;
     });
 

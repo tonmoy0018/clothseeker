@@ -7,11 +7,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getAdminProduct, listAdminProducts } from "@/lib/admin/products";
 import { BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
 import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { createDesignRoundJob, getJobStatus } from "@/lib/ai/jobs";
+import { storedOptionsSchema } from "@/lib/ai/rounds";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";
 import { processNextJob, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import type { Actor } from "@/lib/auth/policy";
 import { getCustomizationTemplate } from "@/lib/catalog/template-loader";
 import { addDesignToCart, DesignError, listDesigns, loadDesignContext, saveDesign } from "@/lib/design/service";
+import { validateDesignAgainstTemplate } from "@/lib/design/validate";
 import { AS_PHOTO } from "@/lib/own-dress/build";
 import { QuoteError, requestQuote } from "@/lib/quotes/service";
 import { getProductBySlug, listProducts } from "@/lib/shop/catalog";
@@ -70,7 +73,7 @@ describe("your own dress from a photo", () => {
     const product = await db.product.findUniqueOrThrow({ where: { id: productId }, include: { variants: true, template: true } });
     expect(product).toMatchObject({ status: "PRIVATE", ownerId: ava.id, garmentType: "dress", name: "Your dress" });
     expect(product.variants.map((v) => v.size).sort()).toEqual(["L", "M", "S", "XL", "XS", "XXL"]);
-    expect(product.template).toMatchObject({ isActive: true, aiEnabled: false });
+    expect(product.template).toMatchObject({ isActive: true, aiEnabled: true });
 
     const design = await db.design.findUniqueOrThrow({ where: { id: designId } });
     expect(design).toMatchObject({ customerId: ava.id, productId, status: "DRAFT", startedFrom: "PHOTO", referencePhotoKey: referenceKey });
@@ -84,6 +87,33 @@ describe("your own dress from a photo", () => {
     expect(context?.template.config.regions.map((r) => r.id)).toEqual(expect.arrayContaining(["bodice", "skirt"]));
     expect(context?.template.config.placementAreas.length).toBeGreaterThan(0);
     expect(context?.template.config.recolor).toBe("shade");
+  });
+
+  it("gets AI ideas like our dresses: four options on the customer's own dress, its cut kept", async () => {
+    const ava = await createUser();
+    const { productId, designId } = await built(ava);
+    const design = await db.design.findUniqueOrThrow({ where: { id: designId } });
+    const queued = await createDesignRoundJob(db, storage, ava, { designId, spec: design.spec, instruction: "Make it emerald with a gold border" });
+    expect(await processNextJob(deps())).toBe(true);
+    const status = await getJobStatus(db, storage, ava, queued.jobId);
+    if (status.state !== "done") throw new Error(`expected done, got ${JSON.stringify(status)}`);
+    expect(status.round.options).toHaveLength(4);
+
+    const context = await loadDesignContext(db, storage, productId, { viewerId: ava.id });
+    if (!context) throw new Error("no context");
+    const round = await db.aIRound.findUniqueOrThrow({ where: { id: status.round.id } });
+    for (const option of storedOptionsSchema.parse(round.options)) {
+      const spec = parseDesignSpec(option.spec);
+      expect(spec.productId).toBe(productId);
+      expect(Object.values(spec.styleOptions).every((o) => o === AS_PHOTO)).toBe(true);
+      const issues = validateDesignAgainstTemplate(spec, context.template.config, {
+        productId,
+        templateId: context.template.templateId,
+        availableSizes: context.availableSizes,
+        customerId: ava.id,
+      });
+      expect(issues).toEqual([]);
+    }
   });
 
   it("is only ever its owner's: not in the shop, not in the team's catalogue, not loadable by anyone else", async () => {
