@@ -3,7 +3,7 @@ import sharp from "sharp";
 import type { GarmentType } from "@/lib/catalog/garment-types";
 import type { PlacementArea } from "@/types/template";
 
-import { alignGarmentPhoto, frameGarmentPhoto, maskPng, PHOTO_HEIGHT, PHOTO_WIDTH, type AlignedPhoto } from "./align";
+import { alignGarmentPhoto, frameGarmentPhoto, maskPng, PHOTO_HEIGHT, PHOTO_WIDTH, type AlignedPhoto, type PhotoBox } from "./align";
 import type { Mask } from "./segment";
 import type { StyleChoice } from "./style-files";
 
@@ -51,8 +51,13 @@ export async function photoPicture(raw: Buffer, type: GarmentType, side: "front"
  * A customer's own garment photo (lib/own-dress): the whole garment, cut out onto a studio backdrop and
  * cut into its parts, with the picture's real size for the print areas.
  */
-export async function ownPhotoPicture(raw: Buffer, type: GarmentType, match: StyleChoice): Promise<{ picture: PhotoPicture; pictureCm: { w: number; h: number } }> {
-  const framed = await frameGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders");
+export async function ownPhotoPicture(
+  raw: Buffer,
+  type: GarmentType,
+  match: StyleChoice,
+  within?: PhotoBox,
+): Promise<{ picture: PhotoPicture; pictureCm: { w: number; h: number } }> {
+  const framed = await frameGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders", within);
   return { picture: await pictureFrom(framed, type, "front", match), pictureCm: framed.pictureCm };
 }
 

@@ -1,6 +1,7 @@
 import { styleOptionsFor, templateStyleGroups } from "@/types/template";
 import { loadDesignContext, type DesignContext } from "@/lib/design/service";
 import { buildOwnDress, OwnDressError, removeOwnDress } from "@/lib/own-dress/build";
+import { parseGarmentReading } from "@/lib/own-dress/read";
 import { BUCKETS } from "@/lib/storage/buckets";
 
 import { AiError, AiJobRejected, AiProviderError } from "../errors";
@@ -78,12 +79,28 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
     throw new AiJobRejected("INTERNAL");
   }
   const photo = await checkedPhoto(deps, job, input.referenceKey, signal);
+  // What the AI reads in the photo (type, where the garment is, style, colours, details). A help, not a
+  // need: if it can't answer, the garment is cut out and named as without it.
+  let reading = null;
+  try {
+    reading = parseGarmentReading(await deps.providers.planner.readGarment(photo, signal));
+  } catch (error) {
+    if (signal.aborted) throw new AiProviderError("job aborted", true, "TIMEOUT");
+    deps.log?.("ai.own_dress_unread", { jobId: job.id, error: error instanceof Error ? error.name : "unknown" });
+  }
   if (signal.aborted) {
     throw new AiProviderError("job aborted", true, "TIMEOUT");
   }
   let built;
   try {
-    built = await buildOwnDress(db, storage, { customerId: job.customerId, referenceKey: input.referenceKey, photo: photo.data, garmentType: input.own.garmentType, exact: input.own.exact });
+    built = await buildOwnDress(db, storage, {
+      customerId: job.customerId,
+      referenceKey: input.referenceKey,
+      photo: photo.data,
+      garmentType: input.own.garmentType,
+      exact: input.own.exact,
+      reading,
+    });
   } catch (error) {
     if (error instanceof OwnDressError) throw new AiJobRejected("GARMENT_NOT_FOUND");
     throw error;
@@ -98,7 +115,7 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
     if (finished.count !== 1) {
       throw new LostLease();
     }
-    deps.log?.("ai.start_own_dress", { jobId: job.id, exact: input.own.exact });
+    deps.log?.("ai.start_own_dress", { jobId: job.id, exact: input.own.exact, read: reading !== null, boxed: reading?.box != null });
   } catch (error) {
     // The dress belongs to this attempt only.
     await removeOwnDress(db, storage, built.productId).catch(() => undefined);

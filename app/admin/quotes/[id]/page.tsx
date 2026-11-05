@@ -60,6 +60,15 @@ export default async function AdminQuotePage({ params }: PageProps<"/admin/quote
         </div>
 
         <div className="flex flex-col gap-5">
+          {quote.garmentDescription && (
+            <section className="flex flex-col gap-1">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase">What the photo shows</h2>
+              <p className="text-sm" data-testid="admin-quote-garment">
+                {quote.garmentDescription}
+              </p>
+              <p className="text-xs text-muted-foreground">Read by AI from the customer&apos;s photo: check it against the photo.</p>
+            </section>
+          )}
           <section className="flex flex-col gap-1">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase">Customer&apos;s notes</h2>
             <p className="whitespace-pre-line" data-testid="admin-quote-notes">

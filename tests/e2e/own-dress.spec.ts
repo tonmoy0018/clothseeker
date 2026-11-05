@@ -37,7 +37,7 @@ test.describe("@supabase your own dress", () => {
   test("make this exact dress: see it, try it on, then ask for a price; no shop price or cart", async ({ page }) => {
     test.setTimeout(150_000);
     await signUpFreshCustomer(page);
-    await uploadAndChoose(page, /^Make this exact dress/);
+    await uploadAndChoose(page, /^Make this exact garment/);
     await expect(page.getByRole("heading", { name: "Your dress" }).first()).toBeVisible();
     await expect(page.getByTestId("start-info")).toContainText("This is the dress from your photo");
     await expect(page.getByTestId("own-dress-price")).toContainText("the ClothSeeker team prices it");
@@ -63,7 +63,7 @@ test.describe("@supabase your own dress", () => {
   test("customise this dress with AI ideas: four options on your own dress, pick one", async ({ page }) => {
     test.setTimeout(120_000);
     await signUpFreshCustomer(page);
-    await uploadAndChoose(page, /^Customize this dress/);
+    await uploadAndChoose(page, /^Customize this garment/);
     await openDesignTab(page, "AI ideas");
     const box = page.getByTestId("ai-box");
     await box.getByLabel("Describe your idea").fill("Make it emerald with a gold border");
@@ -78,7 +78,7 @@ test.describe("@supabase your own dress", () => {
   test("customise this dress: recolour it on the photo, save, then ask for a price", async ({ page }) => {
     test.setTimeout(120_000);
     await signUpFreshCustomer(page);
-    await uploadAndChoose(page, /^Customize this dress/);
+    await uploadAndChoose(page, /^Customize this garment/);
     await expect(page.getByRole("heading", { name: "Your dress" }).first()).toBeVisible();
     await chooseFabric(page, "Skirt", "Emerald");
     const quote = page.getByTestId("quote-request");

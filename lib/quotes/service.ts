@@ -121,6 +121,8 @@ export type QuoteView = {
   designId: string;
   productId: string;
   productName: string;
+  /** A customer's own garment: what the AI read in their photo, for the team (null otherwise). */
+  garmentDescription: string | null;
   size: string;
   notes: string;
   status: QuoteStatus;
@@ -147,7 +149,7 @@ const quoteSelect = {
   previewKey: true,
   referencePhotoKey: true,
   specSnapshot: true,
-  design: { select: { productId: true, product: { select: { name: true } } } },
+  design: { select: { productId: true, product: { select: { name: true, status: true, description: true } } } },
   cartItems: { select: { id: true } },
 } as const;
 
@@ -164,7 +166,7 @@ type QuoteRow = {
   previewKey: string | null;
   referencePhotoKey: string | null;
   specSnapshot: unknown;
-  design: { productId: string; product: { name: string } };
+  design: { productId: string; product: { name: string; status: string; description: string } };
   cartItems: { id: string }[];
 };
 
@@ -184,6 +186,7 @@ export async function toQuoteViews(storage: StorageAdapter, rows: QuoteRow[], no
       designId: r.designId,
       productId: r.design.productId,
       productName: r.design.product.name,
+      garmentDescription: r.design.product.status === "PRIVATE" ? r.design.product.description : null,
       size,
       notes: r.notes,
       status: effectiveQuoteStatus(r, now),

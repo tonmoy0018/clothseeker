@@ -29,8 +29,8 @@ export const dressMatchPayloadSchema = z.object({
   referenceKey: key.nullable(),
   description: z.string().min(10).max(500).nullable(),
   seed: z.string().length(64),
-  /** Mode "own": what the garment is, and whether to order it exactly as it is (else to customise it). */
-  own: z.object({ garmentType: z.enum(GARMENT_TYPE_IDS), exact: z.boolean() }).optional(),
+  /** Mode "own": what the garment is ("auto": the AI reads it), and whether to order it exactly as it is (else to customise it). */
+  own: z.object({ garmentType: z.enum([...GARMENT_TYPE_IDS, "auto"]), exact: z.boolean() }).optional(),
 });
 export type DressMatchPayload = z.infer<typeof dressMatchPayloadSchema>;
 
@@ -65,7 +65,7 @@ export async function uploadReferencePhoto(storage: StorageAdapter, actor: Actor
 
 const startSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("photo"), referenceKey: z.string().max(200) }),
-  z.object({ mode: z.literal("own"), referenceKey: z.string().max(200), garmentType: z.enum(GARMENT_TYPE_IDS), exact: z.boolean() }),
+  z.object({ mode: z.literal("own"), referenceKey: z.string().max(200), garmentType: z.enum([...GARMENT_TYPE_IDS, "auto"]), exact: z.boolean() }),
   z.object({
     mode: z.literal("description"),
     description: z.string().trim().min(10, "Describe the dress in a sentence or two.").max(500, "Keep your description under 500 characters."),

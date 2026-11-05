@@ -27,10 +27,37 @@ export async function readRgb(input: Buffer, width?: number): Promise<RgbImage> 
 }
 
 /** Segments a photo (on a smaller copy, for speed) and returns its parts in that copy's pixels. */
-export async function analysePhoto(input: Buffer, workWidth = 400, colours: "one" | "several" = "one"): Promise<{ parts: GarmentParts; scale: number }> {
+/** A box as fractions (0–1) of the photo. */
+export type PhotoBox = { top: number; left: number; bottom: number; right: number };
+
+/**
+ * Segments a photo (on a smaller copy, for speed) and returns its parts in that copy's pixels. `within`
+ * keeps only the garment inside that box (a little margin around it): the backdrop is still learned from
+ * the whole photo's edges, but trousers below a jacket or a bag beside a dress aren't taken along.
+ */
+export async function analysePhoto(
+  input: Buffer,
+  workWidth = 400,
+  colours: "one" | "several" = "one",
+  within?: PhotoBox,
+): Promise<{ parts: GarmentParts; scale: number }> {
   const image = await readRgb(input, workWidth);
   const meta = await sharp(input).metadata();
-  return { parts: splitGarment(findGarment(image, { colours })), scale: (meta.width ?? workWidth) / workWidth };
+  let garment = findGarment(image, { colours });
+  if (within) {
+    const margin = 0.02;
+    const x0 = (within.left - margin) * image.width;
+    const x1 = (within.right + margin) * image.width;
+    const y0 = (within.top - margin) * image.height;
+    const y1 = (within.bottom + margin) * image.height;
+    const kept = Uint8Array.from(garment.data, (v, i) => {
+      const x = i % image.width;
+      const y = Math.floor(i / image.width);
+      return v && x >= x0 && x <= x1 && y >= y0 && y <= y1 ? 1 : 0;
+    });
+    if (kept.some((v) => v === 1)) garment = { ...garment, data: kept };
+  }
+  return { parts: splitGarment(garment), scale: (meta.width ?? workWidth) / workWidth };
 }
 
 type Placement = { scaledW: number; scaledH: number; left: number; top: number };
@@ -162,9 +189,9 @@ export type FramedPhoto = AlignedPhoto & {
  * part masks moved along. Unlike alignGarmentPhoto there's no catalogue framing to match, so nothing of
  * the garment is cut off or blown up. Throws SegmentationError if no garment is found.
  */
-export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso"): Promise<FramedPhoto> {
+export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso", within?: PhotoBox): Promise<FramedPhoto> {
   // A customer's garment may be more than one colour (a jacket open over a shirt).
-  const { parts, scale } = await analysePhoto(input, 800, "several");
+  const { parts, scale } = await analysePhoto(input, 800, "several", within);
   const meta = await sharp(input).metadata();
   const sourceW = meta.width ?? 1;
   const sourceH = meta.height ?? 1;

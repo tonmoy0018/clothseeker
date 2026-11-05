@@ -37,7 +37,7 @@ const select = {
   previewKey: true,
   referencePhotoKey: true,
   specSnapshot: true,
-  design: { select: { productId: true, product: { select: { name: true } } } },
+  design: { select: { productId: true, product: { select: { name: true, status: true, description: true } } } },
   cartItems: { select: { id: true } },
 } as const;
 

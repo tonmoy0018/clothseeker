@@ -6,6 +6,7 @@ import { SIZE_ORDER } from "@/lib/catalog/size-chart";
 import type { PrismaClient } from "@/lib/db/client";
 import { saveDesign } from "@/lib/design/service";
 import { SegmentationError } from "@/lib/garment-photo/segment";
+import { ownDressName, readStyle, type GarmentReading } from "@/lib/own-dress/read";
 import { ownPhotoPicture, photoRegionsFor, printAreasFor } from "@/lib/garment-photo/template";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -33,19 +34,33 @@ export type OwnDressInput = {
   /** The customer's photo (design-assets, under their own references/). */
   referenceKey: string;
   photo: Buffer;
-  garmentType: GarmentType;
+  /** What the customer said it is, or "auto": what the AI read (a dress when it couldn't tell). */
+  garmentType: GarmentType | "auto";
   /** "Make this exact dress": the design is saved as it is, ready for a quote. Otherwise a draft to edit. */
   exact: boolean;
+  /** What the AI read in the photo (lib/own-dress/read.ts), or null when it wasn't asked or couldn't answer. */
+  reading: GarmentReading | null;
 };
 
+/** The style option labels say what the AI saw ("V-neck"), else "As in your photo". */
+function styleOption(reading: GarmentReading | null, group: string) {
+  const seen = readStyle(reading, group);
+  return { ...AS_PHOTO_OPTION, label: seen ? `${seen.charAt(0).toUpperCase()}${seen.slice(1)}`.slice(0, 40) : AS_PHOTO_OPTION.label };
+}
+
 /** The template of a customer's own dress: their photo's front, cut into parts, nothing to choose but colour and additions. */
-function ownDressConfig(type: GarmentType, picture: { image: string; masks: Partial<Record<string, string>> }, placementAreas: TemplateConfig["placementAreas"]): TemplateConfig {
+function ownDressConfig(
+  type: GarmentType,
+  picture: { image: string; masks: Partial<Record<string, string>> },
+  placementAreas: TemplateConfig["placementAreas"],
+  reading: GarmentReading | null,
+): TemplateConfig {
   const base = defaultTemplateConfig(type);
   const style = Object.fromEntries(templateStyleGroups(base).map((group) => [group, AS_PHOTO]));
   const masks = Object.fromEntries(Object.entries(picture.masks).flatMap(([id, key]) => (key ? [[id, key]] : [])));
   return templateConfigSchema.parse({
     ...base,
-    styleOptions: Object.fromEntries(templateStyleGroups(base).map((group) => [group, [AS_PHOTO_OPTION]])),
+    styleOptions: Object.fromEntries(templateStyleGroups(base).map((group) => [group, [styleOption(reading, group)]])),
     placementAreas,
     garmentImages: { front: picture.image },
     regions: photoRegionsFor(type)
@@ -62,20 +77,28 @@ function ownDressConfig(type: GarmentType, picture: { image: string; masks: Part
  * design on it (saved for "exact", a draft otherwise). Throws OwnDressError when no garment is found.
  */
 export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, input: OwnDressInput): Promise<{ productId: string; designId: string }> {
-  const type = input.garmentType;
+  const { reading } = input;
+  const type = input.garmentType === "auto" ? (reading?.garmentType ?? "dress") : input.garmentType;
   const groups = templateStyleGroups(defaultTemplateConfig(type));
   const style = Object.fromEntries(groups.map((group) => [group, AS_PHOTO]));
-  let picture;
-  let pictureCm;
-  try {
-    ({ picture, pictureCm } = await ownPhotoPicture(input.photo, type, style));
-  } catch (error) {
-    if (error instanceof SegmentationError) throw new OwnDressError("no garment found");
-    throw error;
+  // Just the garment inside the box the AI found first (not the trousers under a jacket), then anything.
+  const attempts = reading?.box ? [reading.box, undefined] : [undefined];
+  let found = null;
+  for (const within of attempts) {
+    try {
+      const attempt = await ownPhotoPicture(input.photo, type, style, within);
+      if (Object.keys(attempt.picture.masks).length > 0) {
+        found = attempt;
+        break;
+      }
+    } catch (error) {
+      if (!(error instanceof SegmentationError)) throw error;
+    }
   }
-  if (Object.keys(picture.masks).length === 0) {
+  if (!found) {
     throw new OwnDressError("no garment found");
   }
+  const { picture, pictureCm } = found;
 
   const productId = randomUUID();
   const uploaded: string[] = [];
@@ -91,7 +114,7 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
     for (const [region, mask] of Object.entries(picture.masks)) {
       if (mask) masks[region] = await upload(mask, "png");
     }
-    const config = ownDressConfig(type, { image, masks }, printAreasFor(type, [picture], pictureCm));
+    const config = ownDressConfig(type, { image, masks }, printAreasFor(type, [picture], pictureCm), reading);
     const category = await db.category.findFirst({ orderBy: { sortOrder: "asc" }, select: { id: true } });
     if (!category) throw new Error("no category to file the dress under");
     const noun = GARMENT_TYPES[type].noun;
@@ -101,8 +124,8 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
         data: {
           id: productId,
           slug: `own-${productId}`,
-          name: `Your ${noun}`,
-          description: `Your own ${noun}, from your photo.`,
+          name: ownDressName(reading, type),
+          description: reading?.description ?? `Your own ${noun}, from your photo.`,
           categoryId: category.id,
           garmentType: type,
           status: "PRIVATE",

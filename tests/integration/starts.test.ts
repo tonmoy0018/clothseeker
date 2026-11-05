@@ -128,6 +128,7 @@ describe("start from a dress photo", () => {
       detectBrandLogos: (i, s) => inner.detectBrandLogos(i, s),
       planDesign: (r, s) => inner.planDesign(r, s),
       matchDress: async () => ({ productId: randomUUID(), alternatives: [] }),
+      readGarment: async () => ({}),
     };
     const { jobId } = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key });
     await runAiJobs(deps(rogue));

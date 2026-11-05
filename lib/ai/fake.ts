@@ -100,6 +100,28 @@ export class FakePlanner implements PlannerProvider {
   }
 
   /**
+   * A plain, deterministic reading: a dress in the photo's dominant colour, filling the photo but a
+   * thin margin (the cut-out then works inside it as without a box).
+   */
+  async readGarment(image: ProviderImage, signal: AbortSignal): Promise<unknown> {
+    await delay(Math.min(this.delayMs, 300), signal);
+    const { dominant } = await sharp(image.data).stats();
+    const hex = `#${[dominant.r, dominant.g, dominant.b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+    return {
+      garmentType: "dress",
+      name: "Tiered midi dress",
+      description: "A softly gathered dress with tiers.",
+      box: { top: 10, left: 10, bottom: 990, right: 990 },
+      neckline: "Strapless",
+      sleeves: "Sleeveless",
+      length: "Midi",
+      colours: [{ name: "Main colour", hex }],
+      pattern: null,
+      details: ["Tiered skirt"],
+    };
+  }
+
+  /**
    * Photo: the photo's dominant color decides the color, a hash of the photo picks the dress.
    * Description: the dress sharing the most words with the description; named colors are used.
    */

@@ -81,6 +81,11 @@ export interface PlannerProvider {
   planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown>;
   /** Picks the closest dress and its main colors. Raw JSON, validated by lib/ai/match.ts. */
   matchDress(request: DressMatchRequest, signal: AbortSignal): Promise<unknown>;
+  /**
+   * Reads a customer's own garment photo: what it is, where it is, its style, colours and details.
+   * Raw JSON, validated by lib/own-dress/read.ts (never trusted).
+   */
+  readGarment(image: ProviderImage, signal: AbortSignal): Promise<unknown>;
 }
 
 export type MotifRequest = { prompt: string; color: string; seed: number };

@@ -39,7 +39,9 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
   const [description, setDescription] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
   const [photoKey, setPhotoKey] = useState<string | null>(null);
-  const [garmentType, setGarmentType] = useState<GarmentType>("dress");
+  // "auto": the AI reads what it is from the photo.
+  const [garmentType, setGarmentType] = useState<GarmentType | "auto">("auto");
+  const noun = garmentType === "auto" ? "garment" : GARMENT_TYPES[garmentType].noun;
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [pending, startTransition] = useTransition();
 
@@ -182,8 +184,9 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
                   className="h-8 rounded-md border bg-background px-2 text-sm"
                   value={garmentType}
                   disabled={busy}
-                  onChange={(e) => setGarmentType(GARMENT_TYPE_IDS.find((t) => t === e.target.value) ?? "dress")}
+                  onChange={(e) => setGarmentType(GARMENT_TYPE_IDS.find((t) => t === e.target.value) ?? "auto")}
                 >
+                  <option value="auto">Let us work it out</option>
                   {GARMENT_TYPE_IDS.map((t) => (
                     <option key={t} value={t}>
                       {GARMENT_TYPES[t].label}
@@ -193,13 +196,13 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
               </label>
               <div className="flex flex-col gap-2">
                 <ChoiceButton
-                  title={`Make this exact ${GARMENT_TYPES[garmentType].noun}`}
+                  title={`Make this exact ${noun}`}
                   detail="We make it just like your photo. See it, try it on, then ask for a price: we reply within 24 hours."
                   onClick={() => choose("exact")}
                   disabled={busy}
                 />
                 <ChoiceButton
-                  title={`Customize this ${GARMENT_TYPES[garmentType].noun}`}
+                  title={`Customize this ${noun}`}
                   detail="Change its colours, add text, decorations or embroidery on your own dress, try it on, then ask for a price."
                   onClick={() => choose("customize")}
                   disabled={busy}

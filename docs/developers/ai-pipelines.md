@@ -148,8 +148,9 @@ browser: polls → /customize/{product}?design=…[&job=round][&alts=a,b]
 Its own entry is **Upload your dress** (`/design/upload`), linked from the site menu and the home page. The page shows the photo part of the start form only (`StartForms photoOnly`), with the same three choices. `/design/start` keeps both the photo and the description starts.
 
 ```
-own:    the same DRESS_MATCH job, payload.own = { garmentType, exact }
+own:    the same DRESS_MATCH job, payload.own = { garmentType ("auto" by default), exact }
 worker: brand-logo check (as above)
+        → planner.readGarment → parseGarmentReading (lib/own-dress/read.ts; failures = no reading)
         → ownPhotoPicture (lib/garment-photo/template.ts → frameGarmentPhoto: the whole garment cut out
           onto the studio backdrop, cut into Sleeves/Bodice/Skirt or Body)
         → PRIVATE product (owner = the customer; every size, price 0, never sold directly)
@@ -163,6 +164,22 @@ browser: /customize/{product}?design=… (see it → "Try it on" → "Request a 
   - **Not lined up.** It isn't lined up like the catalogue's style pictures: that framing crops to the shoulders-to-waist and enlarges, which cut most of a long garment away and blurred the rest. Instead the whole garment is fitted into the 900×1170 picture, uncropped and centred. The mannequin, stand and backdrop are removed, and the garment is placed on a plain studio backdrop (`BACKDROP`).
   - **Several colours.** Customer photos are cut out with `findGarment(…, { colours: "several" })`. It follows the garment wherever it stands in the photo, keeps every main colour (a k-means of the garment's middle), and fills pale fabric inside the garment's rows that barely differs from the backdrop (a white shirt inside an open black jacket).
   - **Print sizes.** They come from the garment's shoulder width (37 cm for dresses, 46 cm for tops), kept within 45–100% of the garment's width.
+- **What the AI reads** (decided 2026-11-05). The worker asks the planner one more question about the photo (`readGarment`, Gemini about 2–5 s). It gets back:
+  - the type (dress, shirt, panjabi or other; jackets, coats and tops count as shirts);
+  - a name;
+  - the main garment's box, as 0–1000 of the photo;
+  - neckline or collar, sleeves and length;
+  - up to 3 colours, a print and up to 5 details;
+  - a description.
+
+  `parseGarmentReading` treats the answer as untrusted. Words are trimmed and limited to plain characters, and brand names are dropped. Boxes too small to be the garment are ignored, and an unreadable answer is no reading. The reading is used for:
+  - **Type.** "What is it?" defaults to "Let us work it out" (`auto`). The AI's type is used, else a dress; a type the customer picks wins.
+  - **Where the garment is.** The cut-out still learns the backdrop from the whole photo's edges, but keeps only the garment inside the box, plus a 2% margin (`analysePhoto(…, within)`). That leaves out the trousers under a jacket or a bag beside a dress. If nothing is found there, it tries the whole photo. Cropping to the box was tried first, but the tight edges then counted as backdrop and left a pale rectangle behind the garment.
+  - **Name.** "Your black hooded open jacket", else "Your dress".
+  - **Style labels.** The one "as in your photo" option per group is labelled with what was read ("Hooded", "Long sleeves").
+  - **For the team.** The description, colours, print and details become the product's description. The team's quote page shows it as "What the photo shows", marked as read by AI.
+
+  If the AI can't answer, the garment is built as without it (tested).
 - **The order on the design screen.** First the garment, then a "See it on you" step ("Try it on" opens the try-on panel), then "Get a price for your dress". The quote isn't pushed first. Both sit in the page, not in the bar pinned to the bottom, which keeps only the size and Save (a tall pinned bar covered the AI options).
 
 - **Private.** `status: PRIVATE` keeps it out of everything that shows ACTIVE products:

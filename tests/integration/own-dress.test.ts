@@ -5,18 +5,19 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getAdminProduct, listAdminProducts } from "@/lib/admin/products";
-import { BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
+import { AiProviderError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
 import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
 import { createDesignRoundJob, getJobStatus } from "@/lib/ai/jobs";
 import { storedOptionsSchema } from "@/lib/ai/rounds";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";
+import type { PlannerProvider } from "@/lib/ai/types";
 import { processNextJob, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import type { Actor } from "@/lib/auth/policy";
 import { getCustomizationTemplate } from "@/lib/catalog/template-loader";
 import { addDesignToCart, DesignError, listDesigns, loadDesignContext, saveDesign } from "@/lib/design/service";
 import { validateDesignAgainstTemplate } from "@/lib/design/validate";
 import { AS_PHOTO } from "@/lib/own-dress/build";
-import { QuoteError, requestQuote } from "@/lib/quotes/service";
+import { listMyQuotes, QuoteError, requestQuote } from "@/lib/quotes/service";
 import { getProductBySlug, listProducts } from "@/lib/shop/catalog";
 import type { MemoryStorageAdapter } from "@/lib/storage/memory";
 import { parseDesignSpec } from "@/types/design-spec";
@@ -37,11 +38,11 @@ beforeEach(async () => {
   await createProduct({ variants: [{ size: "M", color: "Sage", priceMinor: 320_000, stock: 3 }] });
 });
 
-function deps(): AiWorkerDeps {
+function deps(planner: PlannerProvider = new FakePlanner()): AiWorkerDeps {
   return {
     db,
     storage,
-    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker() },
+    providers: { planner, image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker() },
     workerId: "worker-a",
     timeoutMs: 30_000,
     backoffMs: () => 0,
@@ -51,10 +52,10 @@ function deps(): AiWorkerDeps {
 /** An AI-generated catalogue photo of a dress on a plain backdrop. */
 const dressPhoto = () => readFile(path.join(process.cwd(), "prisma", "seed-photos", "cotton-tiered-midi.jpg"));
 
-async function ownDress(customer: Actor, exact: boolean, photo?: Buffer) {
+async function ownDress(customer: Actor, exact: boolean, photo?: Buffer, options: { garmentType?: string; planner?: PlannerProvider } = {}) {
   const reference = await uploadReferencePhoto(storage, customer, photo ?? (await dressPhoto()));
-  const { jobId } = await startDesignFrom(db, storage, customer, { mode: "own", referenceKey: reference.key, garmentType: "dress", exact });
-  await processNextJob(deps());
+  const { jobId } = await startDesignFrom(db, storage, customer, { mode: "own", referenceKey: reference.key, garmentType: options.garmentType ?? "auto", exact });
+  await processNextJob(deps(options.planner));
   return { jobId, referenceKey: reference.key, status: await getStartStatus(db, customer, jobId) };
 }
 
@@ -71,7 +72,9 @@ describe("your own dress from a photo", () => {
     expect(alternatives).toEqual([]);
 
     const product = await db.product.findUniqueOrThrow({ where: { id: productId }, include: { variants: true, template: true } });
-    expect(product).toMatchObject({ status: "PRIVATE", ownerId: ava.id, garmentType: "dress", name: "Your dress" });
+    // What the AI read: a tiered midi dress (the fake planner's reading).
+    expect(product).toMatchObject({ status: "PRIVATE", ownerId: ava.id, garmentType: "dress", name: "Your tiered midi dress" });
+    expect(product.description).toContain("Details: Tiered skirt.");
     expect(product.variants.map((v) => v.size).sort()).toEqual(["L", "M", "S", "XL", "XS", "XXL"]);
     expect(product.template).toMatchObject({ isActive: true, aiEnabled: true });
 
@@ -87,6 +90,45 @@ describe("your own dress from a photo", () => {
     expect(context?.template.config.regions.map((r) => r.id)).toEqual(expect.arrayContaining(["bodice", "skirt"]));
     expect(context?.template.config.placementAreas.length).toBeGreaterThan(0);
     expect(context?.template.config.recolor).toBe("shade");
+  });
+
+  it("is read by the AI: its type unless the customer chose one, its name, style and details for the team", async () => {
+    const ava = await createUser();
+    const { productId } = await built(ava);
+    const context = await loadDesignContext(db, storage, productId, { viewerId: ava.id });
+    const config = context?.template.config;
+    expect(config?.styleOptions.neckline?.[0]?.label).toBe("Strapless");
+    expect(config?.styleOptions.sleeveLength?.[0]?.label).toBe("Sleeveless");
+    expect(config?.styleOptions.dressLength?.[0]?.label).toBe("Midi");
+
+    // The customer's own choice wins over what the AI read.
+    const shirt = await ownDress(ava, false, undefined, { garmentType: "shirt" });
+    if (shirt.status.state !== "done") throw new Error("expected done");
+    expect(await db.product.findUniqueOrThrow({ where: { id: shirt.status.result.productId } })).toMatchObject({ garmentType: "shirt", name: "Your tiered midi dress" });
+
+    // The team sees it with the quote.
+    const exact = await built(ava, true);
+    const { quoteId } = await requestQuote(db, storage, ava, { designId: exact.designId, notes: "" });
+    const [view] = await listMyQuotes(db, storage, ava);
+    expect(view?.id).toBe(quoteId);
+    expect(view?.garmentDescription).toContain("A softly gathered dress with tiers.");
+  });
+
+  it("still works when the AI can't read the photo: named and cut out as before", async () => {
+    const ava = await createUser();
+    const fake = new FakePlanner();
+    const silent: PlannerProvider = {
+      name: "silent",
+      detectBrandLogos: (images, signal) => fake.detectBrandLogos(images, signal),
+      planDesign: (request, signal) => fake.planDesign(request, signal),
+      matchDress: (request, signal) => fake.matchDress(request, signal),
+      readGarment: async () => {
+        throw new AiProviderError("down", true);
+      },
+    };
+    const { status } = await ownDress(ava, false, undefined, { planner: silent });
+    if (status.state !== "done") throw new Error(`expected done, got ${JSON.stringify(status)}`);
+    expect(await db.product.findUniqueOrThrow({ where: { id: status.result.productId } })).toMatchObject({ name: "Your dress", garmentType: "dress" });
   });
 
   it("gets AI ideas like our dresses: four options on the customer's own dress, its cut kept", async () => {

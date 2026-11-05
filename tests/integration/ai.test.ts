@@ -53,6 +53,7 @@ class SpyPlanner implements PlannerProvider {
 
   detectBrandLogos: PlannerProvider["detectBrandLogos"] = (images, signal) => this.inner.detectBrandLogos(images, signal);
   matchDress: PlannerProvider["matchDress"] = (request, signal) => this.inner.matchDress(request, signal);
+  readGarment: PlannerProvider["readGarment"] = (image, signal) => this.inner.readGarment(image, signal);
 
   async planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown> {
     this.requests.push(request);
