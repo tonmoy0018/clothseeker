@@ -84,7 +84,12 @@ describe("LocalTryOn", () => {
     await new LocalTryOn({ runner, body: body(POSE), steps: 20, width: 480 }).tryOn(await request(), signal);
     const [call] = runner.jobs;
     expect(call?.filesExist).toBe(true);
-    expect(call?.person).toEqual({ width: 600, height: 800 });
+    // A 3:4 crop around the person, within the photo (600×800), at least the model's width.
+    const cropWidth = call?.person.width ?? 0;
+    const cropHeight = call?.person.height ?? 1;
+    expect(cropWidth / cropHeight).toBeCloseTo(3 / 4, 2);
+    expect(cropWidth).toBeGreaterThanOrEqual(384);
+    expect(cropWidth).toBeLessThanOrEqual(600);
     expect(call?.job).toMatchObject({ steps: 20, width: 480, height: 640, seed: 42 });
     expect(existsSync(path.dirname(call?.job.person ?? "/nowhere/x"))).toBe(false);
   });

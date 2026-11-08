@@ -179,6 +179,14 @@ describe("tryOnMask keeps the body's shape", () => {
     expect(at(tryOnMask(pose(), slim, W, H, "hips"), 578, 520)).toBe(false);
   });
 
+  it("doesn't keep a hand that's out of sight (in a pocket): its spot is repainted", () => {
+    const visible = tryOnMask(pose(), null, W, H, "hips");
+    const pocketed = tryOnMask(pose(), null, W, H, "hips", { hands: { left: false, right: true } });
+    expect(visible?.[465 * W + 585]).toBe(0);
+    expect(pocketed?.[465 * W + 585]).toBe(255); // left hand: repainted
+    expect(pocketed?.[465 * W + 415]).toBe(0); // right hand: kept
+  });
+
   it("keeps the wrists (bracelets, a watch) and anything marked to keep", () => {
     const m = tryOnMask(pose(), null, W, H, "hips");
     expect(at(m, 585, 465)).toBe(false);
@@ -191,17 +199,32 @@ describe("tryOnMask keeps the body's shape", () => {
 });
 
 describe("tryOnCrop and blendTryOn", () => {
-  it("picks the largest 3:4 box that holds the mask, inside the photo", () => {
+  it("crops around the person, so a small figure fills the model's picture", () => {
+    const width = 1280;
+    const height = 1280;
+    const m = new Uint8Array(width * height);
+    for (let y = 700; y < 1000; y += 1) for (let x = 560; x < 720; x += 1) m[y * width + x] = 255;
+    // The whole person, head to feet, is taller than the mask.
+    const box = tryOnCrop(m, width, height, { left: 570, top: 600, width: 140, height: 650 });
+    expect(box.width / box.height).toBeCloseTo(3 / 4, 2);
+    expect(box.height).toBeLessThan(800); // not the whole 1280-tall photo
+    expect(box.top).toBeLessThanOrEqual(600); // the head is in
+    expect(box.top + box.height).toBeGreaterThanOrEqual(1250 - 1); // and the feet
+    expect(box.left).toBeLessThanOrEqual(560);
+    expect(box.left + box.width).toBeGreaterThanOrEqual(720);
+  });
+
+  it("takes the largest 3:4 box that fits when the person fills the photo, stopping at its edges", () => {
     const width = 1200;
     const height = 1000;
     const m = new Uint8Array(width * height);
     for (let y = 100; y < 900; y += 1) for (let x = 900; x < 1000; x += 1) m[y * width + x] = 255;
-    const box = tryOnCrop(m, width, height);
-    // Centred on the mask it would stick out on the right, so it stops at the edge.
+    const box = tryOnCrop(m, width, height, { left: 850, top: 0, width: 300, height: 1000 });
+    // Centred on them it would stick out on the right, so it stops at the edge.
     expect(box).toEqual({ left: 450, top: 0, width: 750, height: 1000 });
   });
 
-  it("is the photo itself when the photo is already 3:4", () => {
+  it("is the photo itself when the photo is 3:4 and smaller than the model's picture", () => {
     const m = new Uint8Array(300 * 400);
     m[200 * 300 + 150] = 255;
     expect(tryOnCrop(m, 300, 400)).toEqual({ left: 0, top: 0, width: 300, height: 400 });

@@ -10,9 +10,10 @@ import sharp from "sharp";
 import { z } from "zod";
 
 import { hairMask } from "@/lib/tryon/hair";
+import { visibleHands } from "@/lib/tryon/hands";
 import { blendTryOn, tryOnCrop, tryOnMask, type Box } from "@/lib/tryon/mask";
 import type { Pose } from "@/lib/vision/movenet";
-import { maskAtSmooth, type PersonMask } from "@/lib/vision/segment";
+import { maskAtSmooth, SELFIE_SIZE, type PersonMask } from "@/lib/vision/segment";
 
 import { AiJobRejected, AiProviderError } from "./errors";
 import type { TryOnProvider, TryOnRequest } from "./types";
@@ -66,12 +67,15 @@ export class LocalTryOn implements TryOnProvider {
     // Hair falling over the shoulders stays in front of the new garment.
     const hair = analysis.pose ? hairMask(rgb, width, height, analysis.pose, personAt) : null;
     const keep = hair ? (x: number, y: number) => hair[Math.round(y) * width + Math.round(x)] ?? 0 : undefined;
-    const mask = analysis.pose ? tryOnMask(analysis.pose, personAt, width, height, reach, { fit: request.fit, keep }) : null;
+    // Hands in pockets aren't kept (their spot is the old pocket); visible hands are.
+    const hands = analysis.pose ? visibleHands(rgb, width, height, analysis.pose) : undefined;
+    const mask = analysis.pose ? tryOnMask(analysis.pose, personAt, width, height, reach, { fit: request.fit, keep, hands }) : null;
     if (!mask) {
       // The photo check refuses these before; a photo that slips through gets the same message.
       throw new AiJobRejected("PHOTO_BODY_NOT_VISIBLE");
     }
-    const box = tryOnCrop(mask, width, height);
+    // Cropped around the person, so they fill the model's small picture.
+    const box = tryOnCrop(mask, width, height, personBounds(person, width, height));
     const crop = (data: Uint8Array, channels: 1 | 3) => sharp(data, { raw: { width, height, channels } }).extract(box);
 
     const dir = await mkdtemp(path.join(tmpdir(), "clothseeker-tryon-"));
@@ -93,6 +97,30 @@ export class LocalTryOn implements TryOnProvider {
       await rm(dir, { recursive: true, force: true });
     }
   }
+}
+
+/** The person's box in the photo, from the person outline (letterbox space → photo pixels), or null. */
+function personBounds(person: PersonMask, width: number, height: number): Box | null {
+  const { box } = person;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let y = 0; y < SELFIE_SIZE; y += 1) {
+    for (let x = 0; x < SELFIE_SIZE; x += 1) {
+      if ((person.alpha[y * SELFIE_SIZE + x] ?? 0) < 0.5) continue;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x + 1);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y + 1);
+    }
+  }
+  if (minX === Infinity) return null;
+  const left = Math.max(0, Math.floor((minX - box.offsetX) / box.scale));
+  const top = Math.max(0, Math.floor((minY - box.offsetY) / box.scale));
+  const right = Math.min(width, Math.ceil((maxX - box.offsetX) / box.scale));
+  const bottom = Math.min(height, Math.ceil((maxY - box.offsetY) / box.scale));
+  return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
 }
 
 /**

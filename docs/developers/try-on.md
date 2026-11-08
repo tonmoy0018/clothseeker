@@ -129,13 +129,13 @@ Decided 2026-11-02: customers type **only their height**, choose the size to try
    - **The body keeps its shape** (2026-11-02): above the hips, and for shirts all the way down, the mask stays within 6% of the shoulder width (`BODY_MARGIN`) of the person's outline. So the model can't draw shoulders, sides or arms wider than they are. Below the hips a skirt may stand away from the legs.
    - **Kept as they are:**
      - the face, hands, feet and backdrop;
-     - the wrists, with bracelets or a watch;
+     - the wrists, with bracelets or a watch, but only hands that are in sight (`visibleHands`, `lib/tryon/hands.ts`: skin like the face's, by hue and colourfulness, where the hand would be). A hand in a pocket isn't kept: its spot was the old pocket and came out as a black "glove". Repainted, the model draws the arm going into the trouser pocket under the new garment;
      - hair falling over the shoulders, when it can be told apart (`hairMask` in `lib/tryon/hair.ts`). There is no hair model on the device, so hair is found by shade: much darker than the lit face, growing from the head. When hair isn't much darker than the skin, or the growth spills into the neck or chest (shadowed dark skin, a dark top), nothing is kept and the hair is repainted as before.
    - **Not solved:**
      - Arms inside the mask can still be moved by the model, for example drawn closer to the body.
      - Necklaces under the new neckline are lost.
      - We tried keeping bare arms past the sleeves, or showing them to the model. On a seated photo with the arms resting on the lap, the model then drew two garments (a crop top over a denim skirt). On a standing photo, the sleeves came out cut off. So both were dropped.
-2. **A 3:4 crop** around the mask (`tryOnCrop`), written with the mask and the garment to a private temporary folder, deleted afterwards.
+2. **A 3:4 crop around the person** (`tryOnCrop`): the smallest 3:4 box holding the whole person (from the person outline, head to feet) and the mask, with 8% room. It's at least the model's width (384 px) and never larger than the photo. It's written with the mask and the garment to a private temporary folder, deleted afterwards. Until 2026-11-08 the crop was the largest 3:4 box of the photo: a small figure in a landscape then got a few dozen of the model's pixels, and the shirt came out blurred and generic. Cropped to the person, the same photo gave the Oxford's button-down collar, buttons and cuffs.
 3. **The model** (`worker/local-tryon/catvton_server.py`): one Python process, started on the first try-on and kept loaded (`CatVtonProcess`), one try-on at a time over stdin/stdout JSON lines. It stops after 10 idle minutes to give the memory back, and is killed when a try-on runs out of time. It gets only `PATH`, `HOME` and its own settings (never the worker's keys), runs offline (`HF_HUB_OFFLINE`), and its output never reaches our logs.
 4. **Back into the photo** (`blendTryOn`): only the softened mask area takes the model's picture, so the face, hands and background keep the photo's full sharpness.
 

@@ -66,6 +66,8 @@ export type MaskOptions = {
   fit?: MaskFit;
   /** Pixels never to repaint: hair falling over the shoulders (lib/tryon/hair.ts). */
   keep?: PersonAt;
+  /** Which hands are in sight (lib/tryon/hands.ts): only those are kept; a hand in a pocket is repainted. */
+  hands?: { left: boolean; right: boolean };
 };
 
 /**
@@ -89,7 +91,7 @@ export function tryOnMask(
   reach: TryOnReach,
   options: MaskOptions = {},
 ): Uint8Array | null {
-  const { fit, keep } = options;
+  const { fit, keep, hands: handsInSight } = options;
   const { leftShoulder: ls, rightShoulder: rs, leftHip: lh, rightHip: rh } = pose;
   if (!seen(ls) || !seen(rs)) return null;
   const shoulders = mid(ls, rs);
@@ -162,11 +164,11 @@ export function tryOnMask(
   }
   // Hands stay, with the wrist and what's on it (bracelets, a watch): a disc around the end of each arm.
   const hands: P[] = [];
-  for (const [elbow, wrist] of [
-    [pose.leftElbow, pose.leftWrist],
-    [pose.rightElbow, pose.rightWrist],
+  for (const [elbow, wrist, inSight] of [
+    [pose.leftElbow, pose.leftWrist, handsInSight?.left ?? true],
+    [pose.rightElbow, pose.rightWrist, handsInSight?.right ?? true],
   ] as const) {
-    if (!seen(wrist)) continue;
+    if (!seen(wrist) || !inSight) continue;
     const dx = seen(elbow) ? wrist.x - elbow.x : 0;
     const dy = seen(elbow) ? wrist.y - elbow.y : 1;
     const length = Math.max(1e-6, Math.hypot(dx, dy));
@@ -227,31 +229,60 @@ function rowDistances(onPerson: Uint8Array, out: Float32Array): void {
 
 export type Box = { left: number; top: number; width: number; height: number };
 
-/**
- * The largest 3:4 (width:height) box inside the photo that holds the whole mask, centred on it where the
- * photo allows: try-on models work on 3:4 pictures, and the rest of the photo is kept as it is.
- */
-export function tryOnCrop(mask: Uint8Array, width: number, height: number): Box {
+/** The bounding box of the non-zero pixels of a width×height map, or null when there are none. */
+function bounds(map: ArrayLike<number>, width: number, height: number): Box | null {
   let minX = width;
   let maxX = -1;
   let minY = height;
   let maxY = -1;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (!mask[y * width + x]) continue;
+      if (!map[y * width + x]) continue;
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
     }
   }
-  const boxWidth = Math.min(width, Math.floor((height * 3) / 4));
-  const boxHeight = Math.min(height, Math.floor((boxWidth * 4) / 3));
-  const place = (lo: number, hi: number, size: number, limit: number) => {
-    if (hi < lo) return Math.floor((limit - size) / 2);
-    return Math.max(0, Math.min(limit - size, Math.round((lo + hi) / 2 - size / 2)));
-  };
-  return { left: place(minX, maxX, boxWidth, width), top: place(minY, maxY, boxHeight, height), width: boxWidth, height: boxHeight };
+  return maxX < 0 ? null : { left: minX, top: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+/** Room left around the person in the crop, as a share of their height. */
+const CROP_MARGIN = 0.08;
+/** The narrowest crop (the try-on model's own picture width): a smaller one would only be enlarged. */
+const MIN_CROP_WIDTH = 384;
+
+/**
+ * The 3:4 (width:height) box of the photo the try-on model sees: just around the person (`person`, the
+ * whole body from the person outline) and the mask, with a margin, so they fill the model's small
+ * picture as in the photos it learned from. A small figure in a wide landscape otherwise gets a few dozen
+ * of its pixels, and the garment comes out blurred and wrong. The rest of the photo is kept as it is.
+ * Never larger than the photo: then the largest 3:4 box that fits, centred on them.
+ */
+export function tryOnCrop(mask: Uint8Array, width: number, height: number, person?: Box | null): Box {
+  const masked = bounds(mask, width, height);
+  const parts = [masked, person ?? null].filter((b): b is Box => b !== null);
+  const fullWidth = Math.min(width, Math.floor((height * 3) / 4));
+  const fullHeight = Math.min(height, Math.floor((fullWidth * 4) / 3));
+  if (parts.length === 0) {
+    return { left: Math.floor((width - fullWidth) / 2), top: Math.floor((height - fullHeight) / 2), width: fullWidth, height: fullHeight };
+  }
+  const left = Math.min(...parts.map((b) => b.left));
+  const top = Math.min(...parts.map((b) => b.top));
+  const right = Math.max(...parts.map((b) => b.left + b.width));
+  const bottom = Math.max(...parts.map((b) => b.top + b.height));
+  const margin = (bottom - top) * CROP_MARGIN;
+  const needW = right - left + 2 * margin;
+  const needH = bottom - top + 2 * margin;
+  // The smallest 3:4 box holding them, but not beyond the photo.
+  let boxWidth = Math.ceil(Math.max(needW, (needH * 3) / 4, MIN_CROP_WIDTH));
+  let boxHeight = Math.ceil((boxWidth * 4) / 3);
+  if (boxWidth > fullWidth || boxHeight > fullHeight) {
+    boxWidth = fullWidth;
+    boxHeight = fullHeight;
+  }
+  const place = (lo: number, hi: number, size: number, limit: number) => Math.max(0, Math.min(limit - size, Math.round((lo + hi) / 2 - size / 2)));
+  return { left: place(left, right, boxWidth, width), top: place(top, bottom, boxHeight, height), width: boxWidth, height: boxHeight };
 }
 
 /**
