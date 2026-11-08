@@ -45,7 +45,7 @@ test.describe("@supabase your own dress", () => {
     await expect(page.getByRole("button", { name: "Add to cart" })).toHaveCount(0);
 
     // Try it on first.
-    await page.getByTestId("own-dress-try-on").getByRole("button", { name: "Try it on" }).click();
+    await page.getByTestId("open-try-on").click();
     const panel = page.getByTestId("try-on-panel");
     await panel.getByLabel("I agree to use my photo for try-on").check();
     await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await readFile(path.join(process.cwd(), "tests", "fixtures", "tryon-woman.jpg")) });

@@ -516,6 +516,22 @@ export function DesignEditor(props: DesignEditorProps) {
 
   const fontFaces = FONTS.map((f) => `@font-face{font-family:"${f.family}";src:url("${fontUrl(f.id)}") format("truetype");font-display:swap;}`).join("");
 
+  // Always in the pinned bar, so trying on is never more than a click away (the rail icon is easy to miss).
+  const tryOnButton = (
+    <Button
+      variant="outline"
+      data-testid="open-try-on"
+      aria-pressed={showTryOn}
+      onClick={() => {
+        setShowTryOn(true);
+        requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      }}
+    >
+      <Shirt className="size-4" />
+      Try on
+    </Button>
+  );
+
   return (
     // Desktop: preview on the left (stays in view), configurator tabs on the right.
     // Phone: preview, then the tabs, with the size/price/cart bar pinned to the bottom.
@@ -783,24 +799,9 @@ export function DesignEditor(props: DesignEditorProps) {
           </div>
         </div>
 
-        {/* Your own dress: see it, try it on, then ask for a price (in the page, not the pinned bar). */}
+        {/* Your own dress: the price request, in the page (not the pinned bar, which it would make too tall). */}
         {props.ownDress && (
           <div className="mt-6 flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4" data-testid="own-dress-try-on">
-              <div className="mr-auto flex flex-col gap-0.5">
-                <span className="text-sm font-medium">See it on you</span>
-                <span className="text-xs text-muted-foreground">Try your {garment.noun} on with a photo of yourself before asking for a price.</span>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowTryOn(true);
-                  requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-                }}
-              >
-                Try it on
-              </Button>
-            </div>
             <QuoteRequest ownDress designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
           </div>
         )}
@@ -848,6 +849,7 @@ export function DesignEditor(props: DesignEditorProps) {
               <p className="mr-auto text-sm text-muted-foreground" data-testid="own-dress-price">
                 Made to order from your photo: the ClothSeeker team prices it.
               </p>
+              {tryOnButton}
               <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
                 {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
               </Button>
@@ -877,6 +879,7 @@ export function DesignEditor(props: DesignEditorProps) {
                     {showPrice ? "Hide price details" : "Price details"}
                   </button>
                 </div>
+                {tryOnButton}
                 <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
                   {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
                 </Button>
