@@ -38,11 +38,11 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 
 ## Photo checks
 
-**Any photo with a person in it can be used** (decided 2026-11-02): selfies, waist-up and half-body photos, landscape photos, side views, dim light and photos with other people in them. The garment goes on the main person and simply continues past the photo's edge. All checks use the same rules, `judgeTryOnPhoto` in [`lib/vision/photo-check.ts`](../../lib/vision/photo-check.ts), on the findings of the on-device body and face models ([live-try-on.md](live-try-on.md)):
+**Any photo with a person in it can be used** (decided 2026-11-02): selfies, waist-up and half-body photos, landscape photos, side views, dim light and photos with other people in them. The garment goes on the main person and simply continues past the photo's edge. All checks use the same rules, `judgeTryOnPhoto` in [`lib/vision/photo/photo-check.ts`](../../lib/vision/photo/photo-check.ts), on the findings of the on-device body and face models ([live-try-on.md](live-try-on.md)):
 - **refused only when no person is found:** both shoulders must be found somewhere in the picture ("We couldn't find you in this photo. Use one where your shoulders can be seen.");
 - light, the number of faces and facing the camera are still measured (`goodLight`, `onePerson`, `facingForward`) and logged by the worker, but no longer refuse a photo.
 
-1. **In the browser, before upload** (`photoProblemOnDevice`, `lib/vision/check-photo.ts`): the models run on the customer's device and an unusable photo is refused instantly with the exact reason ("We can't see you from your shoulders to your knees…"). Nothing is uploaded. If the models can't run on that device, the photo is uploaded and checked by the worker instead.
+1. **In the browser, before upload** (`photoProblemOnDevice`, `lib/vision/photo/check-photo.ts`): the models run on the customer's device and an unusable photo is refused instantly with the exact reason ("We can't see you from your shoulders to your knees…"). Nothing is uploaded. If the models can't run on that device, the photo is uploaded and checked by the worker instead.
 2. **At upload** (`photoShapeProblem`): only a practically all-black or all-white photo is refused; any orientation is fine.
 3. **In the worker, once per photo** (`TryOnPhotoChecker`): the check customers can't skip. With `TRYON_PROVIDER=huggingface` it's `LocalPhotoChecker`, the same models run in Node on our own machine (about 0.3 s per photo); the worker refuses to start if `pnpm vision:fetch` hasn't run. With the fake try-on it's `FakePhotoChecker` (rejects dark or landscape photos). A failure ends the job with the specific message and doesn't count toward the limit. Passing sets `try_on_photos.checked_at`, so the photo isn't checked again.
 - **Test photos:** `tests/fixtures/tryon-woman.jpg` and `tryon-man.jpg` are AI-generated (FLUX.1 schnell) people who don't exist, so they can be used in tests and screenshots. The real-model tests (`tests/unit/photo-check.test.ts`) check that they pass, that waist-up, darkened and two-person versions pass too, and that an empty photo is refused.
@@ -58,8 +58,8 @@ worker sweep: cleanupTryOnMedia — unsaved photos/results older than 24 h
 | `TRYON_PROVIDER` | What | When |
 |---|---|---|
 | `fake` (default) | `FakeTryOn` lays the garment over the middle of the photo. Deterministic, instant, nothing leaves the machine. | Development, tests, CI |
-| `huggingface` | `HuggingFaceTryOn` (`lib/ai/tryon-hf.ts`) calls free public Gradio Spaces with `@gradio/client`, in the order of `TRYON_SPACES` | Real previews |
-| `local` | `LocalTryOn` (`lib/ai/tryon-local.ts`): CatVTON on the worker's own machine ([below](#local-try-on)). Photos stay here, no daily GPU allowance; about 2–2.5 minutes per try-on on an 8 GB M1 | Real previews, private |
+| `huggingface` | `HuggingFaceTryOn` (`lib/ai/providers/tryon-hf.ts`) calls free public Gradio Spaces with `@gradio/client`, in the order of `TRYON_SPACES` | Real previews |
+| `local` | `LocalTryOn` (`lib/ai/providers/tryon-local.ts`): CatVTON on the worker's own machine ([below](#local-try-on)). Photos stay here, no daily GPU allowance; about 2–2.5 minutes per try-on on an 8 GB M1 | Real previews, private |
 
 **Spaces and their dress modes** (default order, best first):
 - `jallenjia/Change-Clothes-AI` (IDM-VTON with a dress mode) uses `/tryon` with `category: "dresses"` or `"upper_body"`, the person photo as the editor's background and automatic masking (`is_checked: true`).
@@ -86,7 +86,7 @@ The other Spaces have no text input and ignore it. The cache key is `v: 4` since
 
 Decided 2026-11-02: customers type **only their height**, choose the size to try, and see **their size** and a **fit report** while the try-on **shows that size on them**. Their body measurements come from the try-on photo they chose. A first version also asked for weight and a Fitted / Regular / Relaxed preference. Both were dropped the same day: the photo replaces weight (migration `20261102130302_fit_height_only`), and someone who likes clothes looser or closer simply tries the next size, which the report describes (`20261102133344_fit_no_preference`). `lib/fit/fit.ts` and `lib/fit/measure.ts` are pure and shared by the browser and the worker.
 
-- **Measuring** (`measurePhoto`, run in the browser by `lib/vision/measure-photo.ts` with the on-device pose and person-outline models; the photo is fetched from its signed URL and nothing is uploaded for this):
+- **Measuring** (`measurePhoto`, run in the browser by `lib/vision/photo/measure-photo.ts` with the on-device pose and person-outline models; the photo is fetched from its signed URL and nothing is uploaded for this):
   - The body's height in pixels is taken from the top of the head (found in the outline above the nose) to the ankles when the whole person is in the photo. Otherwise it comes from the joints that are visible (shoulder → hip → knee → ankle) at standard proportions (`BODY_LEVELS`). The customer's height turns pixels into centimetres.
   - **Women:** the front width is measured at the bust (median over 25–40% of the shoulder-to-hip distance), the waist (the narrowest place over 50–85%) and the hips (the widest place over 95–125%).
   - **Men:** the chest and the waist (the narrowest place over 60–85%).
@@ -111,7 +111,7 @@ Decided 2026-11-02: customers type **only their height**, choose the size to try
   - **Below the hem the photo is kept** (their own legs or legwear). When we repainted the legs alone, the model drew trousers.
   - The Hugging Face provider ignores the fit; the report still shows.
 - **Remembering** (`lib/fit/profile.ts`, `body_profiles`): only when the customer ticks "Remember my height on my account". "Forget it" deletes it, and it goes with the account. Measurements from photos are never stored on the account. A result's `fit` is cleared when the result is deleted (by the customer or the 24-hour cleanup). Height and measurements are never logged.
-- **The panel** (`app/(shop)/fit-section.tsx`): an optional section above "Try it on".
+- **The panel** (`app/(shop)/_try-on/fit-section.tsx`): an optional section above "Try it on".
   - Each photo is measured once, when it's first chosen.
   - With no size chosen, the try-on uses the recommended one.
   - A result shows "Showing size M at 165 cm.", or "… (length only)" when the photo wasn't measured.
@@ -121,7 +121,7 @@ Decided 2026-11-02: customers type **only their height**, choose the size to try
 
 `TRYON_PROVIDER=local` runs the try-on on the worker's machine instead of a public Space. Set it up once with `pnpm tryon:setup` (`scripts/setup-local-tryon.ts`):
 - a Python 3.11 virtual environment with pinned packages (`LOCAL_TRYON_PACKAGES`), made with `uv` if installed;
-- the models from Hugging Face at **pinned commits**, each checked by **SHA-256** (`LOCAL_TRYON_FILES` in `lib/ai/tryon-local-setup.ts`), **safetensors and JSON only** (no pickles): Stable Diffusion 1.5 inpainting's UNet (fp16), the `sd-vae-ft-mse` image encoder/decoder, and CatVTON's **DressCode** attention weights;
+- the models from Hugging Face at **pinned commits**, each checked by **SHA-256** (`LOCAL_TRYON_FILES` in `lib/ai/providers/tryon-local-setup.ts`), **safetensors and JSON only** (no pickles): Stable Diffusion 1.5 inpainting's UNet (fp16), the `sd-vae-ft-mse` image encoder/decoder, and CatVTON's **DressCode** attention weights;
 - about 2.3 GB in `~/.cache/clothseeker/local-tryon` (`LOCAL_TRYON_DIR`), outside the iCloud-synced project. It writes `verified.json` last; the worker refuses to start with `TRYON_PROVIDER=local` until it's there and every file has its size.
 
 **How a try-on runs** (`LocalTryOn.tryOn`):
@@ -151,9 +151,9 @@ Without these it swapped and took over a minute per step.
 
 **Licence:** CatVTON's weights are **CC BY-NC-SA 4.0, non-commercial**. Fine for this academic project; license or replace them before any commercial launch ([licences.md](licences.md)).
 
-## Feasibility results (2026-10-09, `ai-scripts/tryon-feasibility.ts`)
+## Feasibility results (2026-10-09, `scripts/ai/tryon-feasibility.ts`)
 
-`pnpm tsx ai-scripts/tryon-feasibility.ts <person> <garment> <out-dir> [--upper] [space…]` sends one photo and one garment to each Space and saves the outputs. Use photos you may share with a third party, e.g. the Spaces' own examples.
+`pnpm tsx scripts/ai/tryon-feasibility.ts <person> <garment> <out-dir> [--upper] [space…]` sends one photo and one garment to each Space and saves the outputs. Use photos you may share with a third party, e.g. the Spaces' own examples.
 
 - Both Spaces were **running and answered in 17–26 s**, including through the app.
 - **Quality is a rough preview.** OOTDiffusion clearly showed our dress (colours, bodice/skirt split, pattern) on the person. It also often invented extra garments where the original sleeves were (e.g. a dark "jacket" over the arms). Leffa, given a loose drawing, kept the person's own clothes and pasted the pattern on. Tight garment images (`prepareGarment`) helped noticeably. Re-tested on 2026-10-23 with cut-out catalogue photos: OOTDiffusion put the smocked dress (puff sleeves, smocked bodice, midi skirt) convincingly on the Space's example model in about 30 s; Leffa treated it as a top. The cache key includes a version (`v: 2` since the cut-out), so older results are redone.

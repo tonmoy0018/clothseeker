@@ -2,10 +2,10 @@ import { z } from "zod";
 
 import { STYLE_GROUP_IDS, styleGroupsOf } from "@/lib/catalog/garment-types";
 
-import { AiProviderError } from "./errors";
+import { AiProviderError } from "../errors";
 import { providerFetch, type FetchLike } from "./http";
-import { OPTIONS_PER_ROUND, PLACEMENT_ACROSS, PLACEMENT_DOWN, PLACEMENT_SIZES } from "./plan";
-import type { BrandLogoCheck, DressMatchRequest, GarmentShotProvider, PlanConstraints, PlannerProvider, PlanRequest, ProviderImage } from "./types";
+import { OPTIONS_PER_ROUND, PLACEMENT_ACROSS, PLACEMENT_DOWN, PLACEMENT_SIZES } from "../plan";
+import type { BrandLogoCheck, DressMatchRequest, GarmentShotProvider, PlanConstraints, PlannerProvider, PlanRequest, ProviderImage } from "../types";
 
 // Google Gemini planner (REST generateContent with a JSON response schema).
 //

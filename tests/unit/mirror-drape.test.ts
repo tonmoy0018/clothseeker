@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { ClothSway, MAX_SWAY, WidthSmoother } from "@/lib/vision/cloth";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
-import { bodyAnchors, fitToOutline, garmentToBody, MAX_WIDEN, measureOutline, MIN_FIT, type BodyAnchors, type GarmentFit } from "@/lib/vision/mirror";
-import { isSkin, skinModel, uncoverOwnClothes } from "@/lib/vision/uncover";
+import { ClothSway, MAX_SWAY, WidthSmoother } from "@/lib/vision/mirror/cloth";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
+import { bodyAnchors, fitToOutline, garmentToBody, MAX_WIDEN, measureOutline, MIN_FIT, type BodyAnchors, type GarmentFit } from "@/lib/vision/mirror/mirror";
+import { isSkin, skinModel, uncoverOwnClothes } from "@/lib/vision/mirror/uncover";
 
 // Making the live mirror's garment move like worn cloth: fitted to the person's own outline (and so to
 // their turns), skirts covering legs that step apart and swinging behind the hips, and the person's

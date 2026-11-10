@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiProviderError, AI_FAILURE_MESSAGES } from "@/lib/ai/errors";
-import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
 import type { AiProviders, TryOnProvider, TryOnRequest } from "@/lib/ai/types";
 import { hemPlace, type TryOnFit } from "@/lib/fit/fit";
 import { processNextJob, runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";

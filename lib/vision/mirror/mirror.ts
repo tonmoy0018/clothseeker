@@ -1,6 +1,6 @@
 import type { GarmentParts, Mask } from "@/lib/garment-photo/segment";
 
-import type { Pose } from "./movenet";
+import type { Pose } from "../models/movenet";
 
 // Fitting a garment picture onto a person in a camera frame, for the live mirror. Pure geometry, so it
 // is unit-tested and the browser only draws.

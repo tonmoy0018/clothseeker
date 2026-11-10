@@ -8,13 +8,13 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { downscalePhoto } from "@/lib/media/client-resize";
 import { TRYON_CONSENT_POINTS } from "@/lib/tryon/rules";
-import type { VisionClient } from "@/lib/vision/client";
-import type { PersonLayer } from "@/lib/vision/draw";
-import type { MirrorGarment } from "@/lib/vision/garment-source";
-import type { Pose } from "@/lib/vision/movenet";
-import type { PersonMask } from "@/lib/vision/segment";
+import type { VisionClient } from "@/lib/vision/runtime/client";
+import type { PersonLayer } from "@/lib/vision/mirror/draw";
+import type { MirrorGarment } from "@/lib/vision/mirror/garment-source";
+import type { Pose } from "@/lib/vision/models/movenet";
+import type { PersonMask } from "@/lib/vision/models/segment";
 
-import { getTryOnStatusAction, startTryOnAction, uploadTryOnPhotoAction } from "./try-on-actions";
+import { getTryOnStatusAction, startTryOnAction, uploadTryOnPhotoAction } from "./actions";
 import type { TryOnSource } from "./try-on-panel";
 
 // Live mirror: the camera, shown like a mirror, with the garment drawn on the customer as they move.
@@ -100,7 +100,7 @@ export function LiveMirror({
       return;
     }
     streamRef.current = stream;
-    const [{ VisionClient }, { PersonLayer: Layer }, mirror] = await Promise.all([import("@/lib/vision/client"), import("@/lib/vision/draw"), import("@/lib/vision/mirror")]);
+    const [{ VisionClient }, { PersonLayer: Layer }, mirror] = await Promise.all([import("@/lib/vision/runtime/client"), import("@/lib/vision/mirror/draw"), import("@/lib/vision/mirror/mirror")]);
     const vision = new VisionClient(["pose", "mask"]);
     visionRef.current = vision;
     let garment: MirrorGarment;
@@ -120,12 +120,12 @@ export function LiveMirror({
     void loop(video, vision, garment, new Layer(), mirror);
   }
 
-  async function loop(video: HTMLVideoElement, vision: VisionClient, garment: MirrorGarment, layer: PersonLayer, mirror: typeof import("@/lib/vision/mirror")) {
-    const { PoseSmoother } = await import("@/lib/vision/smooth");
-    const { KEYPOINT_NAMES } = await import("@/lib/vision/movenet");
-    const { GarmentCompositor, FrameCleaner } = await import("@/lib/vision/draw");
-    const { ClothSway, WidthSmoother } = await import("@/lib/vision/cloth");
-    const { maskAtSmooth } = await import("@/lib/vision/segment");
+  async function loop(video: HTMLVideoElement, vision: VisionClient, garment: MirrorGarment, layer: PersonLayer, mirror: typeof import("@/lib/vision/mirror/mirror")) {
+    const { PoseSmoother } = await import("@/lib/vision/mirror/smooth");
+    const { KEYPOINT_NAMES } = await import("@/lib/vision/models/movenet");
+    const { GarmentCompositor, FrameCleaner } = await import("@/lib/vision/mirror/draw");
+    const { ClothSway, WidthSmoother } = await import("@/lib/vision/mirror/cloth");
+    const { maskAtSmooth } = await import("@/lib/vision/models/segment");
     const smoother = new PoseSmoother(KEYPOINT_NAMES);
     const compositor = new GarmentCompositor();
     const cleaner = new FrameCleaner();
@@ -261,7 +261,7 @@ export function LiveMirror({
       setReal({ kind: "error", message: "The camera picture couldn't be captured. Try again." });
       return;
     }
-    const { photoProblemOnDevice } = await import("@/lib/vision/check-photo");
+    const { photoProblemOnDevice } = await import("@/lib/vision/photo/check-photo");
     const problem = await photoProblemOnDevice(shot.plain);
     if (problem) {
       setReal({ kind: "error", message: problem });

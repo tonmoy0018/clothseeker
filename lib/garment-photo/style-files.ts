@@ -1,7 +1,7 @@
 import { styleGroupsOf, type GarmentType, type StyleGroup } from "@/lib/catalog/garment-types";
 
 // Names of the style-picture files in prisma/style-photos/<slug>/, shared by the generator
-// (ai-scripts/generate-style-photos.ts) and the seed. One option id per style group of the garment type,
+// (scripts/ai/generate-style-photos.ts) and the seed. One option id per style group of the garment type,
 // in the type's group order, separated by "--" (option ids may contain single hyphens, e.g. "v-neck"):
 //   front--v-neck--short--midi.jpg      (dress: neckline, sleeves, length)
 //   back--short--midi.jpg               (back views ignore the first group: neckline or collar)

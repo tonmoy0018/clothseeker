@@ -25,7 +25,7 @@ import {
   startTryOnAction,
   uploadTryOnPhotoAction,
   type TryOnQuotaView,
-} from "./try-on-actions";
+} from "./actions";
 
 // Virtual try-on: consent → photo → queued try-on → before/after. A design edit marks the result as
 // out of date, but only "Update try-on" reruns it — never automatically.
@@ -111,7 +111,7 @@ export function TryOnPanel({
   useEffect(() => {
     if (!photoId || !measureUrl || measured || measuring.current.has(photoId)) return;
     measuring.current.add(photoId);
-    void import("@/lib/vision/measure-photo")
+    void import("@/lib/vision/photo/measure-photo")
       .then(({ measurePhotoOnDevice }) => measurePhotoOnDevice(measureUrl, audience))
       .catch(() => null)
       .then((result) => setMeasures((m) => ({ ...m, [photoId]: result })));
@@ -169,7 +169,7 @@ export function TryOnPanel({
       // Checked on this device first (nothing is uploaded for this), so an unusable photo is caught
       // instantly with the exact reason. The worker checks it again after upload.
       setChecking(true);
-      const { photoProblemOnDevice } = await import("@/lib/vision/check-photo");
+      const { photoProblemOnDevice } = await import("@/lib/vision/photo/check-photo");
       const problem = await photoProblemOnDevice(photo);
       setChecking(false);
       if (problem) {

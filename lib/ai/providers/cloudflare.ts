@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { AiProviderError } from "./errors";
+import { AiProviderError } from "../errors";
 import { providerFetch, type FetchLike } from "./http";
-import type { ImageProvider, MotifRequest } from "./types";
+import type { ImageProvider, MotifRequest } from "../types";
 
 // Cloudflare Workers AI text-to-image (default model: FLUX.1 [schnell], free daily allowance).
 // The motif is asked for on a plain white background; the pipeline knocks the white out so only

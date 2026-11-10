@@ -2,9 +2,9 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { AiProviderError } from "@/lib/ai/errors";
-import { FakePhotoChecker, FakeTryOn } from "@/lib/ai/fake";
+import { FakePhotoChecker, FakeTryOn } from "@/lib/ai/providers/fake";
 import { GARMENT_CANVAS, prepareGarment } from "@/lib/ai/image-utils";
-import { firstFileUrl, HuggingFaceTryOn, isQuotaError, type GradioConnect } from "@/lib/ai/tryon-hf";
+import { firstFileUrl, HuggingFaceTryOn, isQuotaError, type GradioConnect } from "@/lib/ai/providers/tryon-hf";
 import type { TryOnRequest } from "@/lib/ai/types";
 import { garmentDescription, stylePhrase } from "@/lib/tryon/describe";
 import { consentSchema, designSignature, isTryOnStale, photoShapeProblem, productSignature, TRYON_CONSENT_POINTS } from "@/lib/tryon/rules";

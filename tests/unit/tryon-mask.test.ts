@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 import { blendTryOn, tryOnCrop, tryOnMask } from "@/lib/tryon/mask";
 
 // The area of a customer's photo the local try-on model may repaint: their clothes and room around

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { getAdminProduct, listAdminProducts } from "@/lib/admin/products";
 import { AiProviderError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
 import { createDesignRoundJob, getJobStatus } from "@/lib/ai/jobs";
 import { storedOptionsSchema } from "@/lib/ai/rounds";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";

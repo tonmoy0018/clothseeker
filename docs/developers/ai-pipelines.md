@@ -27,8 +27,8 @@ All provider code lives in `lib/ai/` behind two interfaces (`lib/ai/types.ts`):
 
 | Interface | Methods | Fake (default) | Real |
 |---|---|---|---|
-| `PlannerProvider` | `detectBrandLogos(images)`, `planDesign(request)` | `FakePlanner`: deterministic, uses only allowed values | `GeminiPlanner` (`lib/ai/gemini.ts`), REST `generateContent` with a JSON response schema |
-| `ImageProvider` | `generateMotif({ prompt, color, seed })` | `FakeImage`: deterministic SVG motifs | `CloudflareImage` (`lib/ai/cloudflare.ts`), Workers AI, FLUX.1 schnell by default |
+| `PlannerProvider` | `detectBrandLogos(images)`, `planDesign(request)` | `FakePlanner`: deterministic, uses only allowed values | `GeminiPlanner` (`lib/ai/providers/gemini.ts`), REST `generateContent` with a JSON response schema |
+| `ImageProvider` | `generateMotif({ prompt, color, seed })` | `FakeImage`: deterministic SVG motifs | `CloudflareImage` (`lib/ai/providers/cloudflare.ts`), Workers AI, FLUX.1 schnell by default |
 
 `getAiProviders(env)` (`lib/ai/index.ts`) picks them from the worker's environment. Only the worker reads provider keys; the app's env schema contains no AI keys (a test checks this).
 

@@ -2,13 +2,13 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { modelPath, ORT_VERSION, VISION_MODELS } from "@/lib/vision/assets";
-import { fitSquare, letterboxRgba, toSource } from "@/lib/vision/geometry";
-import { decodeMovenet, MOVENET_SIZE, movenetInput } from "@/lib/vision/movenet";
-import { isFromWorker, isToWorker } from "@/lib/vision/protocol";
-import { maskAt, SELFIE_SIZE, selfieInput } from "@/lib/vision/segment";
-import { OneEuro, PoseSmoother } from "@/lib/vision/smooth";
-import { decodeYunet, YUNET_SIZE, yunetInput } from "@/lib/vision/yunet";
+import { modelPath, ORT_VERSION, VISION_MODELS } from "@/lib/vision/runtime/assets";
+import { fitSquare, letterboxRgba, toSource } from "@/lib/vision/models/geometry";
+import { decodeMovenet, MOVENET_SIZE, movenetInput } from "@/lib/vision/models/movenet";
+import { isFromWorker, isToWorker } from "@/lib/vision/runtime/protocol";
+import { maskAt, SELFIE_SIZE, selfieInput } from "@/lib/vision/models/segment";
+import { OneEuro, PoseSmoother } from "@/lib/vision/mirror/smooth";
+import { decodeYunet, YUNET_SIZE, yunetInput } from "@/lib/vision/models/yunet";
 
 // The pure parts of on-device vision: letterboxing, model inputs, decoding and smoothing. The models
 // themselves were checked on real photos when they were chosen (docs/developers/live-try-on.md).

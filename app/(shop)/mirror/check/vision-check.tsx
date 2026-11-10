@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { VisionClient } from "@/lib/vision/client";
-import type { VisionBackend, VisionResult } from "@/lib/vision/engine";
-import { KEYPOINT_NAMES } from "@/lib/vision/movenet";
-import { SELFIE_SIZE } from "@/lib/vision/segment";
-import { PoseSmoother } from "@/lib/vision/smooth";
+import type { VisionClient } from "@/lib/vision/runtime/client";
+import type { VisionBackend, VisionResult } from "@/lib/vision/runtime/engine";
+import { KEYPOINT_NAMES } from "@/lib/vision/models/movenet";
+import { SELFIE_SIZE } from "@/lib/vision/models/segment";
+import { PoseSmoother } from "@/lib/vision/mirror/smooth";
 
 // Runs the on-device models on the camera or a chosen photo and shows what they find and how fast.
 // The face model is the slowest, so on video it runs on every 10th frame only; the person outline moves
@@ -47,7 +47,7 @@ export function VisionCheck() {
     if (clientRef.current) return clientRef.current;
     setStatus({ kind: "loading" });
     const started = clock();
-    const { VisionClient } = await import("@/lib/vision/client");
+    const { VisionClient } = await import("@/lib/vision/runtime/client");
     const created = new VisionClient(["pose", "face", "mask"]);
     clientRef.current = created;
     try {

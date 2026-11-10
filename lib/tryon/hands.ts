@@ -1,4 +1,4 @@
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 
 // Whether a person's hands can be seen in their try-on photo. The try-on keeps visible hands as they are
 // (lib/tryon/mask.ts); a hand in a pocket isn't there to keep, and keeping its spot would keep the old

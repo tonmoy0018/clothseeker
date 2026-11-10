@@ -1,11 +1,11 @@
 import type * as Ort from "onnxruntime-web";
 
 import { modelPath, ORT_PATH, VISION_MODELS, type VisionModelId } from "./assets";
-import { fitSquare, type FitBox } from "./geometry";
-import { decodeMovenet, MOVENET_SIZE, movenetInput, type Pose } from "./movenet";
-import { meanBrightness } from "./photo-check";
-import { SELFIE_SIZE, selfieInput } from "./segment";
-import { decodeYunet, YUNET_SIZE, yunetInput, type Face } from "./yunet";
+import { fitSquare, type FitBox } from "../models/geometry";
+import { decodeMovenet, MOVENET_SIZE, movenetInput, type Pose } from "../models/movenet";
+import { meanBrightness } from "../photo/photo-check";
+import { SELFIE_SIZE, selfieInput } from "../models/segment";
+import { decodeYunet, YUNET_SIZE, yunetInput, type Face } from "../models/yunet";
 
 // Runs the vision models in the browser (inside a Web Worker, see vision.worker.ts). Uses WebGPU when the
 // browser has it, else WebAssembly; single-threaded, because the site isn't cross-origin isolated.

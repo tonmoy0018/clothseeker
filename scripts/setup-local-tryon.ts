@@ -8,9 +8,9 @@ import { finished, pipeline } from "node:stream/promises";
 
 import { loadEnvConfig } from "@next/env";
 
-import { LOCAL_TRYON_FILES, LOCAL_TRYON_PACKAGES, LOCAL_TRYON_PYTHON, localTryOnFilePath, localTryOnPaths, verifiedRecord, type LocalTryOnFile } from "@/lib/ai/tryon-local-setup";
+import { LOCAL_TRYON_FILES, LOCAL_TRYON_PACKAGES, LOCAL_TRYON_PYTHON, localTryOnFilePath, localTryOnPaths, verifiedRecord, type LocalTryOnFile } from "@/lib/ai/providers/tryon-local-setup";
 
-// Sets up the local virtual try-on (TRYON_PROVIDER=local, lib/ai/tryon-local.ts) on this machine:
+// Sets up the local virtual try-on (TRYON_PROVIDER=local, lib/ai/providers/tryon-local.ts) on this machine:
 // a Python with the pinned packages, and the models from Hugging Face at pinned commits, each checked
 // against its SHA-256. About 2.3 GB of models and 1 GB of packages, in ~/.cache/clothseeker/local-tryon
 // (or LOCAL_TRYON_DIR). Safe to run again: files that are already correct are kept.
@@ -47,7 +47,7 @@ async function download(file: LocalTryOnFile, to: string): Promise<void> {
   await finished(out);
   if (!(await correct(partial, file))) {
     await rm(partial, { force: true });
-    throw new Error(`${file.repo}/${file.file} doesn't match its pinned SHA-256; check it before updating lib/ai/tryon-local-setup.ts`);
+    throw new Error(`${file.repo}/${file.file} doesn't match its pinned SHA-256; check it before updating lib/ai/providers/tryon-local-setup.ts`);
   }
   await rename(partial, to);
 }

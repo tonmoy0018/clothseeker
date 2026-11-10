@@ -17,7 +17,7 @@ import { garmentDescription, stylePhrase } from "@/lib/tryon/describe";
 import { designSignature, productSignature } from "@/lib/tryon/rules";
 import { styleOptionsFor, templateStyleGroups } from "@/types/template";
 
-import { isUsable, photoProblem } from "@/lib/vision/photo-check";
+import { isUsable, photoProblem } from "@/lib/vision/photo/photo-check";
 
 import { AiJobRejected, AiProviderError } from "../errors";
 import { prepareGarment } from "../image-utils";

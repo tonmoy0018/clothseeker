@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { signOut } from "@/app/(shop)/auth-actions";
+import { signOut } from "@/app/(shop)/_auth/actions";
 import { Button } from "@/components/ui/button";
 
 // The layout only renders chrome. Authorization lives in each admin page and action

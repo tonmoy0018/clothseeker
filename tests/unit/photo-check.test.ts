@@ -3,13 +3,13 @@ import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
-import { LocalPhotoChecker } from "@/lib/ai/photo-check-local";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
-import { KEYPOINT_NAMES } from "@/lib/vision/movenet";
-import { nodeModelsPresent } from "@/lib/vision/node-vision";
-import { isUsable, judgeTryOnPhoto, meanBrightness, photoProblem, type PhotoAnalysis } from "@/lib/vision/photo-check";
-import { fitSquare } from "@/lib/vision/geometry";
-import type { Face } from "@/lib/vision/yunet";
+import { LocalPhotoChecker } from "@/lib/ai/providers/photo-check-local";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
+import { KEYPOINT_NAMES } from "@/lib/vision/models/movenet";
+import { nodeModelsPresent } from "@/lib/vision/runtime/node-vision";
+import { isUsable, judgeTryOnPhoto, meanBrightness, photoProblem, type PhotoAnalysis } from "@/lib/vision/photo/photo-check";
+import { fitSquare } from "@/lib/vision/models/geometry";
+import type { Face } from "@/lib/vision/models/yunet";
 
 // Try-on photo rules (shared by the browser and the worker), and the worker's checker on our own
 // AI-generated test photos (tests/fixtures/tryon-*.jpg: people who don't exist).

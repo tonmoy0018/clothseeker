@@ -1,6 +1,6 @@
 """Local virtual try-on for the worker: CatVTON on this machine's GPU (Apple MPS) or CPU.
 
-Started and fed by lib/ai/tryon-local.ts. Loads the model once, then answers one request per line:
+Started and fed by lib/ai/providers/tryon-local.ts. Loads the model once, then answers one request per line:
 
   stdin   {"id": "...", "person": "<png>", "mask": "<png>", "garment": "<png>", "out": "<png>",
            "steps": 30, "width": 384, "height": 512, "seed": 42}

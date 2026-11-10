@@ -69,7 +69,7 @@ const aiEnvShape = {
     .default(384),
   /** Optional free Hugging Face account token; raises the shared ZeroGPU allowance. */
   HF_TOKEN: z.string().regex(/^hf_[A-Za-z0-9]{20,}$/).optional(),
-  /** Comma-separated Spaces tried in order (see lib/ai/tryon-hf.ts). */
+  /** Comma-separated Spaces tried in order (see lib/ai/providers/tryon-hf.ts). */
   TRYON_SPACES: z
     .string()
     .regex(/^(jallenjia\/Change-Clothes-AI|yisol\/IDM-VTON|levihsu\/OOTDiffusion|franciszzj\/Leffa)(,(jallenjia\/Change-Clothes-AI|yisol\/IDM-VTON|levihsu\/OOTDiffusion|franciszzj\/Leffa))*$/)

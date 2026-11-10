@@ -1,4 +1,4 @@
-import { AiProviderError } from "./errors";
+import { AiProviderError } from "../errors";
 
 // Shared HTTP handling for provider adapters: maps network failures and status codes to
 // retryable / non-retryable AiProviderErrors. Never puts response bodies (which may echo the

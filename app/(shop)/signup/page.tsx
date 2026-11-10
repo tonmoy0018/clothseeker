@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/auth/safe-next";
 import { getCurrentUser } from "@/lib/auth/session";
 
-import { AuthForm } from "../auth-form";
+import { AuthForm } from "../_auth/auth-form";
 
 export const metadata: Metadata = { title: "Create account — ClothSeeker" };
 

@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { z } from "zod";
 
-import { modelPath, modelSourceUrl, ORT_FILES, ORT_PATH, ORT_VERSION, VISION_BASE, VISION_MODELS } from "@/lib/vision/assets";
+import { modelPath, modelSourceUrl, ORT_FILES, ORT_PATH, ORT_VERSION, VISION_BASE, VISION_MODELS } from "@/lib/vision/runtime/assets";
 
 // Puts the on-device vision files into public/vision/ (git-ignored): the Hugging Face models, checked
 // against their pinned SHA-256, and ONNX Runtime Web's files from node_modules. Safe to run repeatedly:
@@ -26,7 +26,7 @@ async function main() {
     .object({ version: z.string() })
     .parse(JSON.parse(await readFile(path.join(process.cwd(), "node_modules", "onnxruntime-web", "package.json"), "utf8")));
   if (installed.version !== ORT_VERSION) {
-    throw new Error(`onnxruntime-web ${installed.version} is installed, but lib/vision/assets.ts expects ${ORT_VERSION}`);
+    throw new Error(`onnxruntime-web ${installed.version} is installed, but lib/vision/runtime/assets.ts expects ${ORT_VERSION}`);
   }
 
   // Start clean, so files of older versions or models don't linger.
@@ -54,7 +54,7 @@ async function main() {
     if (!response.ok) throw new Error(`Downloading ${model.repo}/${model.file} failed: HTTP ${response.status}`);
     const data = Buffer.from(await response.arrayBuffer());
     if (sha256(data) !== model.sha256) {
-      throw new Error(`${model.repo}/${model.file} changed on Hugging Face (SHA-256 mismatch); check it before updating lib/vision/assets.ts`);
+      throw new Error(`${model.repo}/${model.file} changed on Hugging Face (SHA-256 mismatch); check it before updating lib/vision/runtime/assets.ts`);
     }
     await writeFile(to, data);
     log({ downloaded: model.id, bytes: data.length });

@@ -14,7 +14,7 @@ Hiding a button in the UI is never the access control. The role is read from the
 |---|---|---|---|---|
 | Browse home, listing, product pages (active products only) | ✅ | ✅ | ✅ | `lib/shop/catalog.ts` (filters `status = ACTIVE`) |
 | See draft or archived products | ❌ | ❌ | ❌ (admin catalog in Phase 2) | `catalog.ts` |
-| Sign up (always creates a customer) | ✅ | n/a | n/a | `app/(shop)/auth-actions.ts` |
+| Sign up (always creates a customer) | ✅ | n/a | n/a | `app/(shop)/_auth/actions.ts` |
 | Buy now / add to cart | ➡️ sign in | ✅ own cart | ❌ "admin accounts can't shop" | `addToCart` → `assertCustomer` |
 | View, update or remove cart lines | ➡️ sign in | ✅ **own lines only** | ❌ | `findOwnedItem` (scoped by `cart.customerId`) |
 | Mock pay / create order | ➡️ sign in | ✅ own cart | ❌ | `payWithMock` → `assertCustomer`; key owner check |

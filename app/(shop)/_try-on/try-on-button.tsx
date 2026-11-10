@@ -5,8 +5,8 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { LiveMirror } from "../../live-mirror";
-import { TryOnPanel, type TryOnGarmentFacts } from "../../try-on-panel";
+import { LiveMirror } from "./live-mirror";
+import { TryOnPanel, type TryOnGarmentFacts } from "./try-on-panel";
 
 /** "Try on" (the realistic AI photo) and "Live mirror" (the camera, on this device) for a ready-made garment. */
 export function TryOnButton({
@@ -53,7 +53,7 @@ export function TryOnButton({
       {mirror && mirrorImageUrl && (
         <LiveMirror
           noun={noun}
-          loadGarment={async () => (await import("@/lib/vision/garment-source")).garmentFromPhoto(mirrorImageUrl)}
+          loadGarment={async () => (await import("@/lib/vision/mirror/garment-source")).garmentFromPhoto(mirrorImageUrl)}
           onClose={() => setMirror(false)}
           realistic={{ source: { kind: "product", productId }, signedIn, onSignIn: () => router.push(`/login?next=${encodeURIComponent(`/products/${slug}`)}`) }}
           onUsePhoto={(photo) => {

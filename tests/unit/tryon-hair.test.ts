@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { hairMask } from "@/lib/tryon/hair";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 
 // Hair over the shoulders, found by shade so the try-on keeps it: a drawn person with dark hair falling
 // in two strands past the shoulders, a lighter face and neck, and a top.

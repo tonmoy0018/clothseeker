@@ -27,7 +27,7 @@ export type SeedProduct = {
   /**
    * Customizable items: the style its catalogue photo shows, one option id per style group of its
    * garment type's default template. The design screen shows that photo for this style and AI style
-   * pictures for the others (prisma/style-photos, made by ai-scripts/generate-style-photos.ts).
+   * pictures for the others (prisma/style-photos, made by scripts/ai/generate-style-photos.ts).
    */
   photoStyle?: Partial<Record<StyleGroup, string>>;
   /** The colour its catalogue photo shows (one of `colors`); the first alphabetically when left out. */

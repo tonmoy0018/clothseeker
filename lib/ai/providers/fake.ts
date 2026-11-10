@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { PATTERNS } from "@/lib/catalog/patterns";
 import { GARMENT_TYPES, styleGroupsOf } from "@/lib/catalog/garment-types";
 
-import { knockOutWhite } from "./image-utils";
+import { knockOutWhite } from "../image-utils";
 import type {
   BrandLogoCheck,
   DressMatchRequest,
@@ -18,7 +18,7 @@ import type {
   TryOnPhotoChecker,
   TryOnProvider,
   TryOnRequest,
-} from "./types";
+} from "../types";
 
 // Deterministic stand-ins for the real providers. The default for development, tests and CI:
 // no keys, no network, and the same request always gives the same answer.
@@ -26,8 +26,8 @@ import type {
 // Testing conventions:
 // - FakePlanner reports a brand logo for any photo whose dominant color is the marker red #E4002B.
 // - FakePhotoChecker rejects try-on photos that are dark (mean brightness < 60) or landscape.
-// Real logo checks come from Gemini (lib/ai/gemini.ts); real photo checks from the on-device models
-// (lib/ai/photo-check-local.ts).
+// Real logo checks come from Gemini (lib/ai/providers/gemini.ts); real photo checks from the on-device models
+// (lib/ai/providers/photo-check-local.ts).
 
 export const FAKE_LOGO_MARKER = "#e4002b";
 

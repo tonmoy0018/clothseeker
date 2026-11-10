@@ -32,7 +32,7 @@ import { photoRegionsFor, printAreasFor, type PhotoRegion } from "@/lib/garment-
 
 import { catalogPhotoPath, photoPictures, styleFiles } from "./seed-style-photos";
 
-/** AI-generated sample catalog photos, one per seeded dress (see ai-scripts/generate-dress-photos.ts). */
+/** AI-generated sample catalog photos, one per seeded dress (see scripts/ai/generate-dress-photos.ts). */
 const SEED_PHOTOS_DIR = path.join(process.cwd(), "prisma", "seed-photos");
 /** `pnpm db:seed -- --redraw-templates` rebuilds every seeded template's pictures (after changing how they're made). */
 const REDRAW = process.argv.includes("--redraw-templates");
@@ -135,7 +135,7 @@ async function templateConfigFor(db: PrismaClient, supabase: SupabaseClient, pro
   const photoStyle = product.photoStyle;
 
   if (photoStyle) {
-    // Not customizable until its catalogue photo exists (ai-scripts/generate-dress-photos.ts).
+    // Not customizable until its catalogue photo exists (scripts/ai/generate-dress-photos.ts).
     if (!existsSync(catalogPhotoPath(product.slug))) return null;
     const photoFiles = await styleFiles(product);
     // The catalogue photo is one more picture than the style files.
@@ -270,7 +270,7 @@ async function seedCatalog(db: PrismaClient, supabase: SupabaseClient): Promise<
       update: { name: p.name, description: p.description, garmentType: p.garmentType ?? "dress", categoryId: category.id, lengthCm: SEED_LENGTHS_CM[p.slug] ?? null, status: p.status ?? "ACTIVE" },
       select: { id: true, imageKeys: true },
     });
-    // AI-generated sample catalog photo (prisma/seed-photos, ai-scripts/generate-dress-photos.ts),
+    // AI-generated sample catalog photo (prisma/seed-photos, scripts/ai/generate-dress-photos.ts),
     // only for dresses without photos, so photos uploaded by the team are never replaced.
     const samplePhoto = path.join(SEED_PHOTOS_DIR, `${p.slug}.jpg`);
     if (product.imageKeys.length === 0 && existsSync(samplePhoto)) {

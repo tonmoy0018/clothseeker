@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
 import { getJobStatus } from "@/lib/ai/jobs";
 import { QUOTA_MESSAGE } from "@/lib/ai/quota";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";

@@ -1,14 +1,14 @@
 import type { WorkerEnv } from "@/lib/env/schema";
 
-import { CloudflareImage } from "./cloudflare";
-import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./fake";
-import { GeminiGarmentShot, GeminiPlanner } from "./gemini";
-import { LocalPhotoChecker } from "./photo-check-local";
-import { HuggingFaceTryOn } from "./tryon-hf";
-import { CatVtonProcess, LocalTryOn } from "./tryon-local";
-import { localTryOnPaths, localTryOnReady } from "./tryon-local-setup";
+import { CloudflareImage } from "./providers/cloudflare";
+import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./providers/fake";
+import { GeminiGarmentShot, GeminiPlanner } from "./providers/gemini";
+import { LocalPhotoChecker } from "./providers/photo-check-local";
+import { HuggingFaceTryOn } from "./providers/tryon-hf";
+import { CatVtonProcess, LocalTryOn } from "./providers/tryon-local";
+import { localTryOnPaths, localTryOnReady } from "./providers/tryon-local-setup";
 import type { AiProviders } from "./types";
-import { NodeVision, nodeModelsPresent } from "@/lib/vision/node-vision";
+import { NodeVision, nodeModelsPresent } from "@/lib/vision/runtime/node-vision";
 
 // Picks the AI providers from the worker's environment. Only the worker calls this.
 

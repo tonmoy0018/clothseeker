@@ -16,8 +16,8 @@ Status: **all three steps are done**:
 | Person outline (to put arms in front of the garment) | `onnx-community/mediapipe_selfie_segmentation` | `onnx/model_int8.onnx` | 0.2 MB | Apache-2.0 |
 
 - **Use the fp32 MoveNet.** Its int8 and fp16 versions give near-zero scores in ONNX Runtime Web (checked on 2026-10-29).
-- Each model is pinned by SHA-256 in [`lib/vision/assets.ts`](../../lib/vision/assets.ts). If a file on Hugging Face changes, the fetch fails rather than serving something unchecked.
-- Google's MediaPipe pose models track a little better, but they aren't hosted on Hugging Face. Jitter is handled by smoothing instead (`OneEuro` in `lib/vision/smooth.ts`).
+- Each model is pinned by SHA-256 in [`lib/vision/runtime/assets.ts`](../../lib/vision/runtime/assets.ts). If a file on Hugging Face changes, the fetch fails rather than serving something unchecked.
+- Google's MediaPipe pose models track a little better, but they aren't hosted on Hugging Face. Jitter is handled by smoothing instead (`OneEuro` in `lib/vision/mirror/smooth.ts`).
 
 ## Runtime
 
@@ -32,14 +32,14 @@ Status: **all three steps are done**:
 
 | File | Role |
 |---|---|
-| `lib/vision/geometry.ts` | Letterboxing frames into the models' square inputs and mapping points back |
-| `lib/vision/movenet.ts`, `yunet.ts`, `segment.ts` | Each model's input layout and output decoding (pure, unit-tested) |
-| `lib/vision/smooth.ts` | One Euro filter for keypoints |
-| `lib/vision/engine.ts` | Loads the models and runs them on a frame (OffscreenCanvas → tensors → decoded results) |
-| `lib/vision/vision.worker.ts`, `protocol.ts`, `client.ts` | The worker thread and the page's handle on it; frames go in as transferred `ImageBitmap`s |
-| `lib/vision/photo-check.ts` | Try-on photo rules shared by the browser and the worker |
-| `lib/vision/check-photo.ts` | The browser's check before upload |
-| `lib/vision/node-vision.ts` | The same models in Node, for the worker (`LocalPhotoChecker`) |
+| `lib/vision/models/geometry.ts` | Letterboxing frames into the models' square inputs and mapping points back |
+| `lib/vision/models/movenet.ts`, `yunet.ts`, `segment.ts` | Each model's input layout and output decoding (pure, unit-tested) |
+| `lib/vision/mirror/smooth.ts` | One Euro filter for keypoints |
+| `lib/vision/runtime/engine.ts` | Loads the models and runs them on a frame (OffscreenCanvas → tensors → decoded results) |
+| `lib/vision/runtime/vision.worker.ts`, `protocol.ts`, `client.ts` | The worker thread and the page's handle on it; frames go in as transferred `ImageBitmap`s |
+| `lib/vision/photo/photo-check.ts` | Try-on photo rules shared by the browser and the worker |
+| `lib/vision/photo/check-photo.ts` | The browser's check before upload |
+| `lib/vision/runtime/node-vision.ts` | The same models in Node, for the worker (`LocalPhotoChecker`) |
 | `app/(shop)/mirror/check/` | **`/mirror/check`**: the speed and accuracy check (camera or a photo from the device; not linked from the shop) |
 
 ## Measurements
@@ -58,19 +58,19 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
 
 ## The live mirror
 
-"Live mirror" appears on product pages that have a try-on picture and on the design screen (tool rail). It opens a full-screen view (`app/(shop)/live-mirror.tsx`, rendered into `document.body`).
+"Live mirror" appears on product pages that have a try-on picture and on the design screen (tool rail). It opens a full-screen view (`app/(shop)/_try-on/live-mirror.tsx`, rendered into `document.body`).
 
 - **The camera starts only after "Start camera".** The notice says the camera stays on the device and nothing is recorded or uploaded. Frames go to the vision worker in the same tab: the body runs on every frame, the outline on every 2nd.
-- **The garment picture** (`lib/vision/garment-source.ts`), prepared in the browser:
+- **The garment picture** (`lib/vision/mirror/garment-source.ts`), prepared in the browser:
   - **Shop item:** its try-on picture (the first catalogue photo), cut out with the same code as the server (`findGarment`/`splitGarment` in `lib/garment-photo/segment.ts`). Storage answers with `Access-Control-Allow-Origin: *`, so the browser may read the pixels.
   - **Design:** the design screen's recoloured front picture with its printed items, cut out by the union of the picture's region masks.
-  - **Cleaned up for wearing** (`lib/vision/garment-fill.ts`, shop items):
+  - **Cleaned up for wearing** (`lib/vision/mirror/garment-fill.ts`, shop items):
     - `recoverGarment` adds the coloured parts the garment finder misses because they aren't the main colour: a pale placket, an embroidered collar band, embroidery, a print's motifs on a skirt's edge (down to the hem; otherwise they'd leave bites in it). It grows only into clearly coloured pixels, so a mannequin's neck, shadows and the backdrop stay out.
     - Notches about 1% of the picture wide are sealed, and pixels at the edge with the backdrop's colour take the fabric's colour (`recolourBackdrop`).
     - The measurements (shoulders, waist, sleeves) still come from the plain cut-out, so a collar is never taken for the shoulders.
   - **Pieces:** the body and each sleeve. Only edges against the backdrop are softened, after dropping their outermost pixel ring (a pale fringe). Joins between pieces stay hard, and sleeves overlap the body by 2 px, so no background shows through.
   - **Long sleeves stay whole** (`withLooseSleeves`): sleeve parts the finder left in the body, either cut off from the torso or hanging beside it with a gap, are added to the sleeve down to the cuff (a panjabi's forearms).
-- **Fitting** (`lib/vision/mirror.ts`, pure and unit-tested in `mirror.test.ts` and `mirror-fit.test.ts`). Everything is in the camera's own coordinates, where, as in a catalogue photo, the person's left is on the picture's right; the canvas is shown flipped with CSS.
+- **Fitting** (`lib/vision/mirror/mirror.ts`, pure and unit-tested in `mirror.test.ts` and `mirror-fit.test.ts`). Everything is in the camera's own coordinates, where, as in a catalogue photo, the person's left is on the picture's right; the canvas is shown flipped with CSS.
   - **Shoulders:**
     - The garment hangs from its shoulder seams. When its top is a collar standing up near the centre line, the seams are measured just inside the shoulder points, and the collar stands above them around the neck.
     - The seams are pinned 14% of the shoulder-joint distance above the joints (`SHOULDER_LIFT`), at 1.1× their width (`SEAM_PER_JOINTS`).
@@ -81,9 +81,9 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
     - Below the hips it reaches the furthest leg (hands left out) and only ever widens, so a skirt covers legs that step apart.
     - The shoulders keep the garment's own width; the fitted width takes over across the upper chest.
     - Widths are smoothed between rows and over frames (`WidthSmoother`). Without a mask yet, the garment widens to an arm hanging beside it instead (as before).
-  - **Cloth moves** (`lib/vision/cloth.ts`, `ClothSway`): the hem behaves like a weight on a damped spring from the hips (1.3 Hz, damping 0.3). When the person moves, it trails behind, swings past and settles. The swing grows from nothing at the hips to its most at the hem, and is capped at 45% of the shoulder width.
-  - **Drawing:** an 8×24 mesh of affine triangles (`drawMesh` in `lib/vision/draw.ts`). The columns meet at the centre line, because each side is fitted on its own. Each triangle is grown by 1.3 px, so their edges overlap and no hairlines show. Facing away hides the garment with a hint.
-- **The person's own clothes where the garment doesn't cover them** (`lib/vision/uncover.ts`, `FrameCleaner` in `draw.ts`). For example, a T-shirt's sleeves around a sleeveless dress, or its neckline inside a low one. Before the garment is drawn, a smaller copy of the frame is cleaned (the shoulders about 60 px apart, at most 480 px wide; about 5 ms):
+  - **Cloth moves** (`lib/vision/mirror/cloth.ts`, `ClothSway`): the hem behaves like a weight on a damped spring from the hips (1.3 Hz, damping 0.3). When the person moves, it trails behind, swings past and settles. The swing grows from nothing at the hips to its most at the hem, and is capped at 45% of the shoulder width.
+  - **Drawing:** an 8×24 mesh of affine triangles (`drawMesh` in `lib/vision/mirror/draw.ts`). The columns meet at the centre line, because each side is fitted on its own. Each triangle is grown by 1.3 px, so their edges overlap and no hairlines show. Facing away hides the garment with a hint.
+- **The person's own clothes where the garment doesn't cover them** (`lib/vision/mirror/uncover.ts`, `FrameCleaner` in `draw.ts`). For example, a T-shirt's sleeves around a sleeveless dress, or its neckline inside a low one. Before the garment is drawn, a smaller copy of the frame is cleaned (the shoulders about 60 px apart, at most 480 px wide; about 5 ms):
   - **Skin colour** is read around the nose (`skinModel`), and settles over frames. The paint itself takes the colour of the person's visible neck and arm skin, which is usually darker than a lit face.
   - **On the shoulders, upper chest and arms**, clothing becomes skin:
     - the shoulders slope from the neck;
@@ -103,7 +103,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - Each sleeve is bent along shoulder → elbow → wrist. At the shoulder it is mapped exactly like the body, so the cap continues the shoulder line. It turns to follow the arm over the first 25% of its length (`SLEEVE_BLEND`).
   - It's compressed so it never reaches past the wrist.
 - **Arms in front:** the parts of the arms the garment doesn't cover are drawn back from the cleaned camera frame over the garment, masked by the person outline (`exposedArm`, `PersonLayer.drawArms`). That's below a short sleeve, the hand below a long one, or almost the whole arm for a sleeveless garment. The stroke is about an arm wide (`ARM_WIDTH`, 21% of the shoulder distance); wider would redraw the person's own clothes beside the arm.
-- **Looks worn, not pasted** (`GarmentCompositor`, `lib/vision/relight.ts`):
+- **Looks worn, not pasted** (`GarmentCompositor`, `lib/vision/mirror/relight.ts`):
   - The garment pieces are drawn into their own layer.
   - That layer is relit from the camera with a soft-light "shade" picture made from a 240-px copy of the frame. It carries the creases of the clothes underneath (fine ÷ broad brightness), the room's light falling across the body, and a mild colour cast. Both are kept gentle (0.82–1.2 and 0.88–1.15), so the colours and edges of the person's own clothes (dark trousers under a shirt's hem) don't read as shadows.
   - Its edges are darkened softly inside its outline (`roundEdges`, 45%), as cloth turning away from the camera round the body is.

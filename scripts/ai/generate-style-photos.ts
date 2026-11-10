@@ -25,11 +25,11 @@ import { photoColour, SEED_PRODUCTS, type SeedProduct } from "@/prisma/seed-data
 // style-files.ts), which `pnpm db:seed` lines up, cuts into parts and turns into templates.
 // Re-running only fills in missing pictures; Cloudflare's free tier allows about 150 a day.
 //
-//   pnpm tsx ai-scripts/generate-style-photos.ts                 all items, missing pictures only
-//   pnpm tsx ai-scripts/generate-style-photos.ts oxford-shirt    one item
-//   pnpm tsx ai-scripts/generate-style-photos.ts --force          redraw everything
-//   pnpm tsx ai-scripts/generate-style-photos.ts --recheck        re-check saved pictures, redraw failures
-//   pnpm tsx ai-scripts/generate-style-photos.ts --per-item 2     at most 2 pictures per item (counting saved
+//   pnpm tsx scripts/ai/generate-style-photos.ts                 all items, missing pictures only
+//   pnpm tsx scripts/ai/generate-style-photos.ts oxford-shirt    one item
+//   pnpm tsx scripts/ai/generate-style-photos.ts --force          redraw everything
+//   pnpm tsx scripts/ai/generate-style-photos.ts --recheck        re-check saved pictures, redraw failures
+//   pnpm tsx scripts/ai/generate-style-photos.ts --per-item 2     at most 2 pictures per item (counting saved
 //                                                                  ones): its back view, then other sleeves
 
 const MODEL = "@cf/black-forest-labs/flux-1-schnell";
@@ -187,7 +187,7 @@ async function main() {
     const template = defaultTemplateConfig(type);
     const photoPath = path.join(PHOTO_DIR, `${product.slug}.jpg`);
     if (!existsSync(photoPath)) {
-      log({ slug: product.slug, skipped: "no catalogue photo yet (run ai-scripts/generate-dress-photos.ts first)" });
+      log({ slug: product.slug, skipped: "no catalogue photo yet (run scripts/ai/generate-dress-photos.ts first)" });
       continue;
     }
     const dir = path.join(OUT_DIR, product.slug);

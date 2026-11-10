@@ -1,12 +1,12 @@
 import { Client, handle_file } from "@gradio/client";
 import { z } from "zod";
 
-import { AiProviderError } from "./errors";
+import { AiProviderError } from "../errors";
 import type { FetchLike } from "./http";
-import type { TryOnProvider, TryOnRequest } from "./types";
+import type { TryOnProvider, TryOnRequest } from "../types";
 
 // Virtual try-on on free public Hugging Face Spaces (Gradio apps on ZeroGPU), in dress or upper-body mode.
-// Feasibility was checked on 2026-10-09 (ai-scripts/tryon-feasibility.ts, docs/developers/try-on.md):
+// Feasibility was checked on 2026-10-09 (scripts/ai/tryon-feasibility.ts, docs/developers/try-on.md):
 // results are a rough preview, and the free GPU allowance is small and shared by the whole store.
 //
 // Privacy: the photo is sent to a third-party Space. Customers are told this before they consent.

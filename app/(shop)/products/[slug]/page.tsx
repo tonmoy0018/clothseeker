@@ -13,7 +13,7 @@ import { getProductBySlug } from "@/lib/shop/catalog";
 import { productTryOnImageKey } from "@/lib/tryon/garment";
 
 import { PurchasePanel } from "./purchase-panel";
-import { TryOnButton } from "./try-on-button";
+import { TryOnButton } from "@/app/(shop)/_try-on/try-on-button";
 
 export async function generateMetadata({ params }: PageProps<"/products/[slug]">): Promise<Metadata> {
   const { slug } = await params;

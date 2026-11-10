@@ -24,8 +24,8 @@ import { styleOptionsFor, templateStyleGroups, type PlacementArea, type Template
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
 import { CutoutDialog } from "./cutout-dialog";
-import { LiveMirror } from "../../live-mirror";
-import { TryOnPanel } from "../../try-on-panel";
+import { LiveMirror } from "@/app/(shop)/_try-on/live-mirror";
+import { TryOnPanel } from "@/app/(shop)/_try-on/try-on-panel";
 
 import { AiBox } from "./ai-box";
 import { QuoteRequest } from "./quote-request";
@@ -629,7 +629,7 @@ export function DesignEditor(props: DesignEditorProps) {
                 const url = key ? props.imageUrls[key] : undefined;
                 return url ? [url] : [];
               });
-              return (await import("@/lib/vision/garment-source")).garmentFromDesign(drawn, maskUrls);
+              return (await import("@/lib/vision/mirror/garment-source")).garmentFromDesign(drawn, maskUrls);
             }}
             onClose={() => setShowMirror(false)}
             realistic={{ source: { kind: "design", spec, designId }, signedIn: props.customerId !== null, onSignIn: () => handleResult({ status: "signin" }, () => undefined) }}

@@ -1,6 +1,6 @@
 import { AI_FAILURE_MESSAGES } from "@/lib/ai/errors";
 
-import { VisionClient } from "./client";
+import { VisionClient } from "../runtime/client";
 import { isUsable, judgeTryOnPhoto, photoProblem } from "./photo-check";
 
 // Checks a try-on photo in the browser before it is uploaded, with the same models and rules the worker

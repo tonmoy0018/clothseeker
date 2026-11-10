@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-// What the local try-on (lib/ai/tryon-local.ts) needs on disk, shared by `pnpm tryon:setup`
+// What the local try-on (lib/ai/providers/tryon-local.ts) needs on disk, shared by `pnpm tryon:setup`
 // (scripts/setup-local-tryon.ts), which downloads and checks it, and the worker, which refuses to start
 // without it. About 2.3 GB of models plus a Python with PyTorch, kept outside the project folder (it
 // sits on an iCloud-synced Desktop) in ~/.cache/clothseeker/local-tryon unless LOCAL_TRYON_DIR says so.

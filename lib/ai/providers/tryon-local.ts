@@ -12,11 +12,11 @@ import { z } from "zod";
 import { hairMask } from "@/lib/tryon/hair";
 import { visibleHands } from "@/lib/tryon/hands";
 import { blendTryOn, tryOnCrop, tryOnMask, type Box } from "@/lib/tryon/mask";
-import type { Pose } from "@/lib/vision/movenet";
-import { maskAtSmooth, SELFIE_SIZE, type PersonMask } from "@/lib/vision/segment";
+import type { Pose } from "@/lib/vision/models/movenet";
+import { maskAtSmooth, SELFIE_SIZE, type PersonMask } from "@/lib/vision/models/segment";
 
-import { AiJobRejected, AiProviderError } from "./errors";
-import type { TryOnProvider, TryOnRequest } from "./types";
+import { AiJobRejected, AiProviderError } from "../errors";
+import type { TryOnProvider, TryOnRequest } from "../types";
 
 // Virtual try-on on our own machine (TRYON_PROVIDER=local): no photo leaves it, and there's no shared
 // daily GPU allowance. The worker finds the customer's body with the on-device models, masks the area

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { findBrandTerm } from "@/lib/ai/brands";
 import { AI_FAILURE_MESSAGES, BRAND_LOGO_MESSAGE, failureMessage } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePlanner } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePlanner } from "@/lib/ai/providers/fake";
 import { aiInputHash, canonicalJson, normalizeInstruction } from "@/lib/ai/hash";
 import { decorationInWords, nearestColor, parsePlan, placementBox, planConstraints, summarizeSpec, variationToSpec, type PlanVariation } from "@/lib/ai/plan";
 import { startOfDhakaDay } from "@/lib/ai/quota";

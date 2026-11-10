@@ -1,6 +1,6 @@
 import { triangleTransform, type BodyAnchors, type Point, type Triangle } from "./mirror";
 import { shadeFromFrame } from "./relight";
-import { SELFIE_SIZE, type PersonMask } from "./segment";
+import { SELFIE_SIZE, type PersonMask } from "../models/segment";
 import { skinModel, uncoverOwnClothes, type SkinModel } from "./uncover";
 
 // Canvas drawing for the live mirror (browser only). The geometry comes from mirror.ts.

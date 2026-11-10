@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { signOut } from "@/app/(shop)/auth-actions";
+import { signOut } from "@/app/(shop)/_auth/actions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { AUDIENCE_IDS, AUDIENCES } from "@/lib/catalog/garment-types";
 import { getCurrentUser } from "@/lib/auth/session";

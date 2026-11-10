@@ -15,9 +15,9 @@ import { photoColour, SEED_PRODUCTS } from "@/prisma/seed-data";
 // The dress is shown on an invisible "ghost" mannequin: no person, no face.
 // These are SAMPLE photos made by AI: replace them with real photos of ClothSeeker dresses.
 //
-//   pnpm tsx ai-scripts/generate-dress-photos.ts            missing photos only
-//   pnpm tsx ai-scripts/generate-dress-photos.ts --force    regenerate all
-//   pnpm tsx ai-scripts/generate-dress-photos.ts --force oxford-shirt   regenerate one
+//   pnpm tsx scripts/ai/generate-dress-photos.ts            missing photos only
+//   pnpm tsx scripts/ai/generate-dress-photos.ts --force    regenerate all
+//   pnpm tsx scripts/ai/generate-dress-photos.ts --force oxford-shirt   regenerate one
 
 const OUT_DIR = path.join(process.cwd(), "prisma", "seed-photos");
 const MODEL = "@cf/black-forest-labs/flux-1-schnell";

@@ -3,7 +3,7 @@ import type { VisionBackend, VisionRequest, VisionResult } from "./engine";
 import { isFromWorker, type ToWorker } from "./protocol";
 
 // The page's handle on the vision worker. Everything stays on the customer's device: frames go to a
-// worker in the same tab, and the models are served from our own site (lib/vision/assets.ts).
+// worker in the same tab, and the models are served from our own site (lib/vision/runtime/assets.ts).
 
 export class VisionClient {
   readonly ready: Promise<VisionBackend>;

@@ -1,9 +1,9 @@
 import type { AiFailureCode } from "@/lib/ai/errors";
 import type { TryOnPhotoCheck } from "@/lib/ai/types";
 
-import type { FitBox } from "./geometry";
-import type { Pose } from "./movenet";
-import type { Face } from "./yunet";
+import type { FitBox } from "../models/geometry";
+import type { Pose } from "../models/movenet";
+import type { Face } from "../models/yunet";
 
 // Whether a photo works for a try-on, judged from the on-device models' findings. The same rules run in
 // the customer's browser (instant feedback, before upload) and in the worker (the check customers can't

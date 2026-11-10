@@ -133,4 +133,4 @@ pnpm build
 | Demo sign-in fails | `pnpm db:seed` (resets demo passwords) |
 | Playwright: browser not found | `pnpm exec playwright install chromium` |
 | Port 3000 is used by another project | Run on another port with a matching app URL, e.g. `NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm build && NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm start --port 3002` (and the same `NEXT_PUBLIC_APP_URL` for `pnpm worker`). For E2E: `E2E_PORT=3002 NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm test:e2e` |
-| `vision.fetch` fails: SHA-256 mismatch | A model changed on Hugging Face. Check it, then update its hash in `lib/vision/assets.ts` |
+| `vision.fetch` fails: SHA-256 mismatch | A model changed on Hugging Face. Check it, then update its hash in `lib/vision/runtime/assets.ts` |

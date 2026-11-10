@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { CloudflareImage, DEFAULT_CLOUDFLARE_IMAGE_MODEL, motifPrompt } from "@/lib/ai/cloudflare";
+import { CloudflareImage, DEFAULT_CLOUDFLARE_IMAGE_MODEL, motifPrompt } from "@/lib/ai/providers/cloudflare";
 import { AiProviderError } from "@/lib/ai/errors";
-import { GeminiGarmentShot, GeminiPlanner, planResponseSchema } from "@/lib/ai/gemini";
-import type { FetchLike } from "@/lib/ai/http";
+import { GeminiGarmentShot, GeminiPlanner, planResponseSchema } from "@/lib/ai/providers/gemini";
+import type { FetchLike } from "@/lib/ai/providers/http";
 import { getAiProviders } from "@/lib/ai";
 import { planConstraints, summarizeSpec } from "@/lib/ai/plan";
 import type { PlanRequest } from "@/lib/ai/types";

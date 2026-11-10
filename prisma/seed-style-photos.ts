@@ -8,7 +8,7 @@ import { photoPicture, type PhotoPicture } from "@/lib/garment-photo/template";
 import type { SeedProduct } from "./seed-data";
 
 // Photo templates for the seeded customizable items: the catalogue photo for the style it shows, plus the
-// AI style pictures in prisma/style-photos/<slug>/ (ai-scripts/generate-style-photos.ts). Every picture is
+// AI style pictures in prisma/style-photos/<slug>/ (scripts/ai/generate-style-photos.ts). Every picture is
 // lined up (lib/garment-photo/align.ts) and cut into masks: Sleeves / Bodice / Skirt for dresses, and
 // one Body mask (the whole garment) for shirts and panjabis.
 

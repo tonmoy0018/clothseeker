@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { splitGarment, type Mask, type RgbImage } from "@/lib/garment-photo/segment";
-import { closeMask, fillSpecks, recolourBackdrop, recoverGarment } from "@/lib/vision/garment-fill";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
-import { bodyAnchors, garmentFit, garmentToBody, MAX_WIDEN, sleeveMesh, withLooseSleeves, type GarmentFit, type SleeveFit } from "@/lib/vision/mirror";
+import { closeMask, fillSpecks, recolourBackdrop, recoverGarment } from "@/lib/vision/mirror/garment-fill";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
+import { bodyAnchors, garmentFit, garmentToBody, MAX_WIDEN, sleeveMesh, withLooseSleeves, type GarmentFit, type SleeveFit } from "@/lib/vision/mirror/mirror";
 
 // Making the live mirror's garment look worn: hung from the shoulder seams (collars stand above them),
 // covering the person's own clothes out to the arms, shoulders squared to a person's, sleeves joined to

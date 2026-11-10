@@ -1,4 +1,4 @@
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 
 import type { PersonAt } from "./mask";
 

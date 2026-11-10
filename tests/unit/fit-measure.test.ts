@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BODY_LEVELS } from "@/lib/fit/fit";
 import { girthsFromPhoto, measurePhoto, type PersonAt } from "@/lib/fit/measure";
-import { KEYPOINT_NAMES, type Keypoint, type Pose } from "@/lib/vision/movenet";
+import { KEYPOINT_NAMES, type Keypoint, type Pose } from "@/lib/vision/models/movenet";
 
 // Body measurements from a try-on photo: a drawn person (body points + outline) of known widths, 160 cm
 // tall, standing in a 600×1000 photo with their head at y=50 and the floor at y=950.

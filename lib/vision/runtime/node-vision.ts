@@ -6,11 +6,11 @@ import * as ort from "onnxruntime-web";
 import sharp from "sharp";
 
 import { modelPath, VISION_MODELS } from "./assets";
-import { fitSquare, type FitBox } from "./geometry";
-import { decodeMovenet, MOVENET_SIZE, movenetInput } from "./movenet";
-import { meanBrightness, type PhotoAnalysis } from "./photo-check";
-import { SELFIE_SIZE, selfieInput, type PersonMask } from "./segment";
-import { decodeYunet, YUNET_SIZE, yunetInput } from "./yunet";
+import { fitSquare, type FitBox } from "../models/geometry";
+import { decodeMovenet, MOVENET_SIZE, movenetInput } from "../models/movenet";
+import { meanBrightness, type PhotoAnalysis } from "../photo/photo-check";
+import { SELFIE_SIZE, selfieInput, type PersonMask } from "../models/segment";
+import { decodeYunet, YUNET_SIZE, yunetInput } from "../models/yunet";
 
 // The on-device body and face models, run in Node by the worker (our own machine; no third party sees
 // the photo). Same model files as the browser (public/vision/, `pnpm vision:fetch`), same decoding.

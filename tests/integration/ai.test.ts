@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { ForbiddenError, type Actor } from "@/lib/auth/policy";
 import { AiError, AiProviderError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
 import { createDesignRoundJob, getAiQuota, getJobStatus, listRounds, pickOption, uploadAiAttachment, type DesignRoundRequest } from "@/lib/ai/jobs";
 import { QUOTA_MESSAGE } from "@/lib/ai/quota";
 import { storedOptionsSchema } from "@/lib/ai/rounds";

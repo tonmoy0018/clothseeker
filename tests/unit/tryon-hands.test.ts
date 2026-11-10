@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { visibleHands } from "@/lib/tryon/hands";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 
 // Whether a person's hands are in sight in their photo, by the skin colour of their own face: a hand in a
 // pocket isn't kept by the try-on (its spot would keep the old pocket).

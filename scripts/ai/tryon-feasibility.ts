@@ -8,7 +8,7 @@ import { z } from "zod";
 // Feasibility check for virtual try-on on free public Hugging Face Spaces (CLAUDE.md: test the
 // try-on provider before building the Phase 7 UI). Not part of the app or the worker.
 //
-//   pnpm tsx ai-scripts/tryon-feasibility.ts <person.jpg> <garment.png> <out-dir> [--upper] [space…]
+//   pnpm tsx scripts/ai/tryon-feasibility.ts <person.jpg> <garment.png> <out-dir> [--upper] [space…]
 //
 // --upper tries a top (shirt, panjabi) instead of a dress.
 //

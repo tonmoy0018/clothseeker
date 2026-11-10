@@ -1,8 +1,8 @@
 import type { GarmentTypeInfo } from "@/lib/catalog/garment-types";
 import { BODY_LEVELS } from "@/lib/fit/fit";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 
-// The area of a customer's photo a local try-on model repaints (lib/ai/tryon-local.ts): their own
+// The area of a customer's photo a local try-on model repaints (lib/ai/providers/tryon-local.ts): their own
 // clothes where the new garment goes. Above the hips it hugs their outline (the person mask) with a
 // small margin, so the model can't draw their shoulders, sides or arms any wider than they are; below
 // the hips a skirt may stand away from the legs. The face, wrists (and what's on them), hands, feet, the

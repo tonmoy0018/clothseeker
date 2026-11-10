@@ -8,11 +8,11 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { AiJobRejected, AiProviderError } from "@/lib/ai/errors";
-import { CatVtonProcess, LocalTryOn, type LocalTryOnJob, type LocalTryOnRunner, type ModelProcess } from "@/lib/ai/tryon-local";
-import { localTryOnPaths, localTryOnReady } from "@/lib/ai/tryon-local-setup";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
-import { SELFIE_SIZE } from "@/lib/vision/segment";
-import { fitSquare } from "@/lib/vision/geometry";
+import { CatVtonProcess, LocalTryOn, type LocalTryOnJob, type LocalTryOnRunner, type ModelProcess } from "@/lib/ai/providers/tryon-local";
+import { localTryOnPaths, localTryOnReady } from "@/lib/ai/providers/tryon-local-setup";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
+import { SELFIE_SIZE } from "@/lib/vision/models/segment";
+import { fitSquare } from "@/lib/vision/models/geometry";
 
 // The local try-on: the customer's body is masked on our machine, a local model repaints that area,
 // and only the masked area is put back into the photo. The model process itself is faked here.

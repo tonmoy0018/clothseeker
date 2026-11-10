@@ -1,5 +1,5 @@
 import type { Audience } from "@/lib/catalog/garment-types";
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 
 import { BODY_LEVELS, type BodyGirth } from "./fit";
 

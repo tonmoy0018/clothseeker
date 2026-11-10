@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Keypoint, Pose } from "@/lib/vision/movenet";
+import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 import {
   armChain,
   bodyAnchors,
@@ -16,8 +16,8 @@ import {
   triangleTransform,
   type GarmentFit,
   type SleeveFit,
-} from "@/lib/vision/mirror";
-import { featherAlpha, shadeFromFrame } from "@/lib/vision/relight";
+} from "@/lib/vision/mirror/mirror";
+import { featherAlpha, shadeFromFrame } from "@/lib/vision/mirror/relight";
 import { splitGarment, type Mask } from "@/lib/garment-photo/segment";
 
 // Live mirror fitting: where each point of a garment picture lands on a person in the camera frame.
