@@ -3,7 +3,9 @@
 Started and fed by lib/ai/providers/tryon-local.ts. Loads the model once, then answers one request per line:
 
   stdin   {"id": "...", "person": "<png>", "mask": "<png>", "garment": "<png>", "out": "<png>",
-           "steps": 30, "width": 384, "height": 512, "seed": 42}
+           "steps": 20, "width": 384, "height": 512, "seed": 42,
+           "sampler": "unipc" | "ddim" (optional, default "ddim"),
+           "guided": 0.6 (optional, default 1: the share of the steps that compare with and without the garment)}
   stdout  {"ready": true}                       once, after loading
           {"id": "...", "ok": true, "ms": 81234}
           {"id": "...", "ok": false, "error": "OUT_OF_MEMORY" | "INVALID_REQUEST" | "FAILED"}
@@ -17,13 +19,14 @@ self-attention) is CatVTON's (Chong et al., 2024). The try-on weights are CC BY-
 """
 
 import json
+import math
 import os
 import sys
 import time
 
 import numpy as np
 import torch
-from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel
+from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel, UniPCMultistepScheduler
 from diffusers.models.attention_processor import SlicedAttnProcessor
 from PIL import Image
 from safetensors.torch import load_file
@@ -105,19 +108,36 @@ def try_on(unet, vae, scheduler, request):
         torch.cat([masked, cond], dim=-2),
     ]
     latents = torch.randn(inputs[2].shape, generator=generator).to(DEVICE)
-    scheduler.set_timesteps(request["steps"], device=DEVICE)
-    latents = latents * scheduler.init_noise_sigma
-    for t in scheduler.timesteps:
+    # UniPC (a multistep solver) gets in 20 steps where DDIM needs 30 or more. It keeps the last steps'
+    # results, so each try-on gets its own.
+    unipc = request.get("sampler") == "unipc"
+    sampler = UniPCMultistepScheduler.from_config(scheduler.config) if unipc else scheduler
+    # UniPC solves a small linear system each step, which Apple's GPU can't: its steps run on the CPU
+    # (the latents are tiny; only the UNet needs the GPU).
+    sampler.set_timesteps(request["steps"], device="cpu" if unipc else DEVICE)
+    latents = latents * sampler.init_noise_sigma
+    # Guidance (comparing a pass without the garment) settles what is drawn in the early steps; the last
+    # ones only sharpen it, so they can skip the second pass.
+    guided = math.ceil(len(sampler.timesteps) * request.get("guided", 1))
+
+    def predict(x, t, cond_input):
+        return unet(torch.cat([x, inputs[0], cond_input], dim=1).to(DTYPE), t, encoder_hidden_states=None, return_dict=False)[0].float()
+
+    for index, t in enumerate(sampler.timesteps):
         if DEVICE == "mps":
             torch.mps.empty_cache()
-        x = scheduler.scale_model_input(latents, t)
-        # One pass at a time, without then with the garment: half the memory of a batch of two.
-        without, with_garment = [
-            unet(torch.cat([x, inputs[0], cond_input], dim=1).to(DTYPE), t, encoder_hidden_states=None, return_dict=False)[0].float()
-            for cond_input in (inputs[1], inputs[2])
-        ]
-        noise = without + GUIDANCE * (with_garment - without)
-        latents = scheduler.step(noise, t, latents, eta=1.0, generator=generator).prev_sample
+        x = sampler.scale_model_input(latents, t)
+        with_garment = predict(x, t, inputs[2])
+        if index < guided:
+            # One pass at a time, with then without the garment: half the memory of a batch of two.
+            without = predict(x, t, inputs[1])
+            noise = without + GUIDANCE * (with_garment - without)
+        else:
+            noise = with_garment
+        if unipc:
+            latents = sampler.step(noise.cpu(), t, latents.cpu()).prev_sample.to(DEVICE)
+        else:
+            latents = sampler.step(noise, t, latents, eta=1.0, generator=generator).prev_sample
     if not torch.isfinite(latents).all():
         raise FloatingPointError("non-finite result")
     latents = latents.split(latents.shape[-2] // 2, dim=-2)[0]
@@ -135,6 +155,11 @@ def valid(request):
     for key, low, high in (("steps", 1, 100), ("width", 128, 1024), ("height", 128, 1366), ("seed", 0, 2**31 - 1)):
         if not isinstance(request.get(key), int) or not low <= request[key] <= high:
             return False
+    if request.get("sampler", "ddim") not in ("ddim", "unipc"):
+        return False
+    guided = request.get("guided", 1)
+    if isinstance(guided, bool) or not isinstance(guided, (int, float)) or not 0 < guided <= 1:
+        return False
     return request["width"] % 8 == 0 and request["height"] % 8 == 0
 
 

@@ -63,7 +63,7 @@ export default async function QuotePage({ params }: PageProps<"/account/quotes/[
             <p className="text-sm">We&apos;ll reply with a price by {when.format(new Date(quote.respondBy))}.</p>
           )}
           {quote.priceMinor !== null && (
-            <section className="flex flex-col gap-1 rounded-xl border p-4" data-testid="quote-price">
+            <section className="flex flex-col gap-1 rounded-2xl border bg-card p-4" data-testid="quote-price">
               <span className="text-sm text-muted-foreground">Our price</span>
               <span className="text-2xl font-semibold">{formatBDT(quote.priceMinor)}</span>
               {quote.responseNote && <p className="whitespace-pre-line text-sm">{quote.responseNote}</p>}
@@ -73,7 +73,7 @@ export default async function QuotePage({ params }: PageProps<"/account/quotes/[
             </section>
           )}
           {quote.status === "DECLINED" && quote.responseNote && (
-            <section className="flex flex-col gap-1 rounded-xl border p-4">
+            <section className="flex flex-col gap-1 rounded-2xl border bg-card p-4">
               <span className="text-sm text-muted-foreground">Sorry, we can&apos;t make this one</span>
               <p className="whitespace-pre-line text-sm">{quote.responseNote}</p>
             </section>

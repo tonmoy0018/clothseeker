@@ -33,21 +33,30 @@ const aiEnvShape = {
   PLANNER_PROVIDER: z.enum(["fake", "gemini"]).default("fake"),
   IMAGE_PROVIDER: z.enum(["fake", "cloudflare"]).default("fake"),
   GEMINI_API_KEY: z.string().min(20).optional(),
-  GEMINI_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-3.1-flash-lite"),
+  /** The strongest Flash model that answers reliably on the free tier (measured 2026-11-11); the lighter ones follow. */
+  GEMINI_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-3.6-flash"),
   /** Comma-separated models tried in order when GEMINI_MODEL is busy, retired or answers badly. Empty = none. */
   GEMINI_FALLBACK_MODELS: z
     .string()
     .regex(/^([a-z0-9.-]{3,60}(,[a-z0-9.-]{3,60}){0,4})?$/)
-    .default("gemini-3.5-flash-lite,gemini-3.8-flash")
+    .default("gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite")
     .transform((v) => v.split(",").filter(Boolean)),
   CLOUDFLARE_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   CLOUDFLARE_API_TOKEN: z.string().min(20).optional(),
-  CLOUDFLARE_IMAGE_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-1-schnell"),
+  CLOUDFLARE_IMAGE_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-2-klein-4b"),
+  /** Comma-separated models tried in order when CLOUDFLARE_IMAGE_MODEL fails (not when the daily allowance is used up). Empty = none. */
+  CLOUDFLARE_FALLBACK_IMAGE_MODELS: z
+    .string()
+    .regex(/^(@cf\/[a-z0-9./-]{3,100}(,@cf\/[a-z0-9./-]{3,100}){0,3})?$/)
+    .default("@cf/black-forest-labs/flux-1-schnell")
+    .transform((v) => v.split(",").filter(Boolean)),
   /**
    * A customer's own garment photo turned into a clean product shot by an image model before it's cut out
-   * (lib/own-dress). "none" (default) skips it; with "gemini", a refusal or quota error falls back to the photo.
+   * (lib/own-dress). "none" (default) skips it. "cloudflare" (FLUX.2 klein, within the free daily allowance)
+   * sends the photo to Cloudflare; "gemini" needs a paid key. A refusal or quota error falls back to the photo.
    */
-  GARMENT_SHOT_PROVIDER: z.enum(["none", "gemini"]).default("none"),
+  GARMENT_SHOT_PROVIDER: z.enum(["none", "gemini", "cloudflare"]).default("none"),
+  CLOUDFLARE_SHOT_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-2-klein-4b"),
   GEMINI_IMAGE_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-2.5-flash-image"),
   /** Artificial latency of the fake providers, so loading states are visible in development. */
   AI_FAKE_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(1_500),
@@ -116,7 +125,7 @@ export function missingAiKeys(
   if ((env.PLANNER_PROVIDER === "gemini" || env.GARMENT_SHOT_PROVIDER === "gemini") && !env.GEMINI_API_KEY) {
     missing.push("GEMINI_API_KEY");
   }
-  if (env.IMAGE_PROVIDER === "cloudflare") {
+  if (env.IMAGE_PROVIDER === "cloudflare" || env.GARMENT_SHOT_PROVIDER === "cloudflare") {
     if (!env.CLOUDFLARE_ACCOUNT_ID) {
       missing.push("CLOUDFLARE_ACCOUNT_ID");
     }

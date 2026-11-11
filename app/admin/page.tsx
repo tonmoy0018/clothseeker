@@ -56,7 +56,7 @@ export default async function AdminDashboardPage() {
         </h2>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7" data-testid="order-tiles">
           {orderTiles.map((tile) => (
-            <Link key={tile.label} href={tile.href} className="rounded-xl border p-4 hover:bg-muted">
+            <Link key={tile.label} href={tile.href} className="rounded-2xl border bg-card p-4 hover:bg-muted">
               <div className="text-3xl font-semibold tabular-nums">{tile.value}</div>
               <div className="text-sm text-muted-foreground">{tile.label}</div>
             </Link>
@@ -67,7 +67,7 @@ export default async function AdminDashboardPage() {
       <h2 className="text-lg font-semibold">Catalog</h2>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {tiles.map((tile) => (
-          <Link key={tile.label} href={tile.href} className="rounded-xl border p-4 hover:bg-muted">
+          <Link key={tile.label} href={tile.href} className="rounded-2xl border bg-card p-4 hover:bg-muted">
             <div className="text-3xl font-semibold tabular-nums">{tile.value}</div>
             <div className="text-sm text-muted-foreground">{tile.label}</div>
           </Link>

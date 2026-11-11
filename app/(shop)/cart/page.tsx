@@ -20,7 +20,7 @@ export default async function CartPage() {
 
   if (user.role !== "CUSTOMER") {
     return (
-      <div className="rounded-xl border p-8">
+      <div className="rounded-2xl border bg-card p-8">
         <p className="font-medium">Admin accounts don&apos;t have a cart.</p>
         <p className="text-sm text-muted-foreground">Sign in with a customer account to shop.</p>
       </div>
@@ -36,7 +36,7 @@ export default async function CartPage() {
 
   if (cart.lines.length === 0) {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-xl border p-8">
+      <div className="flex flex-col items-start gap-3 rounded-2xl border bg-card p-8">
         <h1 className="text-2xl font-semibold">Your cart is empty</h1>
         <p className="text-muted-foreground">Find something you love and it will appear here.</p>
         <Link href="/products" className={buttonVariants()}>
@@ -50,14 +50,14 @@ export default async function CartPage() {
     <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
       <section className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold">Your cart</h1>
-        <ul className="flex flex-col divide-y rounded-xl border" data-testid="cart-lines">
+        <ul className="flex flex-col divide-y rounded-2xl border bg-card" data-testid="cart-lines">
           {cart.lines.map((line) => (
             <CartRow key={line.itemId} line={line} previewUrl={(line.kind === "CUSTOM_DESIGN" || line.kind === "QUOTE") && line.previewKey ? previews.get(line.previewKey) : undefined} />
           ))}
         </ul>
       </section>
 
-      <aside className="flex h-fit flex-col gap-4 rounded-xl border p-5">
+      <aside className="flex h-fit flex-col gap-4 rounded-2xl border bg-card p-5">
         <h2 className="font-semibold">Order summary</h2>
         <div className="flex justify-between text-sm">
           <span>Items</span>

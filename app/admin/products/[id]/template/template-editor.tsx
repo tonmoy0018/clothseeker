@@ -18,6 +18,7 @@ import { styleOptionsFor, templateStyleGroups, type StyleOption, type TemplateCo
 
 import { saveTemplateAction, setTemplateStateAction, uploadTemplateImageAction } from "./actions";
 import { PlacementCanvas, type Rect } from "./placement-canvas";
+import { nativeSelectClass } from "@/components/ui/select";
 
 const ADD_ON_LABEL: Record<keyof TemplateConfig["addOns"], string> = {
   textMinor: "Text layer",
@@ -241,7 +242,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
                   <select
                     value={area.side}
                     onChange={(e) => update((c) => withArea(c, index, { side: e.target.value === "back" ? "back" : "front" }))}
-                    className="h-8 rounded-lg border border-input bg-transparent px-2"
+                    className={nativeSelectClass}
                   >
                     <option value="front">Front</option>
                     <option value="back">Back</option>

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { DesignSpec } from "@/types/design-spec";
 
 import { getAiOverviewAction, getJobStatusAction, pickOptionAction, requestDesignRoundAction, uploadAiAttachmentAction } from "./ai-actions";
+import { textareaClass } from "@/components/ui/textarea";
 
 // The AI design box: describe a change (optionally with photos), get four options, pick one or
 // refine it. Work is queued for the worker; this component only polls for the outcome.
@@ -201,7 +202,7 @@ export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignI
   const canGenerate = !busy && !attaching && instruction.trim().length >= 3 && quota?.remaining !== 0;
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border p-4" data-testid="ai-box" aria-labelledby="ai-box-title">
+    <section className="flex flex-col gap-3 rounded-2xl border bg-card p-4" data-testid="ai-box" aria-labelledby="ai-box-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="ai-box-title" className="font-medium">
           AI design box
@@ -223,7 +224,7 @@ export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignI
           rows={3}
           placeholder="e.g. Pastel florals on the skirt"
           onChange={(e) => setInstruction(e.target.value)}
-          className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className={textareaClass}
         />
       </label>
       <div className="flex flex-wrap gap-1.5" aria-label="Example ideas">

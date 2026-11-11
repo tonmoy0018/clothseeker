@@ -305,7 +305,7 @@ export function TryOnPanel({
 
   if (!signedIn) {
     return (
-      <section className="flex flex-col gap-2 rounded-xl border p-4" data-testid="try-on-panel">
+      <section className="flex flex-col gap-2 rounded-2xl border bg-card p-4" data-testid="try-on-panel">
         <h2 className="font-medium">See it on me</h2>
         <p className="text-sm text-muted-foreground">Sign in to try clothes on with your own photo.</p>
         <Button variant="outline" className="self-start" onClick={onSignIn}>
@@ -316,7 +316,7 @@ export function TryOnPanel({
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border p-4" data-testid="try-on-panel" aria-labelledby="try-on-title">
+    <section className="flex flex-col gap-3 rounded-2xl border bg-card p-4" data-testid="try-on-panel" aria-labelledby="try-on-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="try-on-title" className="font-medium">
           See it on me

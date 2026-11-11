@@ -1,5 +1,6 @@
 "use client";
 
+import { Camera, Shirt } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -32,10 +33,12 @@ export function TryOnButton({
     <div className="flex w-full flex-col gap-3">
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          <Shirt aria-hidden />
           {open ? "Hide try-on" : "Try on"}
         </Button>
         {mirrorImageUrl && (
           <Button variant="outline" onClick={() => setMirror(true)}>
+            <Camera aria-hidden />
             Live mirror
           </Button>
         )}

@@ -124,7 +124,7 @@ export default async function AdminDisputePage({ params }: PageProps<"/admin/dis
           {d.status === "OPEN" ? (
             <ResolveForm disputeId={d.id} amount={formatBDT(d.item.amountMinor)} />
           ) : (
-            <div className="rounded-xl border p-4 text-sm">
+            <div className="rounded-2xl border bg-card p-4 text-sm">
               <p className="font-medium">{OUTCOME[d.status]}</p>
               {d.resolution && <p className="whitespace-pre-line">{d.resolution}</p>}
               {d.resolvedAt && <p className="text-muted-foreground">{when.format(d.resolvedAt)}</p>}

@@ -39,11 +39,11 @@ export default async function AdminFlagsPage({ searchParams }: PageProps<"/admin
         ))}
       </nav>
       {flags.length === 0 ? (
-        <p className="rounded-xl border p-8 text-muted-foreground">Nothing here.</p>
+        <p className="rounded-2xl border bg-card p-8 text-muted-foreground">Nothing here.</p>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2" data-testid="flag-list">
           {flags.map((f) => (
-            <li key={f.id} className="flex gap-4 rounded-xl border p-4">
+            <li key={f.id} className="flex gap-4 rounded-2xl border bg-card p-4">
               <span className="relative block h-36 w-28 shrink-0 overflow-hidden rounded-lg bg-muted">
                 {f.imageUrl ? <Image src={f.imageUrl} alt="Flagged photo" fill unoptimized className="object-cover" /> : <span className="flex h-full items-center justify-center p-2 text-center text-xs text-muted-foreground">Photo deleted</span>}
               </span>

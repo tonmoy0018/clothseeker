@@ -1,6 +1,8 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AUDIENCES, GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
+import { nativeSelectClass } from "@/components/ui/select";
+import { textareaClass } from "@/components/ui/textarea";
 
 type ProductFieldsProps = {
   categories: { id: string; name: string }[];
@@ -38,7 +40,7 @@ export function ProductFields({ categories, defaults, slugOptional, garmentTypeL
           name={garmentTypeLocked ? undefined : "garmentType"}
           disabled={garmentTypeLocked}
           defaultValue={defaults?.garmentType ?? "dress"}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm disabled:opacity-70"
+          className={nativeSelectClass}
         >
           {GARMENT_TYPE_IDS.map((type) => (
             <option key={type} value={type}>
@@ -57,7 +59,7 @@ export function ProductFields({ categories, defaults, slugOptional, garmentTypeL
           name="categoryId"
           required
           defaultValue={defaults?.categoryId ?? ""}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+          className={nativeSelectClass}
         >
           <option value="" disabled>
             Choose a category
@@ -84,7 +86,7 @@ export function ProductFields({ categories, defaults, slugOptional, garmentTypeL
           maxLength={2000}
           rows={4}
           defaultValue={defaults?.description}
-          className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className={textareaClass}
         />
       </div>
     </div>

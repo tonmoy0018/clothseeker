@@ -44,9 +44,9 @@ export default async function AdminQuotesPage({ searchParams }: PageProps<"/admi
         ))}
       </nav>
       {quotes.length === 0 ? (
-        <p className="rounded-xl border p-8 text-muted-foreground">Nothing here.</p>
+        <p className="rounded-2xl border bg-card p-8 text-muted-foreground">Nothing here.</p>
       ) : (
-        <ul className="flex flex-col divide-y rounded-xl border" data-testid="admin-quote-list">
+        <ul className="flex flex-col divide-y rounded-2xl border bg-card" data-testid="admin-quote-list">
           {quotes.map((q) => (
             <li key={q.id}>
               <Link href={`/admin/quotes/${q.id}`} className="flex items-center gap-4 p-4 hover:bg-muted/40">

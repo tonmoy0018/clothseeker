@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { MAX_UNITS_PER_LINE } from "@/lib/shop/limits";
 
 import { removeItemAction, updateQuantityAction, type CartActionState } from "./actions";
+import { nativeSelectClass } from "@/components/ui/select";
 
 const initial: CartActionState = {};
 
@@ -26,7 +27,7 @@ export function LineControls({ itemId, quantity }: { itemId: string; quantity: n
             id={`qty-${itemId}`}
             name="quantity"
             defaultValue={quantity}
-            className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm"
+            className={nativeSelectClass}
             onChange={(e) => e.currentTarget.form?.requestSubmit()}
             disabled={updating}
           >

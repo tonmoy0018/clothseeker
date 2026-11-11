@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Checkout — ClothSeeker" };
 export default async function CheckoutPage() {
   const user = await requireUser("/checkout");
   if (user.role !== "CUSTOMER") {
-    return <p className="rounded-xl border p-8">Only customer accounts can check out.</p>;
+    return <p className="rounded-2xl border bg-card p-8">Only customer accounts can check out.</p>;
   }
 
   const db = getPrisma();
@@ -29,7 +29,7 @@ export default async function CheckoutPage() {
   } catch (error) {
     if (error instanceof OrderError) {
       return (
-        <div className="flex flex-col items-start gap-3 rounded-xl border p-8" data-testid="checkout-blocked">
+        <div className="flex flex-col items-start gap-3 rounded-2xl border bg-card p-8" data-testid="checkout-blocked">
           <h1 className="text-xl font-semibold">Your cart needs attention</h1>
           <p className="text-muted-foreground">{error.message}</p>
           <Link href="/cart" className={buttonVariants({ variant: "outline" })}>
@@ -77,7 +77,7 @@ export default async function CheckoutPage() {
         />
       </div>
 
-      <aside className="flex h-fit flex-col gap-4 rounded-xl border p-5">
+      <aside className="flex h-fit flex-col gap-4 rounded-2xl border bg-card p-5">
         <h2 className="font-semibold">Your order</h2>
         <ul className="flex flex-col gap-3" data-testid="checkout-lines">
           {quote.lines.map((line) => {

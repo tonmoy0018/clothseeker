@@ -10,6 +10,7 @@ import { downscalePhoto } from "@/lib/media/client-resize";
 import { cn } from "@/lib/utils";
 
 import { getStartStatusAction, startFromDescriptionAction, startFromPhotoAction, uploadDressPhotoAction, type StartResult } from "./actions";
+import { textareaClass } from "@/components/ui/textarea";
 
 // Two ways to start: a dress photo or a description. A description, or a photo the customer wants matched
 // to our closest dress, queues a dress match and opens the design screen on that dress (with an AI round
@@ -151,7 +152,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
     <div className="flex flex-col gap-4">
       {!signedIn && <p className="text-sm text-muted-foreground">You&apos;ll be asked to sign in first.</p>}
       <div className={cn("grid gap-4", photoOnly ? "max-w-xl" : "md:grid-cols-2")}>
-        <section className="flex flex-col gap-3 rounded-xl border p-5" data-testid="start-photo">
+        <section className="flex flex-col gap-3 rounded-2xl border bg-card p-5" data-testid="start-photo">
           <h2 className="font-medium">From a dress photo</h2>
           <p className="text-sm text-muted-foreground">
             Upload a photo of a dress you like. We can make it exactly as it is, let you customise it, or start you from our closest dress.
@@ -220,7 +221,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
         </section>
 
         {!photoOnly && (
-          <section className="flex flex-col gap-3 rounded-xl border p-5" data-testid="start-description">
+          <section className="flex flex-col gap-3 rounded-2xl border bg-card p-5" data-testid="start-description">
             <h2 className="font-medium">From a description</h2>
             <p className="text-sm text-muted-foreground">Describe the dress. We pick the best match and the AI design box suggests four ideas (uses one of today&apos;s AI rounds).</p>
             <textarea
@@ -230,7 +231,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
               rows={3}
               placeholder="e.g. A flowy floral midi for a summer wedding"
               onChange={(e) => setDescription(e.target.value)}
-              className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              className={textareaClass}
             />
             <div className="flex flex-wrap gap-1.5">
               {EXAMPLES.map((example) => (

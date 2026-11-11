@@ -18,6 +18,7 @@ import type { PlacementArea, TemplateConfig } from "@/types/template";
 import { DecorationControls, ImageControls } from "./decoration-controls";
 import { AccordionRow, Swatch, Tile } from "./editor-ui";
 import { decorationDataUrl } from "./recolor";
+import { nativeSelectClass } from "@/components/ui/select";
 
 // Personalise tab: where on the dress, then text, decorations and the customer's own image,
 // plus the controls for whichever item is selected on the canvas.
@@ -88,7 +89,7 @@ export function PersonaliseTab(props: {
                     const fontId: FontId | undefined = FONTS.find((f) => f.id === e.target.value)?.id;
                     if (fontId) props.onUpdateLayer(selectedLayer.id, (l) => (l.kind === "text" ? { ...l, text: { ...l.text, fontId } } : l));
                   }}
-                  className="h-8 rounded-lg border border-input bg-background px-2"
+                  className={nativeSelectClass}
                 >
                   {fonts.map((f) => (
                     <option key={f.id} value={f.id}>

@@ -14,9 +14,9 @@ export default async function SignUpPage({ searchParams }: PageProps<"/signup">)
     redirect(next);
   }
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 py-8">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Create your account</h1>
+    <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border bg-card p-6 shadow-sm sm:my-6 sm:p-10">
+      <div className="flex flex-col gap-1.5">
+        <h1 className="text-3xl font-semibold">Create your account</h1>
         <p className="text-sm text-muted-foreground">Shop, design your own and track your orders.</p>
       </div>
       <AuthForm mode="sign-up" next={next} />

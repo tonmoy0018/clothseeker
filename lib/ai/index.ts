@@ -1,6 +1,6 @@
 import type { WorkerEnv } from "@/lib/env/schema";
 
-import { CloudflareImage } from "./providers/cloudflare";
+import { CloudflareGarmentShot, CloudflareImage } from "./providers/cloudflare";
 import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./providers/fake";
 import { GeminiGarmentShot, GeminiPlanner } from "./providers/gemini";
 import { LocalPhotoChecker } from "./providers/photo-check-local";
@@ -24,6 +24,8 @@ type ProviderEnv = Pick<
   | "CLOUDFLARE_ACCOUNT_ID"
   | "CLOUDFLARE_API_TOKEN"
   | "CLOUDFLARE_IMAGE_MODEL"
+  | "CLOUDFLARE_FALLBACK_IMAGE_MODELS"
+  | "CLOUDFLARE_SHOT_MODEL"
   | "AI_FAKE_DELAY_MS"
   | "TRYON_PROVIDER"
   | "HF_TOKEN"
@@ -53,7 +55,12 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
     if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_API_TOKEN) {
       throw new AiConfigError("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when IMAGE_PROVIDER=cloudflare");
     }
-    image = new CloudflareImage({ accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, model: env.CLOUDFLARE_IMAGE_MODEL });
+    image = new CloudflareImage({
+      accountId: env.CLOUDFLARE_ACCOUNT_ID,
+      apiToken: env.CLOUDFLARE_API_TOKEN,
+      model: env.CLOUDFLARE_IMAGE_MODEL,
+      fallbackModels: env.CLOUDFLARE_FALLBACK_IMAGE_MODELS,
+    });
   } else {
     image = new FakeImage(env.AI_FAKE_DELAY_MS);
   }
@@ -81,9 +88,15 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
     photoCheck = new FakePhotoChecker(env.AI_FAKE_DELAY_MS);
   }
 
-  // Clean product shots of customers' own garments (optional; billed per image on paid keys).
+  // Clean product shots of customers' own garments (optional): FLUX.2 on Cloudflare's free allowance, or
+  // Gemini's image model (billed per image; free keys are refused).
   let garmentShot;
-  if (env.GARMENT_SHOT_PROVIDER === "gemini") {
+  if (env.GARMENT_SHOT_PROVIDER === "cloudflare") {
+    if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_API_TOKEN) {
+      throw new AiConfigError("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when GARMENT_SHOT_PROVIDER=cloudflare");
+    }
+    garmentShot = new CloudflareGarmentShot({ accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, model: env.CLOUDFLARE_SHOT_MODEL });
+  } else if (env.GARMENT_SHOT_PROVIDER === "gemini") {
     if (!env.GEMINI_API_KEY) {
       throw new AiConfigError("GEMINI_API_KEY is required when GARMENT_SHOT_PROVIDER=gemini");
     }

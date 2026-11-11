@@ -20,6 +20,19 @@ export function partKind(label: string): "sleeves" | "bodice" | "skirt" | null {
 }
 
 /**
+ * "Left sleeve" and "Right sleeve" → "Sleeves": the name the two sides of a pair share. The AI boxes each
+ * side on its own (tight boxes tell the sides from the body between them), but a customer recolours the
+ * pair as one part. Null for a part that isn't one side of a pair.
+ */
+export function pairName(label: string): string | null {
+  const side = /^(?:left|right)\s+(.+)$/i.exec(label.trim());
+  const base = side?.[1]?.trim();
+  if (!base) return null;
+  const plural = /s$/i.test(base) ? base : /(?:x|ch|sh)$/i.test(base) ? `${base}es` : `${base}s`;
+  return `${plural.charAt(0).toUpperCase()}${plural.slice(1)}`;
+}
+
+/**
  * Whether each hint can be told apart. A small part inside a bigger one of the same colour has nothing
  * but its box to go by, and would come out as a rectangle: it's folded into the bigger part, unless it's
  * a band across it (a waistband, a belt, a border), whose box is its shape.

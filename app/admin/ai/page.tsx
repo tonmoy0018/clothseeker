@@ -36,7 +36,7 @@ function Bars({ series, label }: { series: { day: Date; count: number }[]; label
 function JobCard({ m, now }: { m: JobTypeMetrics; now: Date }) {
   const finished = m.today.SUCCEEDED + m.today.FAILED;
   return (
-    <section className="flex flex-col gap-3 rounded-xl border p-4" data-testid={`ai-metrics-${m.type}`}>
+    <section className="flex flex-col gap-3 rounded-2xl border bg-card p-4" data-testid={`ai-metrics-${m.type}`}>
       <h2 className="font-medium">{JOB_LABEL[m.type]}</h2>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
         <dt className="text-muted-foreground">Today</dt>
@@ -80,15 +80,15 @@ export default async function AdminAiPage() {
       </div>
 
       <section className="flex flex-wrap gap-4" data-testid="ai-summary">
-        <div className="rounded-xl border p-4">
+        <div className="rounded-2xl border bg-card p-4">
           <div className="text-3xl font-semibold tabular-nums">{metrics.roundsToday}</div>
           <div className="text-sm text-muted-foreground">AI design rounds today</div>
         </div>
-        <div className="rounded-xl border p-4">
+        <div className="rounded-2xl border bg-card p-4">
           <div className="text-3xl font-semibold tabular-nums">{metrics.tryOnsToday}</div>
           <div className="text-sm text-muted-foreground">Try-ons today</div>
         </div>
-        <div className="rounded-xl border p-4" data-testid="worker-status">
+        <div className="rounded-2xl border bg-card p-4" data-testid="worker-status">
           <div className={workerAlive ? "text-lg font-semibold text-emerald-700 dark:text-emerald-400" : "text-lg font-semibold text-destructive"}>
             {worker ? (workerAlive ? "Worker running" : "Worker stopped") : "No worker seen yet"}
           </div>
@@ -104,7 +104,7 @@ export default async function AdminAiPage() {
         ))}
       </div>
 
-      <section className="flex flex-col gap-3 rounded-xl border p-4" data-testid="limit-hits">
+      <section className="flex flex-col gap-3 rounded-2xl border bg-card p-4" data-testid="limit-hits">
         <h2 className="font-medium">Daily-limit hits</h2>
         <p className="text-sm text-muted-foreground">Customers refused because they reached a daily limit.</p>
         <ul className="flex flex-wrap gap-6 text-sm">

@@ -641,7 +641,7 @@ export function DesignEditor(props: DesignEditorProps) {
         )}
 
         {(props.initialDesign?.referencePhotoUrl || (props.alternatives && props.alternatives.length > 0)) && (
-          <div className="flex flex-wrap items-start gap-3 rounded-xl border p-3 text-sm" data-testid="start-info">
+          <div className="flex flex-wrap items-start gap-3 rounded-2xl border bg-card p-3 text-sm" data-testid="start-info">
             {props.initialDesign?.referencePhotoUrl && (
               <figure className="flex flex-col gap-1">
                 <span className="relative block h-28 w-20 overflow-hidden rounded-lg bg-muted">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assignParts, partKind, separableHints, type PartHint } from "@/lib/garment-photo/parts";
+import { assignParts, pairName, partKind, separableHints, type PartHint } from "@/lib/garment-photo/parts";
 import { emptyMask, maskArea, type Mask, type RgbImage } from "@/lib/garment-photo/segment";
 
 // A customer's own garment split into ITS parts from the AI's boxes and colours: colour separates parts
@@ -74,6 +74,17 @@ describe("splitting a customer's garment into its own parts", () => {
     expect(separableHints([skirt, { label: "Waistband", box: box(25, 44, 75, 49), hex: "#8c9a3d" }])).toEqual([true, true]);
     // A different colour is told apart by its colour.
     expect(separableHints([skirt, { label: "Neck tie", box: box(45, 10, 55, 30), hex: "#f2e6c9" }])).toEqual([true, true]);
+  });
+
+  it("names the two sides of a pair as one part", () => {
+    expect(pairName("Left sleeve")).toBe("Sleeves");
+    expect(pairName("right cuff")).toBe("Cuffs");
+    expect(pairName("Left patch")).toBe("Patches");
+    expect(pairName("Right lapels")).toBe("Lapels");
+    // Not one side of a pair.
+    expect(pairName("Sleeves")).toBeNull();
+    expect(pairName("Leftover trim")).toBeNull();
+    expect(pairName("Left")).toBeNull();
   });
 
   it("knows which named parts the shape-based split can help with", () => {

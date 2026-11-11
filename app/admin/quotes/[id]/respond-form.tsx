@@ -9,10 +9,11 @@ import { Label } from "@/components/ui/label";
 import type { FormState } from "../../form-state";
 
 import { respondToQuoteAction } from "./actions";
+import { textareaClass } from "@/components/ui/textarea";
 
 const initial: FormState = {};
 const textarea =
-  "rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  textareaClass;
 
 export function RespondForm({ quoteId }: { quoteId: string }) {
   const [priceState, sendPrice, pricing] = useActionState(respondToQuoteAction, initial);
@@ -21,7 +22,7 @@ export function RespondForm({ quoteId }: { quoteId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <form action={sendPrice} className="flex flex-col gap-3 rounded-xl border p-4" aria-label="Send a price">
+      <form action={sendPrice} className="flex flex-col gap-3 rounded-2xl border bg-card p-4" aria-label="Send a price">
         <input type="hidden" name="quoteId" value={quoteId} />
         <input type="hidden" name="action" value="price" />
         <div className="flex flex-col gap-1.5">
@@ -36,7 +37,7 @@ export function RespondForm({ quoteId }: { quoteId: string }) {
           Send price (valid 7 days)
         </Button>
       </form>
-      <form action={decline} className="flex flex-col gap-3 rounded-xl border p-4" aria-label="Decline">
+      <form action={decline} className="flex flex-col gap-3 rounded-2xl border bg-card p-4" aria-label="Decline">
         <input type="hidden" name="quoteId" value={quoteId} />
         <input type="hidden" name="action" value="decline" />
         <div className="flex flex-col gap-1.5">

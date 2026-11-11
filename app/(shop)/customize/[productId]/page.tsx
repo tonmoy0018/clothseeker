@@ -24,7 +24,7 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
 
   if (!context) {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-xl border p-8" data-testid="not-customizable">
+      <div className="flex flex-col items-start gap-3 rounded-2xl border bg-card p-8" data-testid="not-customizable">
         <h1 className="text-xl font-semibold">This item can&apos;t be customized</h1>
         <p className="text-muted-foreground">It may not offer custom designs, or it&apos;s temporarily unavailable.</p>
         <Link href="/products" className={buttonVariants({ variant: "outline" })}>

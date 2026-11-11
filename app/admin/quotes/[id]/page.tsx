@@ -98,7 +98,7 @@ export default async function AdminQuotePage({ params }: PageProps<"/admin/quote
           {quote.status === "REQUESTED" ? (
             <RespondForm quoteId={quote.id} />
           ) : (
-            <section className="flex flex-col gap-1 rounded-xl border p-4 text-sm">
+            <section className="flex flex-col gap-1 rounded-2xl border bg-card p-4 text-sm">
               {quote.priceMinor !== null && <span className="text-lg font-semibold">{formatBDT(quote.priceMinor)}</span>}
               {quote.responseNote && <p className="whitespace-pre-line">{quote.responseNote}</p>}
               {quote.expiresAt && quote.status === "QUOTED" && <span className="text-muted-foreground">Valid until {when.format(new Date(quote.expiresAt))}</span>}

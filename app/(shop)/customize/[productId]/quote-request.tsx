@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 
 import { requestQuoteAction } from "../../account/quotes/actions";
+import { textareaClass } from "@/components/ui/textarea";
 
 /**
  * Photo-started designs may need special tailoring: the customer can ask the team for a price. The
@@ -36,7 +37,7 @@ export function QuoteRequest({ designId, saved, onSignIn, ownDress = false }: { 
   }
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl border p-4" data-testid="quote-request">
+    <section className="flex flex-col gap-2 rounded-2xl border bg-card p-4" data-testid="quote-request">
       <h2 className="font-medium">{ownDress ? "Get a price for your dress" : "Need special tailoring?"}</h2>
       <p className="text-sm text-muted-foreground">
         {ownDress
@@ -54,7 +55,7 @@ export function QuoteRequest({ designId, saved, onSignIn, ownDress = false }: { 
             rows={3}
             placeholder={ownDress ? "Anything the tailors should know? (optional)" : "e.g. Add a high slit on the left, and pleats like in my photo"}
             onChange={(e) => setNotes(e.target.value)}
-            className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className={textareaClass}
           />
           <Button className="self-start" variant={ownDress ? "default" : "outline"} onClick={submit} disabled={pending || (!ownDress && notes.trim().length < 10)}>
             {pending ? "Sending…" : ownDress ? "Request a price" : "Request a tailoring quote"}

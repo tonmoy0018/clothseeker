@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { alignPhoto, analysePhoto, BACKDROP, cutOutGarment, frameGarmentPhoto, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, SHOULDERS, TORSO } from "@/lib/garment-photo/align";
 import { lengthRatio, maskArea, skirtRatio, sleeveReach, sleeveStyle } from "@/lib/garment-photo/segment";
+import { ownPhotoPicture } from "@/lib/garment-photo/template";
 import { luminance, shadeFactor, shadeRange } from "@/lib/design/shade";
 
 // Synthetic catalogue photos: a dress (with soft vertical folds) on a cream mannequin and stand, on a
@@ -157,6 +158,31 @@ describe("recolouring photos (shade)", () => {
     expect(on(several, 165, 200)).toBe(true);
     expect(on(several, 200, 200)).toBe(true);
     expect(maskArea(several)).toBeGreaterThan(maskArea(one));
+  });
+
+  it("makes one part of a pair the AI boxed side by side (left and right sleeve → Sleeves)", async () => {
+    const input = await photo({ colour: "#1f6f50", sleeves: "long", hem: 330 });
+    const f = (left: number, top: number, right: number, bottom: number) => ({ left: left / 400, top: top / 400, right: right / 400, bottom: bottom / 400 });
+    const hints = [
+      { label: "Dress body", box: f(145, 86, 255, 332), hex: "#1f6f50" },
+      { label: "Left sleeve", box: f(124, 90, 162, 254), hex: "#1f6f50" },
+      { label: "Right sleeve", box: f(238, 90, 276, 254), hex: "#1f6f50" },
+    ];
+    const { regions } = await ownPhotoPicture(input, "dress", undefined, hints);
+    expect(regions.map((r) => [r.id, r.label])).toEqual([["dress-body", "Dress body"], ["sleeves", "Sleeves"]]);
+    const sleeves = regions[1];
+    if (!sleeves) throw new Error("no sleeves");
+    // Both sides are in it: the working mask and the PNG the design screen recolours by.
+    const half = sleeves.work.width / 2;
+    const side = (from: number, to: number) => sleeves.work.data.reduce((n, v, i) => n + (v === 1 && i % sleeves.work.width >= from && i % sleeves.work.width < to ? 1 : 0), 0);
+    expect(side(0, half)).toBeGreaterThan(20);
+    expect(side(half, sleeves.work.width)).toBeGreaterThan(20);
+    expect((await sharp(sleeves.png).metadata()).channels).toBe(1);
+    const png = await sharp(sleeves.png).extractChannel(0).raw().toBuffer({ resolveWithObject: true });
+    expect([png.info.width, png.info.height, png.info.channels]).toEqual([PHOTO_WIDTH, PHOTO_HEIGHT, 1]);
+    const lit = (from: number, to: number) => png.data.reduce((n, v, i) => n + (v >= 128 && i % PHOTO_WIDTH >= from && i % PHOTO_WIDTH < to ? 1 : 0), 0);
+    expect(lit(0, PHOTO_WIDTH / 2)).toBeGreaterThan(200);
+    expect(lit(PHOTO_WIDTH / 2, PHOTO_WIDTH)).toBeGreaterThan(200);
   });
 
   it("keeps a new colour true on dark fabric, with its folds", () => {

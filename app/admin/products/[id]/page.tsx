@@ -29,10 +29,11 @@ import {
   updateVariantAction,
   uploadPhotoAction,
 } from "../actions";
+import { nativeSelectClass } from "@/components/ui/select";
 
 export const metadata: Metadata = { title: "Edit item — ClothSeeker admin" };
 
-const selectClass = "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm";
+const selectClass = nativeSelectClass;
 
 export default async function AdminProductPage({ params }: PageProps<"/admin/products/[id]">) {
   const admin = await requireAdmin();

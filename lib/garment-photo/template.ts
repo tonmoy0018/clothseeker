@@ -5,7 +5,7 @@ import { slugify } from "@/lib/text/slug";
 import type { PlacementArea } from "@/types/template";
 
 import { alignGarmentPhoto, frameGarmentPhoto, maskPng, PHOTO_HEIGHT, PHOTO_WIDTH, type AlignedPhoto, type PhotoBox } from "./align";
-import type { PartHint } from "./parts";
+import { pairName, type PartHint } from "./parts";
 import type { Mask } from "./segment";
 import type { StyleChoice } from "./style-files";
 
@@ -44,6 +44,15 @@ function union(a: Mask, b: Mask): Mask {
   return { ...a, data: a.data.map((v, i) => (v || b.data[i] ? 1 : 0)) };
 }
 
+/** Two grey PNG masks of the same size as one: white where either is. */
+async function unionPng(a: Buffer, b: Buffer): Promise<Buffer> {
+  const grey = (png: Buffer) => sharp(png).resize(PHOTO_WIDTH, PHOTO_HEIGHT, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const [one, other] = await Promise.all([grey(a), grey(b)]);
+  const both = Buffer.alloc(PHOTO_WIDTH * PHOTO_HEIGHT);
+  for (let i = 0; i < both.length; i += 1) both[i] = Math.max(one[i] ?? 0, other[i] ?? 0);
+  return sharp(both, { raw: { width: PHOTO_WIDTH, height: PHOTO_HEIGHT, channels: 1 } }).toColourspace("b-w").png({ compressionLevel: 9 }).toBuffer();
+}
+
 /** One catalogue picture, lined up like the others and cut into its parts. */
 export async function photoPicture(raw: Buffer, type: GarmentType, side: "front" | "back", match: StyleChoice): Promise<PhotoPicture> {
   return pictureFrom(await alignGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders"), type, side, match);
@@ -77,9 +86,23 @@ export async function ownPhotoPicture(
   const taken = new Set<string>();
   let regions: OwnRegion[];
   if (framed.hintedParts && hints) {
-    regions = framed.hintedParts.flatMap((part, i) => {
+    // The two sides of a pair (left and right sleeve) become one part.
+    const found = new Map<string, { label: string; pair: string | null; png: Buffer; work: Mask; sides: number }>();
+    for (const [i, part] of framed.hintedParts.entries()) {
       const hint = hints[i];
-      return hint && part.area > 0 && part.work.data.some((v) => v === 1) ? [{ id: regionId(hint.label, taken), label: hint.label, png: part.png, work: part.work }] : [];
+      if (!hint || part.area === 0 || !part.work.data.some((v) => v === 1)) continue;
+      const pair = pairName(hint.label);
+      const key = (pair ?? hint.label).toLowerCase();
+      const other = found.get(key);
+      if (other) {
+        found.set(key, { ...other, png: await unionPng(other.png, part.png), work: union(other.work, part.work), sides: other.sides + 1 });
+      } else {
+        found.set(key, { label: hint.label, pair, png: part.png, work: part.work, sides: 1 });
+      }
+    }
+    regions = [...found.values()].map((part) => {
+      const label = part.sides > 1 && part.pair ? part.pair : part.label;
+      return { id: regionId(label, taken), label, png: part.png, work: part.work };
     });
   } else {
     const picture = await pictureFrom(framed, type, "front", {});

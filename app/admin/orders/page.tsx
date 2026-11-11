@@ -14,6 +14,7 @@ import { listQueue, QUEUE_TABS, queueCounts, queueFiltersSchema, TAB_IDS, type Q
 import { BUCKETS } from "@/lib/storage/buckets";
 import { getStorage } from "@/lib/storage/supabase";
 import { cn } from "@/lib/utils";
+import { nativeSelectClass } from "@/components/ui/select";
 
 export const metadata: Metadata = { title: "Orders — ClothSeeker admin" };
 
@@ -66,7 +67,7 @@ export default async function AdminOrdersPage({ searchParams }: PageProps<"/admi
       <form method="get" className="flex flex-wrap items-center gap-2" aria-label="Filter orders">
         <input type="hidden" name="tab" value={filters.tab} />
         <Input name="q" placeholder="Order number" defaultValue={filters.q} className="w-48" />
-        <select name="kind" defaultValue={filters.kind ?? ""} className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm" aria-label="Kind">
+        <select name="kind" defaultValue={filters.kind ?? ""} className={nativeSelectClass} aria-label="Kind">
           <option value="">All kinds</option>
           <option value="READY_MADE">Ready-made</option>
           <option value="CUSTOM_DESIGN">Custom</option>
@@ -78,9 +79,9 @@ export default async function AdminOrdersPage({ searchParams }: PageProps<"/admi
       </form>
 
       {rows.length === 0 ? (
-        <p className="rounded-xl border p-8 text-muted-foreground">Nothing here right now.</p>
+        <p className="rounded-2xl border bg-card p-8 text-muted-foreground">Nothing here right now.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-2xl border bg-card">
           <table className="w-full text-sm" data-testid="order-queue">
             <thead className="bg-muted/50 text-left text-muted-foreground">
               <tr>
