@@ -4,8 +4,8 @@ import type { PatternId } from "@/lib/catalog/patterns";
 import type { GarmentType, GarmentTypeInfo, StyleGroup } from "@/lib/catalog/garment-types";
 
 // Provider interfaces. Only the worker calls providers; the app only queues jobs (lib/ai/jobs.ts).
-// Implementations: fake.ts (default, deterministic), gemini.ts (planner), cloudflare.ts (images),
-// tryon-hf.ts (try-on on public Hugging Face Spaces).
+// Implementations (lib/ai/providers): fake.ts (default, deterministic), gemini.ts and planner-local.ts
+// (planner), cloudflare.ts (images), tryon-hf.ts and tryon-local.ts (try-on).
 
 export type ProviderImage = { data: Buffer; mimeType: "image/webp" | "image/png" | "image/jpeg" };
 
@@ -86,6 +86,8 @@ export interface PlannerProvider {
    * Raw JSON, validated by lib/own-dress/read.ts (never trusted).
    */
   readGarment(image: ProviderImage, signal: AbortSignal): Promise<unknown>;
+  /** Releases what it holds (the local model's process) when the worker stops. */
+  close?(): void;
 }
 
 export type MotifRequest = { prompt: string; color: string; seed: number };

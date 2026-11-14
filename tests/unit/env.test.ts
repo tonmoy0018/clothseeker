@@ -95,6 +95,15 @@ describe("env validation", () => {
     ).toBe("gemini");
   });
 
+  it("the local try-on defaults to the few-step sampler, and the earlier settings can be asked for", () => {
+    expect(parseEnv(workerEnvSchema, validServerEnv, "worker")).toMatchObject({ LOCAL_TRYON_SAMPLER: "lcm", LOCAL_TRYON_STEPS: 8, LOCAL_TRYON_GUIDED: 1 });
+    expect(parseEnv(workerEnvSchema, { ...validServerEnv, LOCAL_TRYON_SAMPLER: "unipc", LOCAL_TRYON_STEPS: "20", LOCAL_TRYON_GUIDED: "0.6" }, "worker")).toMatchObject({ LOCAL_TRYON_SAMPLER: "unipc", LOCAL_TRYON_GUIDED: 0.6 });
+    const earlier = { ...validServerEnv, LOCAL_TRYON_SAMPLER: "ddim", LOCAL_TRYON_STEPS: "30", LOCAL_TRYON_GUIDED: "1" };
+    expect(parseEnv(workerEnvSchema, earlier, "worker")).toMatchObject({ LOCAL_TRYON_SAMPLER: "ddim", LOCAL_TRYON_STEPS: 30, LOCAL_TRYON_GUIDED: 1 });
+    expect(() => parseEnv(workerEnvSchema, { ...validServerEnv, LOCAL_TRYON_SAMPLER: "euler" }, "worker")).toThrow(/LOCAL_TRYON_SAMPLER/);
+    expect(() => parseEnv(workerEnvSchema, { ...validServerEnv, LOCAL_TRYON_GUIDED: "0" }, "worker")).toThrow(/LOCAL_TRYON_GUIDED/);
+  });
+
   it("the app's server env never holds AI provider keys", () => {
     for (const key of Object.keys(serverEnvSchema.shape)) {
       expect(key).not.toMatch(/GEMINI|CLOUDFLARE/);

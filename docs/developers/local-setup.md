@@ -58,7 +58,9 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `SEED_DEMO_PASSWORD` | You (default `clothseeker-demo`) | Local only | `pnpm db:seed`, E2E |
 | `PAYMENT_PROVIDER` | `mock` (only option so far) | **Server-only** | Checkout |
 | `MOCK_COURIER_WEBHOOK_SECRET` | Random, ≥ 32 chars (`pnpm env:local` generates one) | **Server-only** | Signing/verifying courier webhooks |
-| `PLANNER_PROVIDER` | Optional: `fake` (default) or `gemini` | Worker-only | AI design planner ([ai-pipelines.md](ai-pipelines.md)) |
+| `PLANNER_PROVIDER` | Optional: `fake` (default), `gemini` or `local` (an open model on this machine: `brew install llama.cpp`, then `pnpm llm:setup`) | Worker-only | AI design planner ([ai-pipelines.md](ai-pipelines.md)) |
+| `PLANNER_FALLBACK` | Optional: `none` (default) or `local`. With `PLANNER_PROVIDER=gemini`, the model on this machine answers when Gemini can't (busy, out of its allowance, offline). Needs the same setup as `local` | Worker-only | Keeps the AI design box working ([ai-pipelines.md](ai-pipelines.md#the-planner-on-our-own-machine)) |
+| `LOCAL_LLM_DIR`, `LLAMA_SERVER_BIN`, `LOCAL_LLM_CONTEXT`, `LOCAL_LLM_TIMEOUT_MS` | Optional; default `~/.cache/clothseeker/local-llm`, the `llama-server` on PATH, 8192 tokens and 300000 ms | Worker-only | Local planner: where the model lives, the program that runs it, how much it can hold, and the limit for a design job it may answer |
 | `IMAGE_PROVIDER` | Optional: `fake` (default) or `cloudflare` | Worker-only | AI motif images |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | Key required when `PLANNER_PROVIDER=gemini`. Model defaults to `gemini-3.6-flash`; fallbacks (comma-separated) default to `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite` | **Worker-only secret** | Gemini planner |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_IMAGE_MODEL`, `CLOUDFLARE_FALLBACK_IMAGE_MODELS` | Required when `IMAGE_PROVIDER=cloudflare` or `GARMENT_SHOT_PROVIDER=cloudflare`. Model defaults to FLUX.2 klein 4B (`@cf/black-forest-labs/flux-2-klein-4b`); the fallback (comma-separated, tried when the model fails) defaults to FLUX.1 schnell | **Worker-only secret** | Workers AI images |
@@ -67,7 +69,8 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `AI_JOB_TIMEOUT_MS` | Optional, default 180000 | Worker-only | Limit for one AI job attempt |
 | `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |
 | `TRYON_PROVIDER` | Optional: `fake` (default), `huggingface` or `local` (run `pnpm tryon:setup` first) | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
-| `LOCAL_TRYON_DIR`, `LOCAL_TRYON_STEPS`, `LOCAL_TRYON_WIDTH` | Optional; default `~/.cache/clothseeker/local-tryon`, 30 and 384 | Worker-only | Local try-on: where the model lives, steps, picture width ([try-on.md](try-on.md#local-try-on)) |
+| `LOCAL_TRYON_DIR`, `LOCAL_TRYON_STEPS`, `LOCAL_TRYON_WIDTH` | Optional; default `~/.cache/clothseeker/local-tryon`, 8 and 384 | Worker-only | Local try-on: where the model lives, steps, picture width ([try-on.md](try-on.md#local-try-on)) |
+| `LOCAL_TRYON_SAMPLER`, `LOCAL_TRYON_GUIDED` | Optional; default `lcm` and `1` (8 steps, about 50 s). The earlier, slower settings: `unipc` with 20 steps and `0.6`, or `ddim` with 30 steps and `1` | Worker-only | Local try-on: how the model works through its steps, and the share of them that run twice ([try-on.md](try-on.md#local-try-on)) |
 | `HF_TOKEN` | Optional free Hugging Face token (`hf_…`) | **Worker-only secret** | Raises the shared ZeroGPU allowance |
 | `EMAIL_PROVIDER`, `SMTP_URL`, `EMAIL_FROM` | Optional: `log` (default) or `smtp`; `pnpm env:local` sets smtp → Mailpit (`smtp://127.0.0.1:55425`) | Worker-only (`SMTP_URL` may hold a password in production) | Customer emails ([notifications.md](notifications.md)); inbox at http://127.0.0.1:55424 |
 | `TRYON_SPACES`, `TRYON_TIMEOUT_MS` | Optional; default `jallenjia/Change-Clothes-AI,yisol/IDM-VTON,levihsu/OOTDiffusion,franciszzj/Leffa` and 240000 | Worker-only | Try-on Spaces (in order) and per-attempt limit |

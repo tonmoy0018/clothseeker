@@ -3,9 +3,10 @@
 Started and fed by lib/ai/providers/tryon-local.ts. Loads the model once, then answers one request per line:
 
   stdin   {"id": "...", "person": "<png>", "mask": "<png>", "garment": "<png>", "out": "<png>",
-           "steps": 20, "width": 384, "height": 512, "seed": 42,
-           "sampler": "unipc" | "ddim" (optional, default "ddim"),
-           "guided": 0.6 (optional, default 1: the share of the steps that compare with and without the garment)}
+           "steps": 8, "width": 384, "height": 512, "seed": 42,
+           "sampler": "lcm" | "unipc" | "ddim" (optional, default "ddim"),
+           "guidance": 2.0 (optional, default 2.5: how strongly the garment is followed),
+           "guided": 1 (optional, default 1: the share of the steps that compare with and without the garment)}
   stdout  {"ready": true}                       once, after loading
           {"id": "...", "ok": true, "ms": 81234}
           {"id": "...", "ok": false, "error": "OUT_OF_MEMORY" | "INVALID_REQUEST" | "FAILED"}
@@ -16,6 +17,10 @@ Nothing is logged except these lines; images and paths never reach stderr.
 
 The method (garment and person side by side in one inpainting UNet, cross-attention skipped, fine-tuned
 self-attention) is CatVTON's (Chong et al., 2024). The try-on weights are CC BY-NC-SA 4.0: non-commercial.
+
+The "lcm" sampler adds the LCM-LoRA (Luo et al., 2023) to the UNet: a small set of weight changes that
+lets it finish in 8 steps instead of 20 or more. They're added when a request asks for "lcm" and taken
+out again when one asks for another sampler.
 """
 
 import json
@@ -26,7 +31,7 @@ import time
 
 import numpy as np
 import torch
-from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel, UniPCMultistepScheduler
+from diffusers import AutoencoderKL, DDIMScheduler, LCMScheduler, UNet2DConditionModel, UniPCMultistepScheduler
 from diffusers.models.attention_processor import SlicedAttnProcessor
 from PIL import Image
 from safetensors.torch import load_file
@@ -36,6 +41,7 @@ DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 DTYPE = torch.float16 if DEVICE == "mps" else torch.float32
 GUIDANCE = 2.5
 ATTENTION_WEIGHTS = "CatVTON/dresscode-16k-512/attention/model.safetensors"  # trained at 512x384, the size we run at
+FEW_STEP_WEIGHTS = "lcm-lora-sdv1-5/pytorch_lora_weights.safetensors"
 
 
 class SkipCrossAttention:
@@ -77,6 +83,49 @@ def load():
     return unet, vae, scheduler
 
 
+class FewSteps:
+    """The LCM-LoRA: low-rank changes to 278 of the UNet's layers, added for the "lcm" sampler and removed for the others."""
+
+    def __init__(self, unet):
+        state = load_file(os.path.join(WEIGHTS, FEW_STEP_WEIGHTS))
+        modules = {name.replace(".", "_"): module for name, module in unet.named_modules()}
+        self.layers = []
+        for key in state:
+            if not key.endswith(".lora_down.weight"):
+                continue
+            base = key[: -len(".lora_down.weight")]
+            module = modules.get(base[len("lora_unet_"):])
+            down = state[key].float()
+            up = state[base + ".lora_up.weight"].float()
+            if module is None or not hasattr(module, "weight") or up.shape[0] != module.weight.shape[0]:
+                raise ValueError("unexpected few-step weights")
+            scale = float(state[base + ".alpha"]) / down.shape[0] if base + ".alpha" in state else 1.0
+            self.layers.append((module, down, up, scale))
+        if len(self.layers) != 278:
+            raise ValueError("unexpected few-step weights")
+        self.on = False
+
+    @torch.no_grad()
+    def set(self, on):
+        if on == self.on:
+            return
+        for module, down, up, scale in self.layers:
+            weight = module.weight
+            delta = (up.flatten(1) @ down.flatten(1)) * scale
+            if weight.dim() == 4:
+                delta = delta.reshape(up.shape[0], down.shape[1], *down.shape[2:])
+                if delta.shape[1] != weight.shape[1]:
+                    # The inpainting UNet's first layer also takes the mask and the masked picture: only
+                    # the channels of the picture being drawn change.
+                    padded = torch.zeros(weight.shape, dtype=delta.dtype)
+                    padded[:, : delta.shape[1]] = delta
+                    delta = padded
+            if delta.shape != weight.shape:
+                raise ValueError("unexpected few-step weights")
+            weight.add_(delta.to(weight.device, weight.dtype), alpha=1.0 if on else -1.0)
+        self.on = on
+
+
 def picture(path, size, mode):
     image = Image.open(path)
     image.load()
@@ -84,7 +133,7 @@ def picture(path, size, mode):
 
 
 @torch.no_grad()
-def try_on(unet, vae, scheduler, request):
+def try_on(unet, vae, scheduler, few_steps, request):
     size = (request["width"], request["height"])
     person = picture(request["person"], size, "RGB")
     mask = picture(request["mask"], size, "L")
@@ -108,13 +157,16 @@ def try_on(unet, vae, scheduler, request):
         torch.cat([masked, cond], dim=-2),
     ]
     latents = torch.randn(inputs[2].shape, generator=generator).to(DEVICE)
-    # UniPC (a multistep solver) gets in 20 steps where DDIM needs 30 or more. It keeps the last steps'
-    # results, so each try-on gets its own.
-    unipc = request.get("sampler") == "unipc"
-    sampler = UniPCMultistepScheduler.from_config(scheduler.config) if unipc else scheduler
-    # UniPC solves a small linear system each step, which Apple's GPU can't: its steps run on the CPU
-    # (the latents are tiny; only the UNet needs the GPU).
-    sampler.set_timesteps(request["steps"], device="cpu" if unipc else DEVICE)
+    # "lcm": 8 steps with the few-step weights in the UNet. UniPC (a multistep solver) gets in 20 steps
+    # where DDIM needs 30 or more. Both keep the last steps' results, so each try-on gets its own.
+    kind = request.get("sampler", "ddim")
+    few_steps.set(kind == "lcm")
+    on_cpu = kind != "ddim"
+    sampler = LCMScheduler.from_config(scheduler.config) if kind == "lcm" else UniPCMultistepScheduler.from_config(scheduler.config) if kind == "unipc" else scheduler
+    # Their own arithmetic runs on the CPU: UniPC solves a small linear system each step, which Apple's
+    # GPU can't (the latents are tiny; only the UNet needs the GPU).
+    sampler.set_timesteps(request["steps"], device="cpu" if on_cpu else DEVICE)
+    guidance = request.get("guidance", GUIDANCE)
     latents = latents * sampler.init_noise_sigma
     # Guidance (comparing a pass without the garment) settles what is drawn in the early steps; the last
     # ones only sharpen it, so they can skip the second pass.
@@ -131,10 +183,12 @@ def try_on(unet, vae, scheduler, request):
         if index < guided:
             # One pass at a time, with then without the garment: half the memory of a batch of two.
             without = predict(x, t, inputs[1])
-            noise = without + GUIDANCE * (with_garment - without)
+            noise = without + guidance * (with_garment - without)
         else:
             noise = with_garment
-        if unipc:
+        if kind == "lcm":
+            latents = sampler.step(noise.cpu(), t, latents.cpu(), generator=generator).prev_sample.to(DEVICE)
+        elif kind == "unipc":
             latents = sampler.step(noise.cpu(), t, latents.cpu()).prev_sample.to(DEVICE)
         else:
             latents = sampler.step(noise, t, latents, eta=1.0, generator=generator).prev_sample
@@ -155,7 +209,10 @@ def valid(request):
     for key, low, high in (("steps", 1, 100), ("width", 128, 1024), ("height", 128, 1366), ("seed", 0, 2**31 - 1)):
         if not isinstance(request.get(key), int) or not low <= request[key] <= high:
             return False
-    if request.get("sampler", "ddim") not in ("ddim", "unipc"):
+    if request.get("sampler", "ddim") not in ("ddim", "unipc", "lcm"):
+        return False
+    guidance = request.get("guidance", GUIDANCE)
+    if isinstance(guidance, bool) or not isinstance(guidance, (int, float)) or not 1 <= guidance <= 5:
         return False
     guided = request.get("guided", 1)
     if isinstance(guided, bool) or not isinstance(guided, (int, float)) or not 0 < guided <= 1:
@@ -170,6 +227,7 @@ def reply(message):
 
 def main():
     unet, vae, scheduler = load()
+    few_steps = FewSteps(unet)
     reply({"ready": True, "device": DEVICE})
     for line in sys.stdin:
         try:
@@ -181,7 +239,7 @@ def main():
             continue
         start = time.time()
         try:
-            try_on(unet, vae, scheduler, request)
+            try_on(unet, vae, scheduler, few_steps, request)
             reply({"id": request["id"], "ok": True, "ms": round((time.time() - start) * 1000)})
         except RuntimeError as error:
             reply({"id": request["id"], "ok": False, "error": "OUT_OF_MEMORY" if "out of memory" in str(error) else "FAILED"})

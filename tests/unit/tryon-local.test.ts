@@ -11,6 +11,7 @@ import { AiJobRejected, AiProviderError } from "@/lib/ai/errors";
 import { CatVtonProcess, LocalTryOn, type LocalTryOnJob, type LocalTryOnRunner, type ModelProcess } from "@/lib/ai/providers/tryon-local";
 import { localTryOnPaths, localTryOnReady } from "@/lib/ai/providers/tryon-local-setup";
 import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
+import { PART, PARTS_SIZE } from "@/lib/vision/models/parts";
 import { SELFIE_SIZE } from "@/lib/vision/models/segment";
 import { fitSquare } from "@/lib/vision/models/geometry";
 
@@ -71,7 +72,7 @@ async function pixel(image: Buffer, x: number, y: number): Promise<number[]> {
 describe("LocalTryOn", () => {
   it("repaints only the garment's area and keeps the face, hands and backdrop", async () => {
     const runner = new RedRunner();
-    const result = await new LocalTryOn({ runner, body: body(POSE), steps: 30, width: 384 }).tryOn(await request(), signal);
+    const result = await new LocalTryOn({ runner, body: body(POSE), steps: 30, width: 384, sampler: "ddim", guided: 1 }).tryOn(await request(), signal);
     const meta = await sharp(result).metadata();
     expect([meta.width, meta.height]).toEqual([W, H]);
     expect(await pixel(result, 300, 300)).toEqual([255, 0, 0]); // chest: the model's picture
@@ -79,9 +80,9 @@ describe("LocalTryOn", () => {
     expect(await pixel(result, 20, 400)).toEqual([128, 128, 128]); // backdrop
   });
 
-  it("gives the model a 3:4 crop, its size and steps, in files it deletes afterwards", async () => {
+  it("gives the model a 3:4 crop, its size, steps and sampler, in files it deletes afterwards", async () => {
     const runner = new RedRunner();
-    await new LocalTryOn({ runner, body: body(POSE), steps: 20, width: 480 }).tryOn(await request(), signal);
+    await new LocalTryOn({ runner, body: body(POSE), steps: 20, width: 480, sampler: "unipc", guided: 0.6 }).tryOn(await request(), signal);
     const [call] = runner.jobs;
     expect(call?.filesExist).toBe(true);
     // A 3:4 crop around the person, within the photo (600×800), at least the model's width.
@@ -90,13 +91,47 @@ describe("LocalTryOn", () => {
     expect(cropWidth / cropHeight).toBeCloseTo(3 / 4, 2);
     expect(cropWidth).toBeGreaterThanOrEqual(384);
     expect(cropWidth).toBeLessThanOrEqual(600);
-    expect(call?.job).toMatchObject({ steps: 20, width: 480, height: 640, seed: 42 });
+    expect(call?.job).toMatchObject({ steps: 20, width: 480, height: 640, seed: 42, sampler: "unipc", guidance: 2.5, guided: 0.6 });
+    // The few-step sampler was tuned with a gentler guidance.
+    const few = new RedRunner();
+    await new LocalTryOn({ runner: few, body: body(POSE), steps: 8, width: 384, sampler: "lcm", guided: 1 }).tryOn(await request(), signal);
+    expect(few.jobs[0]?.job).toMatchObject({ steps: 8, sampler: "lcm", guidance: 2, guided: 1 });
     expect(existsSync(path.dirname(call?.job.person ?? "/nowhere/x"))).toBe(false);
   });
 
+  it("keeps the hair the body-parts model finds, and goes on without it when it can't be read", async () => {
+    // Hair over the wearer's shoulder, in the part of the photo the garment is repainted.
+    const classes = new Uint8Array(PARTS_SIZE * PARTS_SIZE);
+    const regions: { left: number; top: number; width: number; height: number }[] = [];
+    const withParts = {
+      ...body(POSE),
+      bodyParts: async (_image: Buffer, region: { left: number; top: number; width: number; height: number }) => {
+        regions.push(region);
+        for (let py = 0; py < PARTS_SIZE; py += 1) {
+          for (let px = 0; px < PARTS_SIZE; px += 1) {
+            const x = region.left + ((px + 0.5) / PARTS_SIZE) * region.width;
+            const y = region.top + ((py + 0.5) / PARTS_SIZE) * region.height;
+            if (x >= 230 && x < 262 && y >= 180 && y < 300) classes[py * PARTS_SIZE + px] = PART.hair;
+          }
+        }
+        return { classes, region };
+      },
+    };
+    const options = { runner: new RedRunner(), steps: 20, width: 384, sampler: "unipc" as const, guided: 0.6 };
+    const kept = await new LocalTryOn({ ...options, body: withParts }).tryOn(await request(), signal);
+    expect(await pixel(kept, 246, 240)).toEqual([128, 128, 128]); // hair: the photo's own
+    expect(await pixel(kept, 300, 300)).toEqual([255, 0, 0]); // chest: the model's picture
+    // No person outline in this test, so the model reads the whole photo.
+    expect(regions).toEqual([{ left: 0, top: 0, width: W, height: H }]);
+
+    const broken = { ...body(POSE), bodyParts: async (): Promise<never> => Promise.reject(new Error("model missing")) };
+    const result = await new LocalTryOn({ ...options, body: broken }).tryOn(await request(), signal);
+    expect(await pixel(result, 246, 240)).toEqual([255, 0, 0]);
+  });
+
   it("refuses a photo where no body is found, and fails (retryably) when the model writes nothing", async () => {
-    await expect(new LocalTryOn({ runner: new RedRunner(), body: body(null), steps: 30, width: 384 }).tryOn(await request(), signal)).rejects.toEqual(new AiJobRejected("PHOTO_BODY_NOT_VISIBLE"));
-    const silent = new LocalTryOn({ runner: new RedRunner(false), body: body(POSE), steps: 30, width: 384 });
+    await expect(new LocalTryOn({ runner: new RedRunner(), body: body(null), steps: 30, width: 384, sampler: "ddim", guided: 1 }).tryOn(await request(), signal)).rejects.toEqual(new AiJobRejected("PHOTO_BODY_NOT_VISIBLE"));
+    const silent = new LocalTryOn({ runner: new RedRunner(false), body: body(POSE), steps: 30, width: 384, sampler: "ddim", guided: 1 });
     await expect(silent.tryOn(await request(), signal)).rejects.toMatchObject({ name: "AiProviderError", retryable: true });
   });
 });
@@ -130,7 +165,7 @@ class FakeModel extends EventEmitter {
   }
 }
 
-const JOB: LocalTryOnJob = { person: "/tmp/p.png", mask: "/tmp/m.png", garment: "/tmp/g.png", out: "/tmp/o.png", steps: 30, width: 384, height: 512, seed: 42 };
+const JOB: LocalTryOnJob = { person: "/tmp/p.png", mask: "/tmp/m.png", garment: "/tmp/g.png", out: "/tmp/o.png", steps: 8, width: 384, height: 512, seed: 42, sampler: "lcm", guidance: 2, guided: 1 };
 
 function spawner(make: () => FakeModel) {
   const spawned: { model: FakeModel; env: Record<string, string>; args: string[] }[] = [];
@@ -151,7 +186,7 @@ describe("CatVtonProcess", () => {
     expect(spawned).toHaveLength(1);
     expect(spawned[0]?.args).toEqual(["/s.py", "/w"]);
     expect(spawned[0]?.model.requests).toHaveLength(2);
-    expect(spawned[0]?.model.requests[0]).toMatchObject({ person: "/tmp/p.png", steps: 30, width: 384, height: 512 });
+    expect(spawned[0]?.model.requests[0]).toMatchObject({ person: "/tmp/p.png", steps: 8, width: 384, height: 512, sampler: "lcm", guidance: 2, guided: 1 });
     runner.close();
   });
 

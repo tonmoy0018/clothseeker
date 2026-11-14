@@ -12,11 +12,14 @@ import { z } from "zod";
 import { hairMask } from "@/lib/tryon/hair";
 import { visibleHands } from "@/lib/tryon/hands";
 import { blendTryOn, tryOnCrop, tryOnMask, type Box } from "@/lib/tryon/mask";
+import { hairFromParts, handsFromParts } from "@/lib/tryon/parts";
 import type { Pose } from "@/lib/vision/models/movenet";
+import type { BodyParts } from "@/lib/vision/models/parts";
 import { maskAtSmooth, SELFIE_SIZE, type PersonMask } from "@/lib/vision/models/segment";
 
 import { AiJobRejected, AiProviderError } from "../errors";
 import type { TryOnProvider, TryOnRequest } from "../types";
+import type { ModelSlot } from "./model-slot";
 
 // Virtual try-on on our own machine (TRYON_PROVIDER=local): no photo leaves it, and there's no shared
 // daily GPU allowance. The worker finds the customer's body with the on-device models, masks the area
@@ -25,8 +28,30 @@ import type { TryOnProvider, TryOnRequest } from "../types";
 // photo, so the face, hands and background keep their full sharpness.
 // Setup: `pnpm tryon:setup` (docs/developers/try-on.md#local-try-on).
 
+/**
+ * How the model works through its steps. "lcm" adds few-step weights and finishes in 8; "unipc" needs
+ * about 20, "ddim" 30 or more.
+ */
+export type LocalTryOnSampler = "lcm" | "unipc" | "ddim";
+
+/** How strongly the garment is followed (classifier-free guidance): what each sampler was tuned with. */
+const GUIDANCE: Record<LocalTryOnSampler, number> = { lcm: 2, unipc: 2.5, ddim: 2.5 };
+
 /** One try-on for the model process: absolute paths of PNG files in a private temporary folder. */
-export type LocalTryOnJob = { person: string; mask: string; garment: string; out: string; steps: number; width: number; height: number; seed: number };
+export type LocalTryOnJob = {
+  person: string;
+  mask: string;
+  garment: string;
+  out: string;
+  steps: number;
+  width: number;
+  height: number;
+  seed: number;
+  sampler: LocalTryOnSampler;
+  guidance: number;
+  /** The share of the steps (first ones) that also run without the garment, to compare: 1 = all of them. */
+  guided: number;
+};
 
 /** Runs try-ons one at a time (CatVtonProcess; a fake in tests). */
 export interface LocalTryOnRunner {
@@ -38,6 +63,8 @@ export interface LocalTryOnRunner {
 export type BodyFinder = {
   analyse(image: Buffer): Promise<{ width: number; height: number; pose: Pose | null }>;
   personMask(image: Buffer): Promise<PersonMask>;
+  /** What each pixel of a box around the person is (hair, skin, clothes…); without it, hair and hands are told by colour. */
+  bodyParts?(image: Buffer, region: Box): Promise<BodyParts>;
 };
 
 export type LocalTryOnOptions = {
@@ -47,6 +74,9 @@ export type LocalTryOnOptions = {
   steps: number;
   /** The model's picture width (height is 4/3 of it); a multiple of 24. */
   width: number;
+  sampler: LocalTryOnSampler;
+  /** The share of the steps that compare with and without the garment (0–1]; the rest only sharpen, at half the cost. */
+  guided: number;
 };
 
 export class LocalTryOn implements TryOnProvider {
@@ -64,18 +94,32 @@ export class LocalTryOn implements TryOnProvider {
     const [analysis, person] = await Promise.all([this.options.body.analyse(request.person.data), this.options.body.personMask(request.person.data)]);
     const reach = request.reach ?? (request.category === "Dress" ? "ankles" : "hips");
     const personAt = (x: number, y: number) => maskAtSmooth(person, x, y);
-    // Hair falling over the shoulders stays in front of the new garment.
-    const hair = analysis.pose ? hairMask(rgb, width, height, analysis.pose, personAt) : null;
-    const keep = hair ? (x: number, y: number) => hair[Math.round(y) * width + Math.round(x)] ?? 0 : undefined;
-    // Hands in pockets aren't kept (their spot is the old pocket); visible hands are.
-    const hands = analysis.pose ? visibleHands(rgb, width, height, analysis.pose) : undefined;
-    const mask = analysis.pose ? tryOnMask(analysis.pose, personAt, width, height, reach, { fit: request.fit, keep, hands }) : null;
-    if (!mask) {
+    const bounds = personBounds(person, width, height);
+    const pose = analysis.pose;
+    if (!pose) {
       // The photo check refuses these before; a photo that slips through gets the same message.
       throw new AiJobRejected("PHOTO_BODY_NOT_VISIBLE");
     }
+    // What's hair, skin and clothes, read around the person (the model expects them to fill its picture).
+    // If it can't be read, hair and hands are told by colour, as before the model was added.
+    const parts = await this.options.body.bodyParts?.(request.person.data, partsRegion(bounds, width, height)).catch(() => null);
+    let keep: ((x: number, y: number) => number) | undefined;
+    let hands: { left: boolean; right: boolean };
+    if (parts) {
+      keep = hairFromParts(parts, pose) ?? undefined;
+      hands = handsFromParts(parts, pose);
+    } else {
+      const hair = hairMask(rgb, width, height, pose, personAt);
+      keep = hair ? (x, y) => hair[Math.round(y) * width + Math.round(x)] ?? 0 : undefined;
+      hands = visibleHands(rgb, width, height, pose);
+    }
+    // Hair stays in front of the new garment. Hands in pockets aren't kept (their spot is the old pocket); visible hands are.
+    const mask = tryOnMask(pose, personAt, width, height, reach, { fit: request.fit, keep, hands });
+    if (!mask) {
+      throw new AiJobRejected("PHOTO_BODY_NOT_VISIBLE");
+    }
     // Cropped around the person, so they fill the model's small picture.
-    const box = tryOnCrop(mask, width, height, personBounds(person, width, height));
+    const box = tryOnCrop(mask, width, height, bounds);
     const crop = (data: Uint8Array, channels: 1 | 3) => sharp(data, { raw: { width, height, channels } }).extract(box);
 
     const dir = await mkdtemp(path.join(tmpdir(), "clothseeker-tryon-"));
@@ -87,7 +131,8 @@ export class LocalTryOn implements TryOnProvider {
         fittedGarment(request.garment.data, request.fit?.width ?? 1).then((garment) => sharp(garment).toFile(file("garment.png"))),
       ]);
       const job = { person: file("person.png"), mask: file("mask.png"), garment: file("garment.png"), out: file("result.png") };
-      await this.options.runner.run({ ...job, steps: this.options.steps, width: this.options.width, height: (this.options.width * 4) / 3, seed: 42 }, signal);
+      const { steps, width: modelWidth, sampler, guided } = this.options;
+      await this.options.runner.run({ ...job, steps, width: modelWidth, height: (modelWidth * 4) / 3, seed: 42, sampler, guidance: GUIDANCE[sampler], guided }, signal);
       const result = await readFile(job.out).catch(() => null);
       if (!result) {
         throw new AiProviderError("local try-on wrote no picture", true);
@@ -121,6 +166,15 @@ function personBounds(person: PersonMask, width: number, height: number): Box | 
   const right = Math.min(width, Math.ceil((maxX - box.offsetX) / box.scale));
   const bottom = Math.min(height, Math.ceil((maxY - box.offsetY) / box.scale));
   return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
+}
+
+/** The box the body-parts model reads: the person with a little room around, or the whole photo. */
+function partsRegion(bounds: Box | null, width: number, height: number): Box {
+  if (!bounds) return { left: 0, top: 0, width, height };
+  const room = Math.round(0.06 * Math.max(bounds.width, bounds.height));
+  const left = Math.max(0, bounds.left - room);
+  const top = Math.max(0, bounds.top - room);
+  return { left, top, width: Math.min(width, bounds.left + bounds.width + room) - left, height: Math.min(height, bounds.top + bounds.height + room) - top };
 }
 
 /**
@@ -186,6 +240,8 @@ export type CatVtonOptions = {
   idleMs?: number;
   /** Limit for loading the model. */
   loadTimeoutMs?: number;
+  /** Shared with the other big local models: loading this one stops whichever holds the memory. */
+  slot?: ModelSlot;
   spawn?: SpawnModel;
 };
 
@@ -222,6 +278,7 @@ export class CatVtonProcess implements LocalTryOnRunner {
   private async runNow(job: LocalTryOnJob, signal: AbortSignal): Promise<void> {
     if (signal.aborted) throw new AiProviderError("local try-on aborted", true, "TIMEOUT");
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.options.slot?.claim(this);
     try {
       const child = await this.start(signal);
       const id = randomUUID();

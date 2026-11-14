@@ -306,8 +306,12 @@ describe("getAiProviders", () => {
     AI_FAKE_DELAY_MS: 0,
     TRYON_PROVIDER: "fake" as const,
     TRYON_SPACES: ["levihsu/OOTDiffusion"],
-    LOCAL_TRYON_STEPS: 30,
+    PLANNER_FALLBACK: "none" as const,
+    LOCAL_LLM_CONTEXT: 8192,
+    LOCAL_TRYON_STEPS: 8,
     LOCAL_TRYON_WIDTH: 384,
+    LOCAL_TRYON_SAMPLER: "lcm" as const,
+    LOCAL_TRYON_GUIDED: 1,
     GARMENT_SHOT_PROVIDER: "none" as const,
     GEMINI_IMAGE_MODEL: "gemini-2.5-flash-image",
   };

@@ -1,14 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { once } from "node:events";
-import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { finished, pipeline } from "node:stream/promises";
 
 import { loadEnvConfig } from "@next/env";
 
-import { LOCAL_TRYON_FILES, LOCAL_TRYON_PACKAGES, LOCAL_TRYON_PYTHON, localTryOnFilePath, localTryOnPaths, verifiedRecord, type LocalTryOnFile } from "@/lib/ai/providers/tryon-local-setup";
+import { LOCAL_TRYON_FILES, LOCAL_TRYON_PACKAGES, LOCAL_TRYON_PYTHON, localTryOnFilePath, localTryOnPaths, verifiedRecord } from "@/lib/ai/providers/tryon-local-setup";
+
+import { correct, download } from "./pinned-download";
 
 // Sets up the local virtual try-on (TRYON_PROVIDER=local, lib/ai/providers/tryon-local.ts) on this machine:
 // a Python with the pinned packages, and the models from Hugging Face at pinned commits, each checked
@@ -19,37 +18,6 @@ import { LOCAL_TRYON_FILES, LOCAL_TRYON_PACKAGES, LOCAL_TRYON_PYTHON, localTryOn
 
 function log(fields: Record<string, string | number | boolean>) {
   console.log(JSON.stringify({ msg: "tryon.setup", ...fields }));
-}
-
-async function sha256(file: string): Promise<string> {
-  const hash = createHash("sha256");
-  await pipeline(createReadStream(file), hash);
-  return hash.digest("hex");
-}
-
-async function correct(file: string, expected: LocalTryOnFile): Promise<boolean> {
-  return existsSync(file) && (await stat(file)).size === expected.bytes && (await sha256(file)) === expected.sha256;
-}
-
-/** Streams the file to disk (never all in memory) and only keeps it when its SHA-256 matches. */
-async function download(file: LocalTryOnFile, to: string): Promise<void> {
-  const url = `https://huggingface.co/${file.repo}/resolve/${file.revision}/${file.file}`;
-  const response = await fetch(url);
-  if (!response.ok || !response.body) throw new Error(`Downloading ${file.repo}/${file.file} failed: HTTP ${response.status}`);
-  await mkdir(path.dirname(to), { recursive: true });
-  const partial = `${to}.part`;
-  const reader = response.body.getReader();
-  const out = createWriteStream(partial);
-  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-    if (!out.write(chunk.value)) await once(out, "drain");
-  }
-  out.end();
-  await finished(out);
-  if (!(await correct(partial, file))) {
-    await rm(partial, { force: true });
-    throw new Error(`${file.repo}/${file.file} doesn't match its pinned SHA-256; check it before updating lib/ai/providers/tryon-local-setup.ts`);
-  }
-  await rename(partial, to);
 }
 
 function has(command: string): boolean {
@@ -85,7 +53,7 @@ async function main() {
     const to = localTryOnFilePath(paths.weights, file);
     if (await correct(to, file)) continue;
     log({ downloading: `${file.repo}/${file.file}`, bytes: file.bytes });
-    await download(file, to);
+    await download(file, to, "lib/ai/providers/tryon-local-setup.ts");
   }
   log({ models: true });
 

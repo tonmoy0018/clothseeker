@@ -3,7 +3,12 @@ import type { WorkerEnv } from "@/lib/env/schema";
 import { CloudflareGarmentShot, CloudflareImage } from "./providers/cloudflare";
 import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./providers/fake";
 import { GeminiGarmentShot, GeminiPlanner } from "./providers/gemini";
+import { LlamaServerProcess } from "./providers/llama-server";
+import { findLlamaServer, localLlmPaths, localLlmReady } from "./providers/local-llm-setup";
+import { ModelSlot } from "./providers/model-slot";
 import { LocalPhotoChecker } from "./providers/photo-check-local";
+import { FallbackPlanner } from "./providers/planner-fallback";
+import { LocalPlanner } from "./providers/planner-local";
 import { HuggingFaceTryOn } from "./providers/tryon-hf";
 import { CatVtonProcess, LocalTryOn } from "./providers/tryon-local";
 import { localTryOnPaths, localTryOnReady } from "./providers/tryon-local-setup";
@@ -19,6 +24,10 @@ type ProviderEnv = Pick<
   | "GEMINI_API_KEY"
   | "GEMINI_MODEL"
   | "GEMINI_FALLBACK_MODELS"
+  | "PLANNER_FALLBACK"
+  | "LOCAL_LLM_DIR"
+  | "LLAMA_SERVER_BIN"
+  | "LOCAL_LLM_CONTEXT"
   | "GARMENT_SHOT_PROVIDER"
   | "GEMINI_IMAGE_MODEL"
   | "CLOUDFLARE_ACCOUNT_ID"
@@ -32,6 +41,8 @@ type ProviderEnv = Pick<
   | "TRYON_SPACES"
   | "LOCAL_TRYON_DIR"
   | "LOCAL_TRYON_STEPS"
+  | "LOCAL_TRYON_SAMPLER"
+  | "LOCAL_TRYON_GUIDED"
   | "LOCAL_TRYON_WIDTH"
 >;
 
@@ -39,13 +50,36 @@ export class AiConfigError extends Error {
   override readonly name = "AiConfigError";
 }
 
-export function getAiProviders(env: ProviderEnv): AiProviders {
+/** Whether the planner model on this machine may be used (on its own, or standing in for the hosted one). */
+export function usesLocalPlanner(env: Pick<ProviderEnv, "PLANNER_PROVIDER" | "PLANNER_FALLBACK">): boolean {
+  return env.PLANNER_PROVIDER === "local" || (env.PLANNER_PROVIDER === "gemini" && env.PLANNER_FALLBACK === "local");
+}
+
+function localPlanner(env: ProviderEnv, slot: ModelSlot): LocalPlanner {
+  const paths = localLlmPaths(env.LOCAL_LLM_DIR);
+  if (!localLlmReady(paths)) {
+    throw new AiConfigError("The local planner model isn't set up: run `pnpm llm:setup` (needed when PLANNER_PROVIDER=local or PLANNER_FALLBACK=local)");
+  }
+  const bin = findLlamaServer(env.LLAMA_SERVER_BIN);
+  if (!bin) {
+    throw new AiConfigError("llama-server wasn't found: run `brew install llama.cpp` or set LLAMA_SERVER_BIN (needed for the local planner)");
+  }
+  return new LocalPlanner({ server: new LlamaServerProcess({ bin, model: paths.model, mmproj: paths.mmproj, contextTokens: env.LOCAL_LLM_CONTEXT, slot }) });
+}
+
+export function getAiProviders(env: ProviderEnv, onPlannerFallback?: (task: string) => void): AiProviders {
+  // The big local models (planner, try-on) take turns in the Mac's memory.
+  const slot = new ModelSlot();
+
   let planner;
-  if (env.PLANNER_PROVIDER === "gemini") {
+  if (env.PLANNER_PROVIDER === "local") {
+    planner = localPlanner(env, slot);
+  } else if (env.PLANNER_PROVIDER === "gemini") {
     if (!env.GEMINI_API_KEY) {
       throw new AiConfigError("GEMINI_API_KEY is required when PLANNER_PROVIDER=gemini");
     }
-    planner = new GeminiPlanner({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL, fallbackModels: env.GEMINI_FALLBACK_MODELS });
+    const gemini = new GeminiPlanner({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL, fallbackModels: env.GEMINI_FALLBACK_MODELS });
+    planner = env.PLANNER_FALLBACK === "local" ? new FallbackPlanner(gemini, localPlanner(env, slot), onPlannerFallback) : gemini;
   } else {
     planner = new FakePlanner(env.AI_FAKE_DELAY_MS);
   }
@@ -77,8 +111,15 @@ export function getAiProviders(env: ProviderEnv): AiProviders {
       if (!localTryOnReady(paths)) {
         throw new AiConfigError("The local try-on model isn't set up: run `pnpm tryon:setup` (needed when TRYON_PROVIDER=local)");
       }
-      const runner = new CatVtonProcess({ python: paths.python, weights: paths.weights });
-      tryOn = new LocalTryOn({ runner, body: new NodeVision(), steps: env.LOCAL_TRYON_STEPS, width: env.LOCAL_TRYON_WIDTH });
+      const runner = new CatVtonProcess({ python: paths.python, weights: paths.weights, slot });
+      tryOn = new LocalTryOn({
+        runner,
+        body: new NodeVision(),
+        steps: env.LOCAL_TRYON_STEPS,
+        width: env.LOCAL_TRYON_WIDTH,
+        sampler: env.LOCAL_TRYON_SAMPLER,
+        guided: env.LOCAL_TRYON_GUIDED,
+      });
     } else {
       tryOn = new HuggingFaceTryOn({ spaces: env.TRYON_SPACES, token: env.HF_TOKEN });
     }

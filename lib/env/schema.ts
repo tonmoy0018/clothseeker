@@ -30,7 +30,21 @@ export const serverEnvSchema = clientEnvSchema.extend({
  * provider on requires its keys (checked by workerEnvSchema). See docs/developers/ai-pipelines.md.
  */
 const aiEnvShape = {
-  PLANNER_PROVIDER: z.enum(["fake", "gemini"]).default("fake"),
+  /** "local": an open model on this machine (run `brew install llama.cpp` and `pnpm llm:setup` first). */
+  PLANNER_PROVIDER: z.enum(["fake", "gemini", "local"]).default("fake"),
+  /**
+   * "local": when the hosted planner (PLANNER_PROVIDER=gemini) can't answer (busy, out of its free
+   * allowance, unreachable), the model on this machine answers instead, more slowly.
+   */
+  PLANNER_FALLBACK: z.enum(["none", "local"]).default("none"),
+  /** Limit for one attempt at a design job when the local planner may answer it (it needs about two minutes). */
+  LOCAL_LLM_TIMEOUT_MS: z.coerce.number().int().min(30_000).max(900_000).default(300_000),
+  /** The local planner (PLANNER_PROVIDER=local or PLANNER_FALLBACK=local): where `pnpm llm:setup` put the model (default ~/.cache/clothseeker/local-llm). */
+  LOCAL_LLM_DIR: z.string().startsWith("/").max(500).optional(),
+  /** The local planner: llama.cpp's `llama-server` program (default: the one on PATH). */
+  LLAMA_SERVER_BIN: z.string().startsWith("/").max(500).optional(),
+  /** The local planner: tokens of request and answer the model can hold. More takes more memory. */
+  LOCAL_LLM_CONTEXT: z.coerce.number().int().min(4096).max(32_768).default(8192),
   IMAGE_PROVIDER: z.enum(["fake", "cloudflare"]).default("fake"),
   GEMINI_API_KEY: z.string().min(20).optional(),
   /** The strongest Flash model that answers reliably on the free tier (measured 2026-11-11); the lighter ones follow. */
@@ -66,8 +80,18 @@ const aiEnvShape = {
   TRYON_PROVIDER: z.enum(["fake", "huggingface", "local"]).default("fake"),
   /** TRYON_PROVIDER=local: where `pnpm tryon:setup` put the model and its Python (default ~/.cache/clothseeker/local-tryon). */
   LOCAL_TRYON_DIR: z.string().startsWith("/").max(500).optional(),
-  /** TRYON_PROVIDER=local: denoising steps (fewer is faster and rougher). */
-  LOCAL_TRYON_STEPS: z.coerce.number().int().min(10).max(50).default(30),
+  /** TRYON_PROVIDER=local: denoising steps (fewer is faster and rougher). 8 suits "lcm", 20 "unipc"; "ddim" needs about 30. */
+  LOCAL_TRYON_STEPS: z.coerce.number().int().min(4).max(50).default(8),
+  /**
+   * TRYON_PROVIDER=local: how the model works through its steps. "lcm" adds few-step weights and finishes
+   * in 8 steps (about 40 s on the 8 GB Mac); "unipc" (20 steps, about 100 s) and "ddim" (30) are the earlier ones.
+   */
+  LOCAL_TRYON_SAMPLER: z.enum(["lcm", "unipc", "ddim"]).default("lcm"),
+  /**
+   * TRYON_PROVIDER=local: the share of the steps (the first ones) that also run without the garment, to
+   * compare. Those cost double. 1 = every step (what "lcm" was checked with); "unipc" does well with 0.6.
+   */
+  LOCAL_TRYON_GUIDED: z.coerce.number().min(0.1).max(1).default(1),
   /** TRYON_PROVIDER=local: the model's picture width in pixels (height is 4/3 of it). 384 suits an 8 GB Mac. */
   LOCAL_TRYON_WIDTH: z.coerce
     .number()

@@ -121,16 +121,17 @@ Decided 2026-11-02: customers type **only their height**, choose the size to try
 
 `TRYON_PROVIDER=local` runs the try-on on the worker's machine instead of a public Space. Set it up once with `pnpm tryon:setup` (`scripts/setup-local-tryon.ts`):
 - a Python 3.11 virtual environment with pinned packages (`LOCAL_TRYON_PACKAGES`), made with `uv` if installed;
-- the models from Hugging Face at **pinned commits**, each checked by **SHA-256** (`LOCAL_TRYON_FILES` in `lib/ai/providers/tryon-local-setup.ts`), **safetensors and JSON only** (no pickles): Stable Diffusion 1.5 inpainting's UNet (fp16), the `sd-vae-ft-mse` image encoder/decoder, and CatVTON's **DressCode** attention weights;
-- about 2.3 GB in `~/.cache/clothseeker/local-tryon` (`LOCAL_TRYON_DIR`), outside the iCloud-synced project. It writes `verified.json` last; the worker refuses to start with `TRYON_PROVIDER=local` until it's there and every file has its size.
+- the models from Hugging Face at **pinned commits**, each checked by **SHA-256** (`LOCAL_TRYON_FILES` in `lib/ai/providers/tryon-local-setup.ts`), **safetensors and JSON only** (no pickles): Stable Diffusion 1.5 inpainting's UNet (fp16), the `sd-vae-ft-mse` image encoder/decoder, CatVTON's **DressCode** attention weights, and the LCM-LoRA that makes it fast;
+- about 2.5 GB in `~/.cache/clothseeker/local-tryon` (`LOCAL_TRYON_DIR`), outside the iCloud-synced project. It writes `verified.json` last; the worker refuses to start with `TRYON_PROVIDER=local` until it's there and every file has its size.
 
 **How a try-on runs** (`LocalTryOn.tryOn`):
 1. **The mask** (`tryOnMask`, `lib/tryon/mask.ts`, pure and unit-tested): only the shoulders are needed; hips, knees and ankles out of the picture are guessed below it, and a sideways stance keeps a body-wide mask (the width is never below what the head height or torso suggests). From the on-device pose and person mask (`NodeVision`, also used for the photo check), the area to repaint is the lower neck down to where the garment reaches (`GARMENT_TYPES[type].tryOnReach`: shirts below the hips, panjabis to the knees, dresses to the ankles), plus both arms down to just above the wrists (sleeves may change) and any of the person's own clothes sticking out further.
    - **The body keeps its shape** (2026-11-02): above the hips, and for shirts all the way down, the mask stays within 6% of the shoulder width (`BODY_MARGIN`) of the person's outline. So the model can't draw shoulders, sides or arms wider than they are. Below the hips a skirt may stand away from the legs.
    - **Kept as they are:**
      - the face, hands, feet and backdrop;
-     - the wrists, with bracelets or a watch, but only hands that are in sight (`visibleHands`, `lib/tryon/hands.ts`: skin like the face's, by hue and colourfulness, where the hand would be). A hand in a pocket isn't kept: its spot was the old pocket and came out as a black "glove". Repainted, the model draws the arm going into the trouser pocket under the new garment;
-     - hair falling over the shoulders, when it can be told apart (`hairMask` in `lib/tryon/hair.ts`). There is no hair model on the device, so hair is found by shade: much darker than the lit face, growing from the head. When hair isn't much darker than the skin, or the growth spills into the neck or chest (shadowed dark skin, a dark top), nothing is kept and the hair is repainted as before.
+     - the wrists, with bracelets or a watch, but only hands that are in sight. A hand in a pocket isn't kept: its spot was the old pocket and came out as a black "glove". Repainted, the model draws the arm going into the trouser pocket under the new garment;
+     - hair falling over the shoulders.
+   - **How hair and hands are found** (since 2026-11-13): a body-parts model reads a box around the person and says what each pixel is: hair, face skin, body skin, clothes or accessories (`NodeVision.bodyParts`, `lib/vision/models/parts.ts`; Google's MediaPipe selfie multiclass model, Apache-2.0, 16 MB, about half a second). `lib/tryon/parts.ts` keeps what it calls hair or face, whatever the hair's colour, and counts a hand as in sight when there is skin just past the wrist. Hair that covers the middle of the chest isn't trusted (a top mistaken for hair). If the model can't be read, the earlier colour rules are used instead: `hairMask` (`lib/tryon/hair.ts`: hair much darker than the lit face, growing from the head, so blond and grey hair were repainted) and `visibleHands` (`lib/tryon/hands.ts`: skin like the face's by hue).
    - **Not solved:**
      - Arms inside the mask can still be moved by the model, for example drawn closer to the body.
      - Necklaces under the new neckline are lost.
@@ -139,7 +140,22 @@ Decided 2026-11-02: customers type **only their height**, choose the size to try
 3. **The model** (`worker/local-tryon/catvton_server.py`): one Python process, started on the first try-on and kept loaded (`CatVtonProcess`), one try-on at a time over stdin/stdout JSON lines. It stops after 10 idle minutes to give the memory back, and is killed when a try-on runs out of time. It gets only `PATH`, `HOME` and its own settings (never the worker's keys), runs offline (`HF_HUB_OFFLINE`), and its output never reaches our logs.
 4. **Back into the photo** (`blendTryOn`): only the softened mask area takes the model's picture, so the face, hands and background keep the photo's full sharpness.
 
-**Speed and memory on the Mac mini (8 GB M1, 2026-11-02):** about 2–2.5 minutes per try-on at 384×512 with 30 steps (`LOCAL_TRYON_STEPS`, `LOCAL_TRYON_WIDTH`), plus about 20 s to load the model the first time. To fit next to the Supabase stacks (OrbStack keeps 4 GB), the server:
+**Speed and memory on the Mac mini (8 GB M1, 2026-11-02):** about 2–2.5 minutes per try-on at 384×512 (`LOCAL_TRYON_WIDTH`) with the first settings (DDIM, 30 steps, every step run twice), plus about 20 s to load the model the first time.
+
+**Fewer passes.** Nearly all of that time is the model's passes over the picture: 60 with the first settings. Measured on the 8 GB M1 MacBook Air (2026-11-13/14, model already loaded, three test pairs: a block-print maxi and a floral sundress on the test woman, an Oxford shirt on the test man):
+
+| Settings | Passes | Time per try-on | Result |
+|---|---|---|---|
+| `LOCAL_TRYON_SAMPLER=lcm`, `LOCAL_TRYON_STEPS=8`, `LOCAL_TRYON_GUIDED=1` (**default since 2026-11-14**) | 16 | 35–44 s for the model, about 50 s for the whole try-on | As good as UniPC on all three, and better on two: sleeves and cuffs drawn cleanly, the shirt's blue closer to the garment's |
+| `unipc`, 20 steps, `0.6` (default 2026-11-12 to 13) | 32 | 88–111 s | Good; odd dark patches on the forearms in one |
+| `ddim`, 30 steps, `1` (the first settings) | 60 | 2–2.5 minutes (measured on the Mac mini) | Good |
+
+- **`lcm`** adds the LCM-LoRA (`latent-consistency/lcm-lora-sdv1-5`, 135 MB, OpenRAIL++) to the UNet: low-rank changes to 278 of its layers that let it finish in 8 steps. The server adds them when a request asks for `lcm` and takes them out for the other samplers (`FewSteps` in `catvton_server.py`). It runs with a gentler guidance (2 instead of 2.5), which the worker sends with each job.
+- **What didn't work:** `lcm` without guidance (one pass a step, 13–25 s) washed the print out and drew a generic garment; 6 steps with guidance came out over-saturated or split the dress into a top and a skirt. Keep 8 steps and `LOCAL_TRYON_GUIDED=1`.
+- **`unipc`** is a multistep solver that needs about 20 steps where DDIM needs 30 or more. Its own arithmetic runs on the CPU (Apple's GPU can't solve its small linear system; the latents are tiny), and the model's passes stay on the GPU. With it, `LOCAL_TRYON_GUIDED=0.6` skips the second pass on the last 40% of the steps, which only sharpen the picture.
+- Three pairs is a small sample. If a garment comes out wrong with `lcm`, `LOCAL_TRYON_SAMPLER=unipc`, `LOCAL_TRYON_STEPS=20` and `LOCAL_TRYON_GUIDED=0.6` bring the previous settings back.
+
+To fit next to the Supabase stacks (OrbStack keeps 4 GB), the server:
 - caps the GPU's share of memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO` 0.55);
 - runs attention one head at a time, with float32 scores (half-precision scores overflow and give a black picture);
 - runs the two guidance passes one after the other;

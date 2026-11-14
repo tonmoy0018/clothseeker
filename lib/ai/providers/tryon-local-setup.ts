@@ -19,7 +19,8 @@ export type LocalTryOnFile = {
 
 /**
  * Safetensors and JSON only (never pickles). Stable Diffusion 1.5 inpainting (UNet, fp16) is the base;
- * CatVTON's DressCode weights (trained at 512×384, the size we run at) replace its self-attention.
+ * CatVTON's DressCode weights (trained at 512×384, the size we run at) replace its self-attention; the
+ * LCM-LoRA lets it finish in 8 steps (the "lcm" sampler).
  */
 export const LOCAL_TRYON_FILES: readonly LocalTryOnFile[] = [
   {
@@ -69,6 +70,14 @@ export const LOCAL_TRYON_FILES: readonly LocalTryOnFile[] = [
     sha256: "d65a6c64a9bc48e8009a0006d5272b9332c1077c9c2a74302cbac9f256e84cbf",
     bytes: 198_303_368,
     licence: "CC BY-NC-SA 4.0 (non-commercial)",
+  },
+  {
+    repo: "latent-consistency/lcm-lora-sdv1-5",
+    revision: "cf2fced511dbe7e26c8d1d397e728fbab875db4b",
+    file: "pytorch_lora_weights.safetensors",
+    sha256: "8f90d840e075ff588a58e22c6586e2ae9a6f7922996ee6649a7f01072333afe4",
+    bytes: 134_621_556,
+    licence: "CreativeML Open RAIL++-M",
   },
 ];
 

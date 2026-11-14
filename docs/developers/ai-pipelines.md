@@ -27,8 +27,8 @@ All provider code lives in `lib/ai/` behind two interfaces (`lib/ai/types.ts`):
 
 | Interface | Methods | Fake (default) | Real |
 |---|---|---|---|
-| `PlannerProvider` | `detectBrandLogos(images)`, `planDesign(request)` | `FakePlanner`: deterministic, uses only allowed values | `GeminiPlanner` (`lib/ai/providers/gemini.ts`), REST `generateContent` with a JSON response schema |
-| `ImageProvider` | `generateMotif({ prompt, color, seed })` | `FakeImage`: deterministic SVG motifs | `CloudflareImage` (`lib/ai/providers/cloudflare.ts`), Workers AI, FLUX.1 schnell by default |
+| `PlannerProvider` | `detectBrandLogos(images)`, `planDesign(request)` | `FakePlanner`: deterministic, uses only allowed values | `GeminiPlanner` (`lib/ai/providers/gemini.ts`), REST `generateContent` with a JSON response schema; `LocalPlanner` (`planner-local.ts`), an open model on the worker's machine, on its own or standing in for Gemini |
+| `ImageProvider` | `generateMotif({ prompt, color, seed })` | `FakeImage`: deterministic SVG motifs | `CloudflareImage` (`lib/ai/providers/cloudflare.ts`), Workers AI, FLUX.2 klein 4B by default, then FLUX.1 schnell |
 
 `getAiProviders(env)` (`lib/ai/index.ts`) picks them from the worker's environment. Only the worker reads provider keys; the app's env schema contains no AI keys (a test checks this).
 
@@ -42,9 +42,9 @@ You can mix providers, e.g. the Gemini planner with fake images. E2E tests alway
 
 ### What we learned running them live (2026-10-09)
 
-- **Models get retired.** New Gemini keys can no longer use `gemini-2.5-flash` (HTTP 404). (The default later became `gemini-3.1-flash-lite`; see below.)
+- **Models get retired.** New Gemini keys can no longer use `gemini-2.5-flash` (HTTP 404). (The default has changed since; see "Models" below.)
 - **Free-tier Gemini is often briefly overloaded** (HTTP 503 "high demand"), sometimes for minutes, on any single model. `GeminiPlanner` therefore tries `GEMINI_FALLBACK_MODELS` in order within the same attempt (on 429/5xx, network errors or 404) before the job-level retry kicks in. A bad request (other 4xx) never falls back.
-- **FLUX.1 schnell on Workers AI accepts only `prompt` and `steps`.** Sending `seed` gives HTTP 400, so motifs from Cloudflare aren't reproducible from a seed.
+- **FLUX.1 schnell on Workers AI accepts only `prompt` and `steps`.** Sending `seed` gives HTTP 400, so motifs from Cloudflare aren't reproducible from a seed. (FLUX.2 models take a multipart form instead: prompt, width and height.)
 - **Cloudflare's safety filter sometimes rejects harmless prompts** (HTTP 400 "NSFW", e.g. "simple botanical flower icon"). A refused motif costs that option its motif, not the whole round (`ai.motif_skipped` in the logs). So does **Cloudflare's free daily allowance running out** (HTTP 429 with error code 4006, back at 00:00 UTC): rounds keep coming, with colours, patterns and text but no new motif pictures. Short rate limits and outages still retry the job.
 - **The planner decides whether to add decorations.** For "delicate florals" it may choose a floral *pattern* instead.
 - **Timing:** a round with 4 motifs took 30–65 s end to end. Each motif takes about 2 s on Cloudflare; the rest is Gemini, including fallbacks when a model is busy.
@@ -60,11 +60,35 @@ Customers found the box "not reading the instructions": "add a logo on the left 
 - **Honest summaries.** The summary is written last (`propertyOrdering`), so it describes what the variation contains instead of promising items the model then leaves out.
 - **Follow-ups keep earlier AI items.** Earlier AI text and decorations stay unless a variation replaces them or lists them in `remove`; "like option 2 but darker" builds on option 2's own spec (revalidated, in the current size), not on the editor's design.
 - **Real logos.** The planner never draws a real logo, crest or trademark (brands, clubs, teams, companies). It uses a simple decoration in the customer's colours and says in the summary that they can upload their own image under Personalise, where the clothing-brand rule still applies.
-- **Speed and model.** Gemini 3 models think deeply by default: `gemini-3.8-flash` took 77–150 s per plan (or ran past the 180 s job limit), which failed whole rounds. Requests now use `thinkingLevel: "low"` and the default is **`gemini-3.1-flash-lite`** (3–10 s, same placement and choices in tests), then `gemini-3.5-flash-lite` and `gemini-3.8-flash`. Small models occasionally ramble until the output limit: `maxOutputTokens` (4096) stops that quickly, and an unreadable or cut-off answer moves on to the next model.
+- **Speed and model.** Gemini 3 models think deeply by default: `gemini-3.8-flash` took 77–150 s per plan (or ran past the 180 s job limit), which failed whole rounds. Requests now use `thinkingLevel: "low"`, and the default became `gemini-3.1-flash-lite` (3–10 s, same placement and choices in tests); it has changed again since, see "Models" below. Small models occasionally ramble until the output limit: `maxOutputTokens` (4096) stops that quickly, and an unreadable or cut-off answer moves on to the next model.
+
+### Models (changed 2026-11-11)
+
+- **Planner:** `GEMINI_MODEL` defaults to **`gemini-3.6-flash`**, the strongest Flash model that answered reliably on the free tier when measured. `GEMINI_FALLBACK_MODELS` then tries `gemini-3.5-flash`, `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite`, in that order, when a model is busy, retired or answers badly.
+- **Motifs:** `CLOUDFLARE_IMAGE_MODEL` defaults to **FLUX.2 klein 4B** (`@cf/black-forest-labs/flux-2-klein-4b`). It keeps to the colour it's asked for, which FLUX.1 schnell often doesn't, and its safety filter doesn't refuse harmless words such as "paisley teardrop". It costs about 104 neurons a picture (schnell: about 58), so the free 10,000 neurons a day give roughly 95 motifs, shared with the product shots below.
+- **Motif fallback:** `CLOUDFLARE_FALLBACK_IMAGE_MODELS` (default FLUX.1 schnell) is tried when the model fails, except for a wrong key or the daily allowance running out. Every Cloudflare model draws on the same allowance, so another model wouldn't help; the option goes on without a motif, as before.
+- **Product shots:** `GARMENT_SHOT_PROVIDER=cloudflare` uses the same FLUX.2 model (`CLOUDFLARE_SHOT_MODEL`), which also edits pictures. See "AI product shot" under the customer's own dress.
+
+### The planner on our own machine
+
+`PLANNER_PROVIDER=local` (or `PLANNER_FALLBACK=local` beside Gemini) runs an open model on the worker's Mac, so no request or photo leaves it and there is no daily allowance.
+
+- **Model:** Qwen3.5-4B (Apache-2.0), 4-bit GGUF with its picture encoder: 3.4 GB in `~/.cache/clothseeker/local-llm`, pinned by commit and SHA-256 (`lib/ai/providers/local-llm-setup.ts`). It reads text and photos. It's the strongest open vision-language model we found that fits beside the Supabase stack on 8 GB.
+- **Setup:** `brew install llama.cpp`, then `pnpm llm:setup`. The worker refuses to start with the local planner until both are there.
+- **How it runs:** the worker starts llama.cpp's `llama-server` on the first request (`LlamaServerProcess`), on a free port of 127.0.0.1 only, offline, with nothing but `PATH` and `HOME`, and stops it after 5 idle minutes or when a request runs out of time. `LocalPlanner` sends the same instructions and the same answer shapes as the Gemini planner (`gemini.ts` exports them). The shapes become a grammar (`toJsonSchema`), so the answer is always valid JSON of the right form; `parsePlan` and the other validators still check it.
+- **One big model at a time:** the planner model and the try-on model each need about 3 GB. `ModelSlot` stops whichever is loaded when the other is needed; the worker runs one AI job at a time, so nothing is stopped mid-job. After a switch, the next job waits for its model to load (10–20 s).
+- **Measured on the 8 GB M1 MacBook Air (2026-11-13):** about 13 tokens a second. A design plan (four options, about 1,100 tokens) took **about 105 s**; a plan with a photo 61 s; reading a garment photo 35 s; a logo check 12 s. All four answers passed our validation, and the plans did what was asked ("skirt navy, small gold star on the left chest" gave a navy skirt and a gold star at wearer-left on the chest in all four, small in three of them). Gemini takes 3–10 s for the same plan.
+- **So Gemini stays the first choice, and the local model stands in** (`PLANNER_FALLBACK=local`, `FallbackPlanner`): when Gemini can't answer (busy, out of its free allowance, unreachable, a wrong key, an unreadable answer), the local model answers the same request and the worker logs `ai.planner_fallback`. A request Gemini blocked on purpose isn't passed on, and neither is one that ran out of time. Design jobs get `LOCAL_LLM_TIMEOUT_MS` (5 minutes) instead of `AI_JOB_TIMEOUT_MS` when the local model may answer.
+- **Limits:** it's a much smaller model than Gemini's. It follows simple requests well; expect weaker results on involved ones. **Brand logos:** it answered correctly on a photo with no logo; whether it recognises real brand logos hasn't been tested, so with the local model alone treat the logo check as weaker than Gemini's.
+- **Check it:** `pnpm tsx scripts/ai/check-local-planner.ts ["a request"]` runs sample requests and prints times, token counts and whether each answer passed validation.
 
 ### Privacy note for the real providers
 
-On the **free tier, Google may use prompts and images to improve its products.** That includes customer photos attached to AI requests. That's acceptable for testing with your own pictures. Before real customers use it, move to a paid tier (which doesn't use data for training) or state it clearly in the privacy policy. Cloudflare Workers AI only receives the planner's short motif description, never customer photos.
+The local planner (above) keeps everything on the worker's machine.
+
+On the **free tier, Google may use prompts and images to improve its products.** That includes customer photos attached to AI requests. That's acceptable for testing with your own pictures. Before real customers use it, move to a paid tier (which doesn't use data for training) or state it clearly in the privacy policy.
+
+Cloudflare Workers AI receives the planner's short motif description. With `GARMENT_SHOT_PROVIDER=cloudflare` it also receives **the customer's photo of their garment** (re-encoded first, so only its pixels leave), which may show a person wearing it. That's off by default. Before real customers use it, check what Cloudflare keeps and say so in the privacy policy. Try-on photos never go to Cloudflare or Gemini.
 
 ### The fakes
 
@@ -188,7 +212,10 @@ browser: /customize/{product}?design=… (see it → "Try it on" → "Request a 
   - **Left out.** Garment pixels outside every box (a mannequin's neck, trousers under a jacket) are dropped.
 
   Each part becomes a region the customer can recolour on its own, with its own print area. With fewer than two usable parts, the shape-based parts are used, as before.
-- **AI product shot** (approved 2026-11-05). With `GARMENT_SHOT_PROVIDER=gemini`, the photo is first sent to `GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`) for a clean product shot of the same garment, and the reading, parts and cut-out use that. Anything but a picture (on a free key Google answers 429, since there's no image allowance) means the photo is used as it is. The team is told when the picture is an AI shot, and the customer's photo stays the reference. It's billed per image once billing is on.
+- **AI product shot** (approved 2026-11-05). The photo is first sent to an image model for a clean product shot of the same garment, and the reading, parts and cut-out use that. Anything but a picture means the photo is used as it is. The team is told when the picture is an AI shot, and the customer's photo stays the reference. Two providers (`GARMENT_SHOT_PROVIDER`, default `none`):
+  - `cloudflare` (added 2026-11-11): FLUX.2 klein 4B on Workers AI (`CLOUDFLARE_SHOT_MODEL`), about 125 neurons a shot from the free daily allowance it shares with the motifs. The photo is sent to Cloudflare. When the allowance is used up, or the model refuses or answers oddly, there's no shot.
+  - `gemini`: `GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`). On a free key Google answers 429, since there's no image allowance; it's billed per image once billing is on.
+- **Paired parts** (2026-11-11). The AI boxes "Left sleeve" and "Right sleeve" separately (tight boxes tell the sides from the body between them); the two sides become one part, "Sleeves", that the customer recolours together (`pairName`, `lib/garment-photo/parts.ts`).
 - **The order on the design screen.** First the garment, then a "See it on you" step ("Try it on" opens the try-on panel), then "Get a price for your dress". The quote isn't pushed first. Both sit in the page, not in the bar pinned to the bottom, which keeps only the size and Save (a tall pinned bar covered the AI options).
 
 - **Private.** `status: PRIVATE` keeps it out of everything that shows ACTIVE products:

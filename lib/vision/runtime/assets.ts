@@ -1,4 +1,4 @@
-// The on-device vision files: three small models from Hugging Face and the ONNX Runtime Web files.
+// The on-device vision files: four small models from Hugging Face and the ONNX Runtime Web files.
 // `pnpm vision:fetch` (scripts/fetch-vision-assets.ts) downloads the models, checks their SHA-256 and
 // copies everything into public/vision/, so browsers load them only from our own site. Paths contain
 // the version or hash, so they can be cached forever. Shared by the fetch script and the browser.
@@ -12,7 +12,7 @@ export const ORT_PATH = `${VISION_BASE}/ort/${ORT_VERSION}/`;
 /** The runtime files served from ORT_PATH: the WebGPU build and the plain WebAssembly build. */
 export const ORT_FILES = ["ort-wasm-simd-threaded.jsep.mjs", "ort-wasm-simd-threaded.jsep.wasm", "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"] as const;
 
-export type VisionModelId = "pose" | "face" | "mask";
+export type VisionModelId = "pose" | "face" | "mask" | "parts";
 
 export type VisionModel = {
   id: VisionModelId;
@@ -48,6 +48,15 @@ export const VISION_MODELS: Record<VisionModelId, VisionModel> = {
     file: "onnx/model_int8.onnx",
     sha256: "9bc3d56b0b1397acbdafb631ab5c7bf14a889c00fbe2018e36503c65a2b65983",
     bytes: 223_977,
+    licence: "Apache-2.0",
+  },
+  // Google's MediaPipe selfie multiclass model (hair, skin, clothes…), converted to ONNX unchanged.
+  parts: {
+    id: "parts",
+    repo: "senty-au/selfie_multiclass_256x256-ONNX",
+    file: "onnx/model.onnx",
+    sha256: "35ec1ecd9ee7f85073c99c00020b7f6751b69506eeacf683bc8665f6117f85b0",
+    bytes: 16_454_560,
     licence: "Apache-2.0",
   },
 };
