@@ -71,12 +71,22 @@ export class PersonLayer {
   }
 
   /**
-   * Draws the person's arms from `frame` along `paths` (camera pixels) over what's on `context`, masked
-   * by the person outline (moved by `shift` when it's from an earlier frame), so arms in front of the
-   * body show in front of the garment.
+   * Draws the person's arms from `frame` along `paths` (camera pixels), and their head above the chin
+   * (`chinY`, null when the face isn't seen), over what's on `context`, masked by the person outline
+   * (moved by `shift` when it's from an earlier frame): arms in front of the body, and the face and hair,
+   * show in front of the garment, so a collar or neckline never rides over the chin.
    */
-  drawArms(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, paths: readonly Point[][], thickness: number, shift: Point = { x: 0, y: 0 }) {
-    if (!this.maskSet || !this.box || paths.every((p) => p.length < 2)) return;
+  drawInFront(
+    context: CanvasRenderingContext2D,
+    frame: CanvasImageSource,
+    width: number,
+    height: number,
+    paths: readonly Point[][],
+    thickness: number,
+    shift: Point = { x: 0, y: 0 },
+    head: { chinY: number; centreX: number; halfWidth: number; fade: number } | null = null,
+  ) {
+    if (!this.maskSet || !this.box || (paths.every((p) => p.length < 2) && !head)) return;
     for (const canvas of [this.person, this.arms]) {
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
@@ -102,6 +112,14 @@ export class PersonLayer {
       arms.beginPath();
       path.forEach((point, i) => (i === 0 ? arms.moveTo(point.x, point.y) : arms.lineTo(point.x, point.y)));
       arms.stroke();
+    }
+    if (head) {
+      // Everything of the person above the chin, fading out just below it.
+      const gradient = arms.createLinearGradient(0, head.chinY - head.fade, 0, head.chinY + head.fade);
+      gradient.addColorStop(0, "rgba(255,255,255,1)");
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
+      arms.fillStyle = gradient;
+      arms.fillRect(head.centreX - head.halfWidth, 0, head.halfWidth * 2, head.chinY + head.fade);
     }
     arms.globalCompositeOperation = "source-in";
     arms.drawImage(this.person, 0, 0);

@@ -193,8 +193,9 @@ export function LiveMirror({
         compositor.draw(context, frame, width, height, pieces, span);
         const sleeveOn = (side: "left" | "right") => garment.sleeves.find((s) => s.fit.side === side)?.fit ?? null;
         const arms = (["left", "right"] as const).map((side) => mirror.exposedArm(garment.fit, body, side, sleeveOn(side)));
-        // About an arm's width: wider would redraw the person's own clothes beside the arm.
-        layer.drawArms(context, clean, width, height, arms, span * mirror.ARM_WIDTH, shift);
+        // About an arm's width: wider would redraw the person's own clothes beside the arm. The head too,
+        // so a collar never covers the chin.
+        layer.drawInFront(context, clean, width, height, arms, span * mirror.ARM_WIDTH, shift, mirror.headInFront(body));
       } else {
         sway.reset();
         widthSmoother.reset();

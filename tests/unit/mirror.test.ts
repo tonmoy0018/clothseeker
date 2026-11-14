@@ -8,7 +8,10 @@ import {
   garmentFit,
   garmentMesh,
   garmentToBody,
+  headInFront,
+  seamSleeves,
   maskBounds,
+  MIN_SLEEVE_HALF,
   SEAM_PER_JOINTS,
   SHOULDER_LIFT,
   sleeveFits,
@@ -163,6 +166,18 @@ describe("live mirror fitting", () => {
     expect(armChain(body, "left")).toHaveLength(4);
   });
 
+  it("never draws a sleeve narrower than the arm under it", () => {
+    // A slim catalogue sleeve (4 px half-width) on an arm hanging straight down.
+    const slim: SleeveFit = { side: "left", root: { x: 320, y: 34 }, end: { x: 330, y: 400 }, halfWidth: 4, length: 366 };
+    const body = bodyAnchors(pose());
+    if (!body) throw new Error("no body");
+    const span = Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y);
+    // Across the forearm (well below the shoulder, where it follows the arm): at least 2 × MIN_SLEEVE_HALF.
+    const low = sleeveMesh(FIT, slim, body).flatMap((t) => t.dst).filter((p) => p.y > 380 && p.y < 420);
+    const across = Math.max(...low.map((p) => p.x)) - Math.min(...low.map((p) => p.x));
+    expect(across).toBeGreaterThanOrEqual(2 * MIN_SLEEVE_HALF * span * 0.99);
+  });
+
   it("draws the arms the garment doesn't cover in front of it", () => {
     const body = bodyAnchors(pose());
     if (!body) throw new Error("no body");
@@ -211,5 +226,81 @@ describe("relighting from the camera", () => {
     expect(alpha[5 * 10 + 4]).toBeGreaterThan(100);
     expect(alpha[5 * 10 + 5]).toBeGreaterThan(0);
     expect(alpha[5 * 10 + 9]).toBe(0);
+  });
+});
+
+describe("the head stays in front of the garment", () => {
+  it("keeps everything above the chin, as wide as the head with its hair", () => {
+    const head = headInFront(bodyAnchors(pose()) ?? fail());
+    // Eyes at 140, nose at 150: the chin about 26 px below the nose.
+    expect(head?.chinY).toBeCloseTo(176, 1);
+    expect(head?.centreX).toBe(500);
+    expect(head?.halfWidth).toBeCloseTo(44, 1);
+  });
+
+  it("never reaches the shoulders, and needs a face", () => {
+    // A face low over the shoulders (head bowed): the chin line stops above them.
+    const bowed = headInFront(bodyAnchors(pose({ leftEye: at(510, 200), rightEye: at(490, 200), nose: at(500, 240) })) ?? fail());
+    expect(bowed?.chinY).toBeLessThan(250);
+    expect(headInFront(bodyAnchors(pose({ nose: at(500, 150, 0.1) })) ?? fail())).toBeNull();
+  });
+});
+
+function fail(): never {
+  throw new Error("expected a body");
+}
+
+describe("long sleeves hanging against the body", () => {
+  const W = 200;
+  const H = 300;
+  /** A mask from rectangles (x0 ≤ x < x1, y0 ≤ y < y1). */
+  const maskOf = (rects: [number, number, number, number][]): Mask => {
+    const data = new Uint8Array(W * H);
+    for (const [x0, x1, y0, y1] of rects) for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) data[y * W + x] = 1;
+    return { data, width: W, height: H };
+  };
+  const none = maskOf([]);
+  const count = (mask: Mask, x0: number, x1: number) => {
+    let n = 0;
+    for (let y = 0; y < H; y += 1) for (let x = x0; x < x1; x += 1) n += mask.data[y * W + x] ?? 0;
+    return n;
+  };
+  const fitOf = (shoulderWidth: number, waistHalf: number): GarmentFit => ({
+    width: W,
+    height: H,
+    top: 20,
+    bottom: 260,
+    left: 40,
+    right: 160,
+    shoulderY: 20,
+    waistY: 140,
+    centreX: 100,
+    shoulderWidth,
+    rowHalfWidth: Array.from({ length: H }, () => waistHalf),
+  });
+
+  it("finds them outside the shoulder seams, down to the cuffs", () => {
+    // Body 60 wide, sleeves touching it on both sides down to the cuffs at 220, the hem at 260.
+    const shirt = maskOf([[70, 130, 20, 260], [40, 70, 25, 220], [130, 160, 25, 220]]);
+    const sleeves = seamSleeves(shirt, none, fitOf(60, 60));
+    expect(count(sleeves, 40, 70)).toBe(30 * 195);
+    // The column right on the seam (x 130) stays with the body.
+    expect(count(sleeves, 131, 160)).toBe(29 * 195);
+    // The body stays the body.
+    expect(count(sleeves, 70, 130)).toBe(0);
+    expect(sleeveFits(sleeves, fitOf(60, 60)).map((s) => s.side).sort()).toEqual(["left", "right"]);
+  });
+
+  it("leaves dresses alone: narrower at the waist than at the shoulders, or a side running to the hem", () => {
+    // A strappy dress: the bodice is wider than the straps, but the waist is narrow.
+    const dress = maskOf([[80, 120, 20, 120], [60, 140, 120, 260]]);
+    expect(count(seamSleeves(dress, none, fitOf(40, 20)), 0, W)).toBe(0);
+    // A wide tunic: fabric outside the seams all the way to the hem is its side, not a sleeve.
+    const tunic = maskOf([[40, 160, 20, 260]]);
+    expect(count(seamSleeves(tunic, none, fitOf(60, 60)), 0, W)).toBe(0);
+    // Sleeves the garment finder already found are kept as they are.
+    const found = maskOf([[130, 160, 25, 220]]);
+    const shirt = maskOf([[70, 130, 20, 260], [40, 70, 25, 220], [130, 160, 25, 220]]);
+    expect(count(seamSleeves(shirt, found, fitOf(60, 60)), 130, 160)).toBe(count(found, 130, 160));
   });
 });

@@ -169,6 +169,28 @@ export const SEAM_PER_JOINTS = 1.1;
 export const SHOULDER_LIFT = 0.14;
 /** The natural waist, as a share of the way from the shoulders down to the hip joints. */
 export const BODY_WAIST = 0.6;
+/**
+ * Where the chin is, from the face: the nose-to-chin distance is about CHIN_PER_EYES times the eyes-to-nose
+ * distance. With the head's width (HEAD_HALF times the distance between the eyes, either side of the
+ * nose: hair included), the part of the person kept in front of the garment. Null without a face.
+ */
+export function headInFront(body: BodyAnchors): { chinY: number; centreX: number; halfWidth: number; fade: number } | null {
+  const face = body.face;
+  if (!face) return null;
+  const eyesY = (face.leftEye.y + face.rightEye.y) / 2;
+  const eyeGap = Math.hypot(face.leftEye.x - face.rightEye.x, face.leftEye.y - face.rightEye.y);
+  const noseDrop = face.nose.y - eyesY;
+  if (eyeGap < 2 || noseDrop <= 0) return null;
+  const shoulders = (body.leftShoulder.y + body.rightShoulder.y) / 2;
+  // Never below the shoulders' height: a garment's top always shows.
+  const chinY = Math.min(face.nose.y + noseDrop * CHIN_PER_EYES, shoulders - eyeGap * 0.2);
+  return { chinY, centreX: face.nose.x, halfWidth: eyeGap * HEAD_HALF, fade: noseDrop * 0.5 };
+}
+
+/** Measured on the test people (2.6–2.7): the nose point is the tip of the nose, close under the eyes. */
+export const CHIN_PER_EYES = 2.6;
+export const HEAD_HALF = 2.2;
+
 /** An arm's width, as a share of the shoulder-joint distance (arms are redrawn this wide over the garment). */
 export const ARM_WIDTH = 0.21;
 /**
@@ -595,6 +617,66 @@ export function withLooseSleeves(garment: Mask, sleeves: Mask, fit: GarmentFit):
 }
 
 /**
+ * Long sleeves that hang straight down against the body (a shirt on a mannequin with its arms at its
+ * sides): the garment finder sees no armpit, so it finds no sleeve, and the whole shirt would be fitted
+ * to the torso with the arms bare. On a side with no sleeve, fabric outside the shoulder seam just below
+ * the shoulder is taken as a sleeve, down the columns outside the seam for as long as the fabric goes on.
+ * Only for garments wider at the waist than at the shoulders (as sleeves beside the torso make them): a
+ * dress is narrower there, so its skirt and a strappy dress's bodice are never taken for sleeves.
+ */
+export function seamSleeves(garment: Mask, sleeves: Mask, fit: GarmentFit): Mask {
+  const { width, height } = garment;
+  const out = { data: Uint8Array.from(sleeves.data), width, height };
+  // Sleeves hanging beside the torso make the garment wider at the waist than at the shoulders (a shirt
+  // 1.2–1.6×); a dress is narrower there, and a strappy one's "shoulders" are only its straps.
+  const waistHalf = fit.rowHalfWidth?.[Math.round(fit.waistY)] ?? 0;
+  if (fit.shoulderWidth >= 2 * waistHalf * SEAM_SLEEVE_WAIST) return out;
+  const seam = fit.shoulderWidth * SEAM_SLEEVE;
+  const top = Math.round(fit.shoulderY);
+  const below = Math.round(fit.shoulderY + fit.shoulderWidth * 0.3);
+  for (const side of ["left", "right"] as const) {
+    let existing = 0;
+    for (let p = 0; p < width * height; p += 1) if (sleeves.data[p] && inSleeve(p % width, side, fit)) existing += 1;
+    if (existing >= 30) continue;
+    const outward = side === "left" ? 1 : -1;
+    const outside = (x: number) => (x - fit.centreX) * outward > seam;
+    // Fabric outside the seam just below the shoulder, on most of those rows.
+    let rowsWith = 0;
+    for (let y = top; y <= below && y < height; y += 1) {
+      let any = false;
+      for (let x = 0; x < width && !any; x += 1) any = outside(x) && !!garment.data[y * width + x];
+      if (any) rowsWith += 1;
+    }
+    if (rowsWith < (below - top + 1) * 0.6) continue;
+    // Each column outside the seam, from the shoulder down while there's fabric. The sleeve ends where its
+    // outermost columns do (the cuff): nearer the body, a column carries on down the garment's side.
+    const runs: { x: number; from: number; to: number; out: number }[] = [];
+    for (let x = 0; x < width; x += 1) {
+      if (!outside(x)) continue;
+      let y = top;
+      while (y < height && !garment.data[y * width + x]) y += 1;
+      if (y > below) continue;
+      const from = y;
+      while (y < height && garment.data[y * width + x]) y += 1;
+      runs.push({ x, from, to: y, out: (x - fit.centreX) * outward });
+    }
+    if (runs.length === 0) continue;
+    const outer = [...runs].sort((a, b) => b.out - a.out).slice(0, Math.max(1, Math.ceil(runs.length / 3)));
+    const cuff = Math.max(...outer.map((r) => r.to));
+    // A sleeve: long (not a short tie), and ending at the cuff above the hem (a side seam runs to it).
+    const toHem = cuff >= fit.bottom - (fit.bottom - fit.top) * 0.03;
+    if (cuff - top < fit.shoulderWidth * 0.8 || toHem) continue;
+    for (const run of runs) for (let y = run.from; y < Math.min(run.to, cuff); y += 1) out.data[y * width + run.x] = 1;
+  }
+  return out;
+}
+
+/** Outside this share of the shoulder width from the centre (the shoulder seam) is sleeve, not body. */
+const SEAM_SLEEVE = 0.5;
+/** Only when the shoulders are narrower than this share of the garment's width at the waist. */
+const SEAM_SLEEVE_WAIST = 0.85;
+
+/**
  * The garment's sleeves, from the sleeve mask (lib/garment-photo/segment.ts). A sleeve must leave the
  * shoulder outwards or downwards and be long enough: straps of sleeveless dresses (also in that mask)
  * aren't sleeves and stay with the body.
@@ -664,6 +746,13 @@ export function armChain(body: BodyAnchors, side: Side): Point[] {
   return [{ x: shoulder.x, y: shoulder.y }, elbow, wrist, hand];
 }
 
+/**
+ * A sleeve's half-width on the arm is at least this share of the shoulder-joint distance: a little more
+ * than a bare arm's (ARM_HALF in uncover.ts, 0.13), which is painted as skin where the person's own
+ * sleeve was.
+ */
+export const MIN_SLEEVE_HALF = 0.16;
+
 /** Share of a sleeve's length over which it turns from the body's shape to the arm's direction. */
 export const SLEEVE_BLEND = 0.25;
 
@@ -688,6 +777,10 @@ export function sleeveMesh(fit: GarmentFit, sleeve: SleeveFit, body: BodyAnchors
   // person's arm); across, it keeps the garment's scale.
   const toWrist = length(sub(chain[1] ?? rootOnBody, rootOnBody)) + length(sub(chain[2] ?? rootOnBody, chain[1] ?? rootOnBody));
   const lengthwise = Math.min(scale, (toWrist * 1.02) / sleeve.length);
+  // Across the arm, never narrower than the arm with a little room: a slim catalogue sleeve would leave
+  // strips of the arm (painted bare where the person's own sleeve was) showing beside it.
+  const span = length(sub(body.leftShoulder, body.rightShoulder));
+  const acrossScale = Math.max(scale, (span * MIN_SLEEVE_HALF) / Math.max(1, sleeve.halfWidth));
   // The mesh reaches well past the sleeve's axis box: its picture is transparent outside the sleeve, and
   // a shoulder cap sticking out of the box would otherwise not be drawn (a hole at the shoulder).
   // Rows every 14% of the sleeve from 28% above its root (so the root itself is on the grid).
@@ -697,7 +790,7 @@ export function sleeveMesh(fit: GarmentFit, sleeve: SleeveFit, body: BodyAnchors
   const onArm = (t: number, s: number): Point => {
     const { point, direction } = along(chain, t * lengthwise);
     const across = { x: -direction.y, y: direction.x };
-    return { x: point.x + across.x * s * scale, y: point.y + across.y * s * scale };
+    return { x: point.x + across.x * s * acrossScale, y: point.y + across.y * s * acrossScale };
   };
   const dst = (t: number, s: number): Point => {
     const k = Math.min(1, Math.max(0, t / (sleeve.length * SLEEVE_BLEND)));

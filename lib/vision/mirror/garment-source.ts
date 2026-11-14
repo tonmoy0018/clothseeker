@@ -1,7 +1,7 @@
 import { findGarment, splitGarment, type GarmentParts, type Mask } from "@/lib/garment-photo/segment";
 
 import { recoverGarment } from "./garment-fill";
-import { garmentFit, inSleeve, maskBounds, sleeveFits, withLooseSleeves, type GarmentFit, type SleeveFit } from "./mirror";
+import { garmentFit, inSleeve, maskBounds, seamSleeves, sleeveFits, withLooseSleeves, type GarmentFit, type SleeveFit } from "./mirror";
 import { featherAlpha } from "./relight";
 
 // The garment picture for the live mirror, prepared in the browser: cut out on a transparent background
@@ -64,7 +64,7 @@ function cutOut(source: HTMLCanvasElement, keep: (p: number) => boolean, garment
 function prepare(picture: HTMLCanvasElement, parts: GarmentParts): MirrorGarment {
   const fit = garmentFit(parts);
   const { garment } = parts;
-  const sleeveMask = withLooseSleeves(garment, parts.sleeves, fit);
+  const sleeveMask = withLooseSleeves(garment, seamSleeves(garment, parts.sleeves, fit), fit);
   const sleeves = sleeveFits(sleeveMask, fit);
   const sleeveSide = (p: number, overlap = 0) => {
     if (!sleeveMask.data[p]) return null;
