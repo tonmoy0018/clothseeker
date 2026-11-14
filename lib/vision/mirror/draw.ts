@@ -1,3 +1,4 @@
+import { GapCloser } from "./gaps";
 import { triangleTransform, type BodyAnchors, type Point, type Triangle } from "./mirror";
 import { shadeFromFrame } from "./relight";
 import { SELFIE_SIZE, type PersonMask } from "../models/segment";
@@ -158,7 +159,10 @@ export class FrameCleaner {
     if (!clean) return frame;
     clean.drawImage(frame, 0, 0, width, height);
     clean.imageSmoothingQuality = "high";
+    // Softened by about a small pixel: enlarged as it is, the paint's edges otherwise show as steps.
+    clean.filter = `blur(${(scale * 0.7).toFixed(2)}px)`;
     clean.drawImage(this.overlay, 0, 0, width, height);
+    clean.filter = "none";
     return this.clean;
   }
 }
@@ -178,9 +182,11 @@ export class GarmentCompositor {
   private readonly small = document.createElement("canvas");
   private readonly edge = document.createElement("canvas");
   private readonly edgeShade = document.createElement("canvas");
+  private readonly gaps = document.createElement("canvas");
+  private readonly closer = new GapCloser();
 
-  /** `pieces`: each garment picture with its mesh. */
-  draw(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, pieces: readonly { image: CanvasImageSource; triangles: readonly Triangle[] }[]) {
+  /** `pieces`: each garment picture with its mesh; `span`: the distance between the shoulders (camera pixels). */
+  draw(context: CanvasRenderingContext2D, frame: CanvasImageSource, width: number, height: number, pieces: readonly { image: CanvasImageSource; triangles: readonly Triangle[] }[], span: number) {
     for (const canvas of [this.layer, this.shade]) {
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
@@ -191,6 +197,7 @@ export class GarmentCompositor {
     layer.globalCompositeOperation = "source-over";
     layer.clearRect(0, 0, width, height);
     for (const piece of pieces) drawMesh(layer, piece.image, piece.triangles);
+    this.sealGaps(layer, width, height, span);
 
     // The camera's light, worked out on a small copy of the frame, then stretched over the garment only.
     const smallWidth = 240;
@@ -222,6 +229,29 @@ export class GarmentCompositor {
     context.shadowOffsetY = Math.max(1, height * 0.004);
     context.drawImage(this.layer, 0, 0);
     context.restore();
+  }
+
+  /**
+   * Fills thin gaps between the garment's pieces (a sleeve and the body) with the garment's own colour,
+   * on a small copy where the shoulders are about GAP_SPAN pixels apart (gaps.ts), drawn under it.
+   */
+  private sealGaps(layer: CanvasRenderingContext2D, width: number, height: number, span: number) {
+    const w = Math.max(1, Math.round(Math.min(width, GAP_MAX_WIDTH, (width * GAP_SPAN) / Math.max(1, span))));
+    const h = Math.max(1, Math.round((height * w) / width));
+    if (this.gaps.width !== w) this.gaps.width = w;
+    if (this.gaps.height !== h) this.gaps.height = h;
+    const gaps = this.gaps.getContext("2d", { willReadFrequently: true });
+    if (!gaps) return;
+    gaps.clearRect(0, 0, w, h);
+    gaps.imageSmoothingQuality = "high";
+    gaps.drawImage(this.layer, 0, 0, w, h);
+    const filled = this.closer.run(gaps.getImageData(0, 0, w, h).data, w, h, GAP_RADIUS * ((span * w) / width));
+    gaps.putImageData(new ImageData(new Uint8ClampedArray(filled), w, h), 0, 0);
+    layer.save();
+    layer.globalCompositeOperation = "destination-over";
+    layer.imageSmoothingQuality = "high";
+    layer.drawImage(this.gaps, 0, 0, width, height);
+    layer.restore();
   }
 
   /**
@@ -258,6 +288,15 @@ export class GarmentCompositor {
     layer.restore();
   }
 }
+
+/**
+ * Gaps up to about twice this share of the shoulder width are sealed (about 7%: a sliver beside a sleeve,
+ * never the space between an arm and the body).
+ */
+const GAP_RADIUS = 0.035;
+/** The garment layer is sealed at a size where the shoulders are about this many pixels apart. */
+const GAP_SPAN = 80;
+const GAP_MAX_WIDTH = 480;
 
 /** How dark a garment's edges get (0–1) where it turns away from the camera. */
 const EDGE_SHADE = 0.45;

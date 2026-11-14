@@ -190,7 +190,7 @@ export function LiveMirror({
           { image: garment.body, triangles: mirror.garmentMesh(garment.fit, body, undefined, undefined, drape) },
           ...garment.sleeves.map((s) => ({ image: s.image, triangles: mirror.sleeveMesh(garment.fit, s.fit, body, undefined, undefined, drape) })),
         ];
-        compositor.draw(context, frame, width, height, pieces);
+        compositor.draw(context, frame, width, height, pieces, span);
         const sleeveOn = (side: "left" | "right") => garment.sleeves.find((s) => s.fit.side === side)?.fit ?? null;
         const arms = (["left", "right"] as const).map((side) => mirror.exposedArm(garment.fit, body, side, sleeveOn(side)));
         // About an arm's width: wider would redraw the person's own clothes beside the arm.

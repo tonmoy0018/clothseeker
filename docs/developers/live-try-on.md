@@ -90,6 +90,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
     - arms are 26% of the shoulder distance wide (`ARM_HALF`);
     - the skin is shaded by the cloth's light and folds and darkens towards the outline and the arms' sides.
   - **Outside the bare body**, such as a sleeve standing off the arm or a band at the outline (`STAND_OFF`), clothing becomes the backdrop beside it on the same row.
+  - The paint is worked out on the small copy and enlarged; it's blurred by about one of its pixels as it's laid on the frame, or its edges show as steps.
   - **Left alone:**
     - the head;
     - dark hair near it;
@@ -105,6 +106,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
 - **Arms in front:** the parts of the arms the garment doesn't cover are drawn back from the cleaned camera frame over the garment, masked by the person outline (`exposedArm`, `PersonLayer.drawArms`). That's below a short sleeve, the hand below a long one, or almost the whole arm for a sleeveless garment. The stroke is about an arm wide (`ARM_WIDTH`, 21% of the shoulder distance); wider would redraw the person's own clothes beside the arm.
 - **Looks worn, not pasted** (`GarmentCompositor`, `lib/vision/mirror/relight.ts`):
   - The garment pieces are drawn into their own layer.
+  - **Gaps between the pieces are sealed** (`GapCloser`, `lib/vision/mirror/gaps.ts`, since 2026-11-14). The body narrows to the person's outline while each sleeve follows its arm, so a sliver could open beside a sleeve and the person's painted-over clothes showed through it (orange slivers on the Oxford shirt and the panjabi). On a small copy of the layer (shoulders about 80 px apart) the garment's coverage is closed by about 3.5% of the shoulder width, and the closed shape is filled with the garment's own colour from around it, drawn under the garment. So gaps up to about 7% of the shoulder width close, and a real space between an arm and the body stays open.
   - That layer is relit from the camera with a soft-light "shade" picture made from a 240-px copy of the frame. It carries the creases of the clothes underneath (fine ÷ broad brightness), the room's light falling across the body, and a mild colour cast. Both are kept gentle (0.82–1.2 and 0.88–1.15), so the colours and edges of the person's own clothes (dark trousers under a shirt's hem) don't read as shadows.
   - Its edges are darkened softly inside its outline (`roundEdges`, 45%), as cloth turning away from the camera round the body is.
   - The layer is then laid on the frame with a soft contact shadow.
