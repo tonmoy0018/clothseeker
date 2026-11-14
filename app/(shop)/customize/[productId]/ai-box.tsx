@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState, useTransition } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import type { RoundView } from "@/lib/ai/jobs";
 import type { AiQuota } from "@/lib/ai/quota";
 import { downscalePhoto } from "@/lib/media/client-resize";
@@ -229,7 +229,7 @@ export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignI
       </label>
       <div className="flex flex-wrap gap-1.5" aria-label="Example ideas">
         {EXAMPLES.map((example) => (
-          <button key={example} type="button" onClick={() => setInstruction(example)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted">
+          <button key={example} type="button" onClick={() => setInstruction(example)} className="rounded-full border border-input bg-card px-2.5 py-1 text-xs transition-colors hover:border-foreground/40">
             {example}
           </button>
         ))}
@@ -243,14 +243,14 @@ export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignI
               type="button"
               aria-label={`Remove photo ${i + 1}`}
               onClick={() => setAttachments((list) => list.filter((x) => x.key !== a.key))}
-              className="absolute top-0.5 right-0.5 flex size-5 items-center justify-center rounded-full bg-background/90 text-xs"
+              className="absolute top-0.5 right-0.5 flex size-5 items-center justify-center rounded-full bg-card/90 text-xs"
             >
               ×
             </button>
           </span>
         ))}
         {attachments.length < MAX_PHOTOS && (
-          <label className={cn("inline-flex h-8 cursor-pointer items-center rounded-lg border px-3 text-sm hover:bg-muted", (attaching || busy) && "pointer-events-none opacity-60")}>
+          <label className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-pointer", (attaching || busy) && "pointer-events-none opacity-60")}>
             {attaching ? "Attaching…" : "Attach photos"}
             <input
               type="file"
@@ -308,7 +308,7 @@ export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignI
           </p>
           <div className="grid grid-cols-2 gap-3">
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="flex aspect-[600/780] animate-pulse items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground" data-testid="ai-loading-card">
+              <div key={n} className="flex aspect-[600/780] animate-pulse items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground" data-testid="ai-loading-card">
                 Option {n}
               </div>
             ))}
@@ -349,12 +349,12 @@ export function AiBox({ initialJobId = null, designId, spec, signedIn, onDesignI
                     setRound(r);
                     setReference(null);
                   }}
-                  className={cn("flex w-full items-center gap-2 rounded-lg border p-2 text-left hover:bg-muted", round?.id === r.id && "border-foreground")}
+                  className={cn("flex w-full items-center gap-2 rounded-xl border bg-card p-2 text-left hover:bg-muted", round?.id === r.id && "border-primary")}
                 >
                   <span className="flex gap-1">
                     {r.options.slice(0, 4).map((o) =>
                       o.previewUrl ? (
-                        <Image key={o.index} src={o.previewUrl} alt="" width={30} height={39} unoptimized className={cn("rounded bg-muted", r.chosenIndex === o.index && "ring-2 ring-foreground")} />
+                        <Image key={o.index} src={o.previewUrl} alt="" width={30} height={39} unoptimized className={cn("rounded bg-muted", r.chosenIndex === o.index && "ring-2 ring-brand")} />
                       ) : null,
                     )}
                   </span>
@@ -386,10 +386,10 @@ function OptionCard({
   onRefine: () => void;
 }) {
   return (
-    <div className={cn("flex flex-col gap-1.5 rounded-lg border p-2", (chosen || referenced) && "border-foreground")} data-testid="ai-option">
-      <div className="relative aspect-[600/780] overflow-hidden rounded bg-muted">
+    <div className={cn("flex flex-col gap-1.5 rounded-xl border bg-card p-2", (chosen || referenced) && "border-primary ring-1 ring-primary")} data-testid="ai-option">
+      <div className="relative aspect-[600/780] overflow-hidden rounded-lg bg-muted">
         {option.previewUrl && <Image src={option.previewUrl} alt={`Option ${option.index + 1}: ${option.title}`} fill unoptimized className="object-contain" />}
-        <span className="absolute top-1 left-1 rounded bg-background/90 px-1.5 text-xs font-medium">{option.index + 1}</span>
+        <span className="absolute top-1.5 left-1.5 rounded-full bg-card/90 px-2 text-xs font-medium">{option.index + 1}</span>
       </div>
       <p className="truncate text-sm font-medium" title={option.title}>
         {option.title}

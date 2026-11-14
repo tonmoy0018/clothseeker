@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/select";
 import type { GarmentType } from "@/lib/catalog/garment-types";
 import { fitInputSchema, fitReport, type BodyGirth, type FitInput } from "@/lib/fit/fit";
 import type { Size } from "@/lib/generated/prisma/enums";
@@ -72,32 +74,24 @@ export function FitSection({
   const set = (patch: Partial<FitDraft>) => onChange({ ...draft, ...patch });
 
   return (
-    <fieldset className="flex flex-col gap-3 rounded-lg border p-3" data-testid="fit-section" disabled={disabled}>
+    <fieldset className="flex flex-col gap-3 rounded-xl border p-3" data-testid="fit-section" disabled={disabled}>
       <legend className="px-1 text-sm font-medium">Your fit (optional)</legend>
       <p className="text-xs text-muted-foreground">Add your height and we measure the rest from your photo, to show how each size fits you; the try-on then shows that size on you.</p>
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-xs">
           Height (cm)
-          <input
-            type="number"
-            inputMode="numeric"
-            min={120}
-            max={220}
-            className="h-8 w-24 rounded-md border bg-background px-2 text-sm"
-            value={draft.height}
-            onChange={(e) => set({ height: e.target.value })}
-          />
+          <Input type="number" inputMode="numeric" min={120} max={220} className="w-24" value={draft.height} onChange={(e) => set({ height: e.target.value })} />
         </label>
         <label className="flex flex-col gap-1 text-xs">
           Size to try
-          <select className="h-8 rounded-md border bg-background px-2 text-sm" value={draft.size ?? ""} onChange={(e) => set({ size: garment.sizes.find((s) => s === e.target.value) ?? null })}>
+          <NativeSelect value={draft.size ?? ""} onChange={(e) => set({ size: garment.sizes.find((s) => s === e.target.value) ?? null })}>
             <option value="">Choose…</option>
             {garment.sizes.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
       </div>
 

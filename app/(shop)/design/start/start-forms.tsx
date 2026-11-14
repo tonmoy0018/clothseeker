@@ -4,7 +4,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { nativeSelectClass } from "@/components/ui/select";
 import { GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 import { downscalePhoto } from "@/lib/media/client-resize";
 import { cn } from "@/lib/utils";
@@ -157,7 +158,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
           <p className="text-sm text-muted-foreground">
             Upload a photo of a dress you like. We can make it exactly as it is, let you customise it, or start you from our closest dress.
           </p>
-          <label className={cn("inline-flex h-9 w-fit cursor-pointer items-center rounded-lg border px-3 text-sm hover:bg-muted", busy && "pointer-events-none opacity-50")}>
+          <label className={cn(buttonVariants({ variant: "outline" }), "w-fit cursor-pointer", busy && "pointer-events-none opacity-50")}>
             {photoKey ? "Use another photo" : "Upload a dress photo"}
             <input
               type="file"
@@ -182,7 +183,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
               <label className="flex items-center gap-2 text-sm">
                 What is it?
                 <select
-                  className="h-8 rounded-md border bg-background px-2 text-sm"
+                  className={nativeSelectClass}
                   value={garmentType}
                   disabled={busy}
                   onChange={(e) => setGarmentType(GARMENT_TYPE_IDS.find((t) => t === e.target.value) ?? "auto")}
@@ -235,7 +236,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
             />
             <div className="flex flex-wrap gap-1.5">
               {EXAMPLES.map((example) => (
-                <button key={example} type="button" onClick={() => setDescription(example)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted">
+                <button key={example} type="button" onClick={() => setDescription(example)} className="rounded-full border border-input bg-card px-2.5 py-1 text-xs transition-colors hover:border-foreground/40">
                   {example}
                 </button>
               ))}
@@ -263,7 +264,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
 
 function ChoiceButton({ title, detail, onClick, disabled }: { title: string; detail: string; onClick: () => void; disabled: boolean }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className="flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left hover:bg-muted disabled:opacity-50">
+    <button type="button" onClick={onClick} disabled={disabled} className="flex flex-col items-start gap-0.5 rounded-xl border border-input bg-card p-3 text-left transition-colors hover:border-foreground/40 disabled:opacity-50">
       <span className="text-sm font-medium">{title}</span>
       <span className="text-xs text-muted-foreground">{detail}</span>
     </button>

@@ -62,7 +62,7 @@ export function PhotoUploadForm({
           type="file"
           accept={ACCEPT}
           required
-          className="max-w-full text-sm file:mr-3 file:rounded-md file:border file:bg-background file:px-3 file:py-1 file:text-sm"
+          className="max-w-full text-sm file:mr-3 file:rounded-full file:border file:border-solid file:border-input file:bg-card file:px-3 file:py-1 file:text-sm"
           onChange={(e) => {
             const file = e.currentTarget.files?.[0];
             setClientError(file && file.size > MAX_BYTES ? "That file is larger than 4 MB." : null);

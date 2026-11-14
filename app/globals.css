@@ -151,4 +151,15 @@
   ::selection {
     background: color-mix(in oklch, var(--brand) 22%, transparent);
   }
+  /* Native checkboxes, radios and sliders in the brand's ink instead of the browser's blue. */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--primary);
+  }
+}
+
+/* Card titles carry the font-heading utility, which a base-layer rule can't override: unlayered on purpose. */
+[data-surface="admin"] [data-slot="card-title"] {
+  font-family: var(--font-sans);
 }

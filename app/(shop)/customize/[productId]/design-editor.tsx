@@ -516,20 +516,28 @@ export function DesignEditor(props: DesignEditorProps) {
 
   const fontFaces = FONTS.map((f) => `@font-face{font-family:"${f.family}";src:url("${fontUrl(f.id)}") format("truetype");font-display:swap;}`).join("");
 
-  // Always in the pinned bar, so trying on is never more than a click away (the rail icon is easy to miss).
+  // Always in the pinned bar, so trying on and the live mirror are never more than a click away (the rail icons are easy to miss).
   const tryOnButton = (
-    <Button
-      variant="outline"
-      data-testid="open-try-on"
-      aria-pressed={showTryOn}
-      onClick={() => {
-        setShowTryOn(true);
-        requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-      }}
-    >
-      <Shirt className="size-4" />
-      Try on
-    </Button>
+    <>
+      <Button
+        variant="outline"
+        data-testid="open-try-on"
+        aria-pressed={showTryOn}
+        onClick={() => {
+          setShowTryOn(true);
+          requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }}
+      >
+        <Shirt className="size-4" />
+        Try on
+      </Button>
+      {pictures.front.garmentKey !== null && (
+        <Button variant="outline" data-testid="open-live-mirror" onClick={() => setShowMirror(true)}>
+          <ScanFace className="size-4" />
+          Live mirror
+        </Button>
+      )}
+    </>
   );
 
   return (
@@ -683,28 +691,31 @@ export function DesignEditor(props: DesignEditorProps) {
           <p className="text-sm text-muted-foreground">Clothing brand logos can&apos;t be used.</p>
         </div>
 
-        <div role="tablist" aria-label="Design options" className="sticky top-0 z-10 grid grid-cols-4 border-b bg-background">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls={`panel-${t.id}`}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "h-12 px-1 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                tab === t.id ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* The page-coloured strip keeps scrolling options from showing around the pinned tabs. */}
+        <div className="sticky top-0 z-10 bg-background py-2">
+          <div role="tablist" aria-label="Design options" className="grid grid-cols-4 gap-1 rounded-full bg-secondary p-1">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls={`panel-${t.id}`}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "h-10 rounded-full px-1 text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/40",
+                  tab === t.id ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Panels stay mounted (hidden when inactive), so the AI box keeps polling and nothing resets. */}
-        <div className="min-h-[24rem] pt-4">
+        <div className="min-h-[24rem] pt-2">
           <div role="tabpanel" id="panel-fabric" aria-labelledby="tab-fabric" hidden={tab !== "fabric"}>
             {colorableRegions.length > 0 ? (
               <FabricTab config={config} spec={spec} regions={colorableRegions} noun={garment.noun} uploadUrls={uploadUrls} uploadState={uploadState} onUpload={uploadAsset} onChangeParts={(change) => commit((s) => ({ ...s, parts: change(s.parts) }))} />
@@ -791,7 +802,7 @@ export function DesignEditor(props: DesignEditorProps) {
                 onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
               />
             ) : (
-              <div className="rounded-xl border border-dashed p-4" data-testid="ai-box">
+              <div className="rounded-2xl border border-dashed p-4" data-testid="ai-box">
                 <p className="font-medium">AI design box</p>
                 <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this {garment.noun}.</p>
               </div>
@@ -836,7 +847,7 @@ export function DesignEditor(props: DesignEditorProps) {
                   type="button"
                   aria-pressed={spec.size === size}
                   onClick={() => commit((s) => ({ ...s, size }))}
-                  className={cn("h-8 min-w-10 rounded-lg border px-2.5 text-sm", spec.size === size ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+                  className={cn("h-8 min-w-10 rounded-full border border-input bg-card px-3 text-sm font-medium transition-colors", spec.size === size ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40")}
                 >
                   {size}
                 </button>
@@ -858,7 +869,7 @@ export function DesignEditor(props: DesignEditorProps) {
             <>
               <div id="price-details" hidden={!showPrice}>
                 {price && (
-                  <ul className="flex flex-col gap-1 rounded-lg bg-muted/40 p-3 text-sm" data-testid="price-breakdown">
+                  <ul className="flex flex-col gap-1 rounded-xl bg-secondary p-3 text-sm" data-testid="price-breakdown">
                     {price.lines.map((line) => (
                       <li key={line.label} className="flex justify-between gap-4">
                         <span>{line.label}</span>
@@ -883,7 +894,7 @@ export function DesignEditor(props: DesignEditorProps) {
                 <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
                   {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
                 </Button>
-                <Button onClick={addToCart} disabled={pending || issues.length > 0 || !price}>
+                <Button variant="brand" onClick={addToCart} disabled={pending || issues.length > 0 || !price}>
                   Add to cart
                 </Button>
               </div>

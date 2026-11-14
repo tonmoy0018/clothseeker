@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 function Submit() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending}>
+    <Button type="submit" variant="brand" disabled={pending}>
       {pending ? "Opening payment…" : "Complete payment"}
     </Button>
   );

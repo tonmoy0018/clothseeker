@@ -12,8 +12,8 @@ export default async function UploadDressPage() {
   const user = await getCurrentUser();
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Upload your dress</h1>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-semibold sm:text-4xl">Upload your dress</h1>
         <p className="max-w-2xl text-muted-foreground">
           Got a photo of a dress, shirt or panjabi you love? We can make it exactly as it is, or you can customise it first: change its colours, add prints,
           text or embroidery, and try it on. Then we send you a price within 24 hours.

@@ -240,7 +240,7 @@ function StatusStepper({ item }: { item: OrderDetail["items"][number] }) {
           className={cn(
             "rounded-full px-2 py-0.5",
             index < current && "bg-muted text-muted-foreground",
-            index === current && "bg-foreground text-background",
+            index === current && "bg-primary text-primary-foreground",
             index > current && "text-muted-foreground",
           )}
         >

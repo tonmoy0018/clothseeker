@@ -368,7 +368,7 @@ export function LiveMirror({
 
       {real.kind !== "off" && (
         <div
-          className="absolute top-16 right-4 bottom-24 flex w-[min(92vw,360px)] flex-col gap-3 overflow-y-auto rounded-xl bg-white p-4 text-foreground shadow-lg"
+          className="absolute top-16 right-4 bottom-24 flex w-[min(92vw,360px)] flex-col gap-3 overflow-y-auto rounded-2xl bg-card p-4 text-foreground shadow-lg"
           data-testid="make-it-real"
         >
           <div className="flex items-center justify-between gap-2">
@@ -421,7 +421,7 @@ export function LiveMirror({
       )}
 
       {capture && (
-        <div className="absolute inset-x-4 bottom-24 mx-auto flex max-w-md flex-col gap-3 rounded-xl bg-white p-4 text-foreground shadow-lg" data-testid="live-mirror-capture">
+        <div className="absolute inset-x-4 bottom-24 mx-auto flex max-w-md flex-col gap-3 rounded-2xl bg-card p-4 text-foreground shadow-lg" data-testid="live-mirror-capture">
           <Image
             src={capture.mirroredUrl}
             alt={`You in this ${noun} (live mirror)`}

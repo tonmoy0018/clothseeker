@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState, useTransition } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
 import { fitReport, garmentLengthCm, type TryOnFit } from "@/lib/fit/fit";
 import { girthsFromPhoto, MEASURE_PROBLEM_TEXT, type PhotoMeasure } from "@/lib/fit/measure";
@@ -330,7 +330,7 @@ export function TryOnPanel({
       <p className="text-xs text-muted-foreground">Rough AI preview: the real {noun} will fit and look different.</p>
 
       {/* Consent comes before any upload. */}
-      <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3 text-sm" data-testid="try-on-consent">
+      <div className="flex flex-col gap-2 rounded-xl bg-secondary p-3 text-sm" data-testid="try-on-consent">
         <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
           {TRYON_CONSENT_POINTS.map((point) => (
             <li key={point}>{point}</li>
@@ -339,7 +339,7 @@ export function TryOnPanel({
         <label className="flex items-center gap-2">
           <input type="checkbox" className="size-4" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />I agree to use my photo for try-on
         </label>
-        <label className={cn("inline-flex h-8 w-fit cursor-pointer items-center rounded-lg border bg-background px-3 hover:bg-muted", (!agreed || busy) && "pointer-events-none opacity-50")}>
+        <label className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-fit cursor-pointer", (!agreed || busy) && "pointer-events-none opacity-50")}>
           {checking ? "Checking your photo on this device…" : uploading ? "Uploading…" : "Upload a photo of me"}
           <input
             type="file"
@@ -386,7 +386,7 @@ export function TryOnPanel({
                 aria-checked={p.id === photoId}
                 aria-label={`Photo ${i + 1}${p.saved ? " (saved)" : ""}`}
                 onClick={() => setPhotoId(p.id)}
-                className={cn("relative h-20 w-14 overflow-hidden rounded-lg border bg-muted", p.id === photoId && "ring-2 ring-foreground")}
+                className={cn("relative h-20 w-14 overflow-hidden rounded-lg border bg-muted", p.id === photoId && "ring-2 ring-brand")}
               >
                 {p.url && <Image src={p.url} alt="" fill unoptimized className="object-cover" />}
               </button>

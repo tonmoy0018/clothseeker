@@ -4,7 +4,7 @@ import { ImagePlus, Scissors, Sparkles, Type } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DECORATIONS, decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
 import { FINISH_LABEL, finishesFor, type Finish } from "@/lib/catalog/finishes";
@@ -62,7 +62,7 @@ export function PersonaliseTab(props: {
   return (
     <div className="flex flex-col gap-4">
       {selectedLayer && (
-        <section className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3 text-sm" data-testid="selected-layer">
+        <section className="flex flex-col gap-3 rounded-xl border bg-secondary/50 p-3 text-sm" data-testid="selected-layer">
           <h3 className="font-medium">
             Selected{" "}
             {selectedLayer.kind === "text"
@@ -162,7 +162,7 @@ export function PersonaliseTab(props: {
               type="button"
               aria-pressed={activeArea?.id === area.id}
               onClick={() => props.onArea(area)}
-              className={cn("flex h-auto flex-col items-start rounded-lg border px-3 py-1.5 text-left text-sm", activeArea?.id === area.id ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+              className={cn("flex h-auto flex-col items-start rounded-xl border border-input bg-card px-3 py-1.5 text-left text-sm transition-colors", activeArea?.id === area.id ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40")}
             >
               <span>{area.label}</span>
               <span className="text-xs opacity-70">
@@ -233,7 +233,7 @@ export function PersonaliseTab(props: {
         <AccordionRow id="add-image" title="Your image or logo" value={`+${formatBDT(config.addOns.imageMinor)}`} icon={<ImagePlus className="size-5" />} open={open === "image"} onToggle={() => toggle("image")}>
           <div className="flex flex-col gap-2 text-sm">
             <div className="flex flex-wrap items-center gap-3">
-              <label className={cn("inline-flex h-9 cursor-pointer items-center rounded-lg border px-3 hover:bg-muted", (props.upload.state || !activeArea) && "pointer-events-none opacity-60")}>
+              <label className={cn(buttonVariants({ variant: "outline" }), "cursor-pointer", (props.upload.state || !activeArea) && "pointer-events-none opacity-60")}>
                 {props.upload.state ?? "Upload image"}
                 <input
                   type="file"

@@ -73,11 +73,11 @@ export default async function CartPage() {
         </div>
         {!cart.canCheckout && <p className="text-sm text-destructive">Update or remove the highlighted items before checking out.</p>}
         {cart.canCheckout ? (
-          <Link href="/checkout" className={buttonVariants({ size: "lg" })}>
+          <Link href="/checkout" className={buttonVariants({ size: "lg", variant: "brand" })}>
             Checkout
           </Link>
         ) : (
-          <span className={buttonVariants({ size: "lg", className: "pointer-events-none opacity-50" })} aria-disabled="true">
+          <span className={buttonVariants({ size: "lg", variant: "brand", className: "pointer-events-none opacity-50" })} aria-disabled="true">
             Checkout
           </span>
         )}

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
+import { nativeSelectClass } from "@/components/ui/select";
 import { DEFAULT_STRENGTH } from "@/lib/cutouts/rules";
 import type { CutoutSource, CutoutView } from "@/lib/cutouts/service";
 import { cn } from "@/lib/utils";
@@ -94,10 +95,10 @@ export function CutoutDialog(props: {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Take a decoration from a dress" data-testid="cutout-dialog">
-      <div className="flex max-h-full w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-xl bg-background p-4 shadow-lg">
+      <div className="flex max-h-full w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-2xl bg-card p-5 shadow-xl">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-lg font-medium">Take a decoration from a dress</h2>
+            <h2 className="text-xl font-semibold">Take a decoration from a dress</h2>
             <p className="text-sm text-muted-foreground">Draw a box around embroidery, lace or a print on one of our dresses. We&apos;ll cut it out for your design.</p>
           </div>
           <Button variant="ghost" size="icon" aria-label="Close" onClick={props.onClose}>
@@ -113,8 +114,8 @@ export function CutoutDialog(props: {
             <div className="flex flex-wrap gap-2">
               {data.cutouts.map((c) =>
                 c.url ? (
-                  <button key={c.id} type="button" className={cn("flex w-24 flex-col items-center gap-1 rounded-lg border p-1 text-xs hover:bg-muted")} onClick={() => props.onUse(c)} aria-label={`Use the cut-out from ${c.productName}`}>
-                    <span className={cn("flex h-20 w-full items-center justify-center rounded", CHECKER)}>
+                  <button key={c.id} type="button" className="flex w-24 flex-col items-center gap-1 rounded-xl border p-1 text-xs transition-colors hover:border-foreground/40" onClick={() => props.onUse(c)} aria-label={`Use the cut-out from ${c.productName}`}>
+                    <span className={cn("flex h-20 w-full items-center justify-center rounded-lg", CHECKER)}>
                       <Image src={c.url} alt="" width={80} height={80} unoptimized className="max-h-20 w-auto object-contain" />
                     </span>
                     <span className="line-clamp-1">{c.productName}</span>
@@ -130,8 +131,8 @@ export function CutoutDialog(props: {
             <h3 className="text-sm font-medium">Choose a dress</h3>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {data.sources.map((s) => (
-                <button key={s.productId} type="button" className="flex flex-col gap-1 rounded-lg border p-1 text-left text-xs hover:bg-muted" onClick={() => choose(s)}>
-                  {s.photos[0] && <Image src={s.photos[0].url} alt="" width={120} height={120} unoptimized className="aspect-square w-full rounded object-cover" />}
+                <button key={s.productId} type="button" className="flex flex-col gap-1 rounded-xl border p-1 text-left text-xs transition-colors hover:border-foreground/40" onClick={() => choose(s)}>
+                  {s.photos[0] && <Image src={s.photos[0].url} alt="" width={120} height={120} unoptimized className="aspect-square w-full rounded-lg object-cover" />}
                   <span className="line-clamp-2">{s.name}</span>
                 </button>
               ))}
@@ -183,7 +184,7 @@ export function CutoutDialog(props: {
                       type="button"
                       aria-pressed={p.index === photoIndex}
                       aria-label={`Photo ${p.index + 1}`}
-                      className={cn("overflow-hidden rounded border-2", p.index === photoIndex ? "border-foreground" : "border-transparent")}
+                      className={cn("overflow-hidden rounded-lg border-2", p.index === photoIndex ? "border-brand" : "border-transparent")}
                       onClick={() => {
                         setPhotoIndex(p.index);
                         setBox(null);
@@ -223,7 +224,7 @@ export function CutoutDialog(props: {
                         <label key={hex + i} className="flex items-center gap-2">
                           <span className="size-5 shrink-0 rounded-full border" style={{ backgroundColor: hex }} />
                           <select
-                            className="h-7 min-w-0 flex-1 rounded border bg-background px-1"
+                            className={cn(nativeSelectClass, "h-8 flex-1 text-xs")}
                             aria-label={`New colour for colour ${i + 1}`}
                             value={swaps[i] ?? ""}
                             onChange={(e) => setSwaps((s) => result.palette.map((_, j) => (j === i ? e.target.value || null : (s[j] ?? null))))}

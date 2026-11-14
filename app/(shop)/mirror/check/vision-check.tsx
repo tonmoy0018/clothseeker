@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import type { VisionClient } from "@/lib/vision/runtime/client";
 import type { VisionBackend, VisionResult } from "@/lib/vision/runtime/engine";
 import { KEYPOINT_NAMES } from "@/lib/vision/models/movenet";
@@ -180,7 +180,7 @@ export function VisionCheck() {
             Use my camera
           </Button>
         )}
-        <label className="cursor-pointer rounded-md border px-3 py-1.5 text-sm hover:bg-muted">
+        <label className={buttonVariants({ variant: "outline", className: "cursor-pointer" })}>
           Try a photo
           <input
             type="file"
@@ -224,7 +224,7 @@ export function VisionCheck() {
         </dl>
       )}
       <video ref={videoRef} className="hidden" playsInline muted />
-      <canvas ref={canvasRef} className="w-full max-w-2xl rounded-lg border bg-muted" />
+      <canvas ref={canvasRef} className="w-full max-w-2xl rounded-2xl border bg-muted" />
     </div>
   );
 }

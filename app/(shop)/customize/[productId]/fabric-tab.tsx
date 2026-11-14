@@ -133,7 +133,7 @@ export function FabricTab(props: {
             type="button"
             aria-pressed={target === r.id}
             onClick={() => setTarget(r.id)}
-            className={cn("h-8 rounded-full border px-3 text-sm", target === r.id ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+            className={cn("h-8 rounded-full border border-input bg-card px-3 text-sm font-medium transition-colors", target === r.id ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40")}
           >
             {r.label}
           </button>
@@ -142,9 +142,9 @@ export function FabricTab(props: {
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {hasPatterns && (
-          <div className="flex rounded-lg border p-0.5" role="group" aria-label="Show fabrics">
+          <div className="flex rounded-full bg-secondary p-0.5" role="group" aria-label="Show fabrics">
             {(["all", "plain", "patterned"] as const).map((f) => (
-              <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={cn("h-7 rounded-md px-3 capitalize", filter === f ? "bg-muted font-medium" : "text-muted-foreground hover:text-foreground")}>
+              <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={cn("h-7 rounded-full px-3 capitalize", filter === f ? "bg-card font-medium shadow-xs" : "text-muted-foreground hover:text-foreground")}>
                 {f}
               </button>
             ))}
@@ -203,8 +203,8 @@ export function FabricTab(props: {
           })}
           <label
             className={cn(
-              "flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border p-1 text-center text-[0.7rem] hover:border-foreground/40",
-              samePrint?.kind === "image" && "border-foreground ring-1 ring-foreground",
+              "flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-card p-1 text-center text-[0.7rem] hover:border-foreground/40",
+              samePrint?.kind === "image" && "border-primary ring-1 ring-primary",
               props.uploadState && "pointer-events-none opacity-60",
             )}
           >

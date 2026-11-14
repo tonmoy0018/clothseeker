@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DECORATIONS } from "@/lib/catalog/decorations";
@@ -135,7 +135,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
   return (
     <div className="flex flex-col gap-6">
       {/* Sticky save bar */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border bg-background/95 p-3 shadow-sm backdrop-blur">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-2xl border bg-card/95 p-3 shadow-sm backdrop-blur">
         <span className="text-sm">
           Version {version} · {isActive ? <strong>Live</strong> : "Not live"}
           {dirty && <span className="ml-2 text-amber-700 dark:text-amber-400">Unsaved changes</span>}
@@ -646,7 +646,7 @@ function CheckboxList({ options, checked, onChange }: { options: { id: string; l
 function FileButton({ label, onFile, size = "sm" }: { label: string; onFile: (file: File) => Promise<void>; size?: "sm" | "xs" }) {
   const [busy, setBusy] = useState(false);
   return (
-    <label className={cn("inline-flex w-fit cursor-pointer items-center rounded-lg border px-2.5 text-sm hover:bg-muted", size === "xs" ? "h-6 text-xs" : "h-8", busy && "pointer-events-none opacity-60")}>
+    <label className={cn(buttonVariants({ variant: "outline", size }), "w-fit cursor-pointer", busy && "pointer-events-none opacity-60")}>
       {busy ? "Uploading…" : label}
       <input
         type="file"
