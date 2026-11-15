@@ -78,6 +78,14 @@ export const STAND_OFF = 0.05;
 export const ARM_HALF = 0.13;
 /** Over this share of the torso's length below the upper chest, painted skin fades out. */
 const CHEST_FADE = 0.08;
+/**
+ * How far (a share of the shoulder-joint distance) the real neck's colour, column by column, carries
+ * into skin painted below it, so a neckline continues the neck's own light and shadow instead of
+ * showing a flat patch under it.
+ */
+export const NECK_REACH = 0.35;
+/** Half the neck's width, as a share of the shoulder-joint distance: skin there is the neck, not an arm. */
+const NECK_HALF = 0.25;
 
 /**
  * An RGBA overlay (same size as `rgba`; transparent where nothing changes) that turns the person's own
@@ -198,6 +206,9 @@ export function uncoverOwnClothes(
   const armSide = new Float32Array(width * height);
   const strength = new Float32Array(width * height);
   const bodySkin: [number, number, number][] = [];
+  // Per column: the neck's colour (followed down to its lowest skin) and that row; -1 where none is seen.
+  const neck = new Float32Array(width * 3);
+  const neckRow = new Int32Array(width).fill(-1);
   let lumaSum = 0;
   let lumaCount = 0;
   for (let y = y0; y <= y1; y += 1) {
@@ -212,6 +223,12 @@ export function uncoverOwnClothes(
         // The body's own visible skin (neck, arms) gives the paint its colour: a face is often lit
         // brighter than the rest.
         if (bodySkin.length < 6000) bodySkin.push(colour);
+        const lateral = (p.x - joints.x) * across.x + (p.y - joints.y) * across.y;
+        if (depth < armpits && Math.abs(lateral) <= span * NECK_HALF) {
+          const first = neckRow[x] === -1;
+          colour.forEach((v, c) => (neck[x * 3 + c] = first ? v : (neck[x * 3 + c] ?? 0) * 0.6 + v * 0.4));
+          neckRow[x] = y;
+        }
         continue;
       }
       const from = backdropAt[i] ?? -1;
@@ -260,6 +277,34 @@ export function uncoverOwnClothes(
   }
   const meanLuma = lumaCount > 0 ? lumaSum / lumaCount : 1;
   const paint: readonly number[] = bodySkin.length >= 40 ? [0, 1, 2].map((c) => median(bodySkin.map((rgb) => rgb[c] ?? 0))) : skin.rgb;
+  // Each column's neck colour, smoothed across neighbouring columns; columns beside the neck take the
+  // nearest one's, carried less far (`neckOff`: camera pixels to the neck column it came from).
+  const neckColour = new Float32Array(width * 3);
+  const neckAt = new Int32Array(width).fill(-1);
+  const neckOff = new Float32Array(width).fill(Infinity);
+  for (let x = x0; x <= x1; x += 1) {
+    if ((neckRow[x] ?? -1) < 0) continue;
+    const sum = [0, 0, 0];
+    let n = 0;
+    for (let k = Math.max(x0, x - 2); k <= Math.min(x1, x + 2); k += 1) {
+      if ((neckRow[k] ?? -1) < 0) continue;
+      for (let c = 0; c < 3; c += 1) sum[c] = (sum[c] ?? 0) + (neck[k * 3 + c] ?? 0);
+      n += 1;
+    }
+    for (let c = 0; c < 3; c += 1) neckColour[x * 3 + c] = (sum[c] ?? 0) / n;
+    neckAt[x] = x;
+    neckOff[x] = 0;
+  }
+  for (const [from, to, step] of [[x0 + 1, x1, 1], [x1 - 1, x0, -1]] as const) {
+    for (let x = from; step > 0 ? x <= to : x >= to; x += step) {
+      const prev = x - step;
+      const off = (neckOff[prev] ?? Infinity) + scale;
+      if (off >= (neckOff[x] ?? Infinity)) continue;
+      neckOff[x] = off;
+      neckAt[x] = neckAt[prev] ?? -1;
+    }
+  }
+  const reach = span * NECK_REACH;
 
   for (let i = 0; i < width * height; i += 1) {
     if (kind[i] !== 1) continue;
@@ -272,9 +317,15 @@ export function uncoverOwnClothes(
     const round = 1 - 0.25 * sides * sides;
     const weight = bareWeight[i] ?? 1;
     const from = backdropAt[i] ?? -1;
+    // Under the neck: its own colour, blending into the body's over NECK_REACH.
+    const x = i % width;
+    const source = neckAt[x] ?? -1;
+    const below = source < 0 ? -1 : (Math.floor(i / width) - (neckRow[source] ?? 0)) * scale;
+    const near = below < 0 || (armSide[i] ?? 0) > 0 ? 0 : Math.max(0, 1 - (below + (neckOff[x] ?? Infinity)) / reach);
     for (let c = 0; c < 3; c += 1) {
       const wall = from < 0 ? 0 : (rgba[from * 4 + c] ?? 0);
-      out[i * 4 + c] = Math.round((paint[c] ?? 0) * light * round * weight + wall * (1 - weight));
+      const base = (paint[c] ?? 0) * (1 - near) + (neckColour[source * 3 + c] ?? 0) * near;
+      out[i * 4 + c] = Math.round(base * light * round * weight + wall * (1 - weight));
     }
     out[i * 4 + 3] = Math.round(255 * (strength[i] ?? 1));
   }

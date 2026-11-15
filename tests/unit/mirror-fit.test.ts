@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { splitGarment, type Mask, type RgbImage } from "@/lib/garment-photo/segment";
-import { closeMask, fillSpecks, recolourBackdrop, recoverGarment } from "@/lib/vision/mirror/garment-fill";
+import { closeMask, fillSpecks, recolourBackdrop, recoverGarment, withClothes } from "@/lib/vision/mirror/garment-fill";
 import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
 import { bodyAnchors, garmentFit, garmentToBody, MAX_WIDEN, sleeveMesh, withLooseSleeves, type GarmentFit, type SleeveFit } from "@/lib/vision/mirror/mirror";
 
@@ -171,5 +171,21 @@ describe("cleaning up the garment picture", () => {
     recolourBackdrop(picture, garment, 2);
     const p = 29 * 60 + 48;
     expect([picture.data[p * 3], picture.data[p * 3 + 1], picture.data[p * 3 + 2]]).toEqual([30, 40, 90]);
+  });
+
+  it("adds the pale parts the body-parts model sees as clothes, but not a mannequin hand below the hem", () => {
+    // A cream backdrop; a pale pink dress (rows 20–80) with a bite out of its side (a highlight the
+    // colour-based finder lost); a mannequin hand below the hem, also called clothes by the model.
+    const picture = image(100, 100, (x, y) => {
+      if (y >= 20 && y < 80 && x >= 20 && x < 80) return [236, 214, 214];
+      if (y >= 80 && y < 95 && x >= 22 && x < 28) return [232, 216, 214];
+      return [238, 234, 226];
+    });
+    const found = maskOf(100, 100, (x, y) => y >= 20 && y < 80 && x >= 20 && x < 80 && !(y >= 47 && y < 53 && x < 28));
+    const clothes = maskOf(100, 100, (x, y) => (y >= 20 && y < 80 && x >= 20 && x < 80) || (y >= 80 && y < 95 && x >= 22 && x < 28));
+    const filled = withClothes(picture, found, clothes);
+    expect(filled.data[50 * 100 + 22]).toBe(1); // the bite
+    expect(filled.data[90 * 100 + 25]).toBe(0); // the hand
+    expect(filled.data[10 * 100 + 50]).toBe(0); // backdrop
   });
 });

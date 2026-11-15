@@ -188,6 +188,22 @@ export function headInFront(body: BodyAnchors): { chinY: number; centreX: number
 }
 
 /** Measured on the test people (2.6–2.7): the nose point is the tip of the nose, close under the eyes. */
+/**
+ * The part of the frame the body-parts model reads for hair: the person from above the head to the hips,
+ * a little wider than the shoulders (it was made for people filling its picture). Camera pixels, clamped.
+ */
+export function partsRegion(body: BodyAnchors, width: number, height: number): { left: number; top: number; width: number; height: number } {
+  const span = Math.max(1, Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y));
+  const xs = [body.leftShoulder.x, body.rightShoulder.x, body.leftHip.x, body.rightHip.x];
+  const top = Math.min(body.leftShoulder.y, body.rightShoulder.y) - span * 1.3;
+  const bottom = Math.max(body.leftHip.y, body.rightHip.y) + span * 0.2;
+  const left = Math.max(0, Math.floor(Math.min(...xs) - span * 0.7));
+  const right = Math.min(width, Math.ceil(Math.max(...xs) + span * 0.7));
+  const y0 = Math.max(0, Math.floor(top));
+  const y1 = Math.min(height, Math.ceil(bottom));
+  return { left, top: y0, width: Math.max(0, right - left), height: Math.max(0, y1 - y0) };
+}
+
 export const CHIN_PER_EYES = 2.6;
 export const HEAD_HALF = 2.2;
 

@@ -3,6 +3,7 @@ import type * as Ort from "onnxruntime-web";
 import { modelPath, ORT_PATH, VISION_MODELS, type VisionModelId } from "./assets";
 import { fitSquare, type FitBox } from "../models/geometry";
 import { decodeMovenet, MOVENET_SIZE, movenetInput, type Pose } from "../models/movenet";
+import { decodeParts, PARTS_INPUT, PARTS_OUTPUT, PARTS_SIZE, partsInput, type BodyParts } from "../models/parts";
 import { meanBrightness } from "../photo/photo-check";
 import { SELFIE_SIZE, selfieInput } from "../models/segment";
 import { decodeYunet, YUNET_SIZE, yunetInput, type Face } from "../models/yunet";
@@ -13,7 +14,8 @@ import { decodeYunet, YUNET_SIZE, yunetInput, type Face } from "../models/yunet"
 
 export type VisionBackend = "webgpu" | "wasm";
 
-export type VisionRequest = { pose?: boolean; face?: boolean; mask?: boolean };
+/** `parts`: the region of the frame (its pixels) to read hair, skin and clothes in: the model wants the person to fill it. */
+export type VisionRequest = { pose?: boolean; face?: boolean; mask?: boolean; parts?: BodyParts["region"] };
 
 export type VisionResult = {
   width: number;
@@ -24,6 +26,8 @@ export type VisionResult = {
   brightness: number | null;
   /** Person likelihood (SELFIE_SIZE² values, letterbox space) and how it maps to the frame. */
   mask: { alpha: Float32Array; box: FitBox } | null;
+  /** What each pixel of the requested region is (hair, skin, clothes…), or null when not asked or not available. */
+  parts: BodyParts | null;
   /** Milliseconds per model, for the speed check. */
   ms: Partial<Record<VisionModelId, number>>;
 };
@@ -60,6 +64,7 @@ class Letterbox {
 
 export class VisionEngine {
   private readonly letterboxes = { pose: new Letterbox(MOVENET_SIZE), face: new Letterbox(YUNET_SIZE), mask: new Letterbox(SELFIE_SIZE) };
+  private stretch: OffscreenCanvasRenderingContext2D | null = null;
 
   private constructor(
     private readonly ort: OrtModule,
@@ -74,6 +79,7 @@ export class VisionEngine {
     const backend: VisionBackend = gpu ? "webgpu" : "wasm";
     const sessions: Partial<Record<VisionModelId, Ort.InferenceSession>> = {};
     for (const id of models) {
+      if (id === "parts") continue;
       try {
         sessions[id] = await ort.InferenceSession.create(modelPath(VISION_MODELS[id]), {
           executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"],
@@ -86,11 +92,20 @@ export class VisionEngine {
         throw error;
       }
     }
+    // The body-parts model is a help, not a need (the mirror works without it), and the larger download:
+    // if it can't load, the others go on without it rather than all falling back to WebAssembly.
+    if (models.includes("parts")) {
+      try {
+        sessions.parts = await ort.InferenceSession.create(modelPath(VISION_MODELS.parts), { executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"], graphOptimizationLevel: "all" });
+      } catch {
+        // Left out: no parts in the results.
+      }
+    }
     return new VisionEngine(ort, backend, sessions);
   }
 
   async analyse(frame: CanvasImageSource, width: number, height: number, request: VisionRequest): Promise<VisionResult> {
-    const result: VisionResult = { width, height, pose: null, faces: null, brightness: null, mask: null, ms: {} };
+    const result: VisionResult = { width, height, pose: null, faces: null, brightness: null, mask: null, parts: null, ms: {} };
     const timed = async <T>(id: VisionModelId, work: () => Promise<T>): Promise<T> => {
       const start = performance.now();
       const value = await work();
@@ -123,6 +138,20 @@ export class VisionEngine {
         const { rgba, box } = this.letterboxes.mask.read(frame, width, height);
         const out = await mask.run({ pixel_values: new this.ort.Tensor("float32", selfieInput(rgba), [1, 3, SELFIE_SIZE, SELFIE_SIZE]) });
         return { alpha: await floats(out.alphas), box };
+      });
+    }
+    const parts = this.sessions.parts;
+    const region = request.parts;
+    if (region && parts && region.width >= 8 && region.height >= 8) {
+      result.parts = await timed("parts", async () => {
+        // The region stretched to the model's square (it was made that way, not letterboxed).
+        this.stretch ??= new OffscreenCanvas(PARTS_SIZE, PARTS_SIZE).getContext("2d", { willReadFrequently: true });
+        const context = this.stretch;
+        if (!context) throw new Error("2D canvas unavailable");
+        context.drawImage(frame, region.left, region.top, region.width, region.height, 0, 0, PARTS_SIZE, PARTS_SIZE);
+        const rgba = context.getImageData(0, 0, PARTS_SIZE, PARTS_SIZE).data;
+        const out = await parts.run({ [PARTS_INPUT]: new this.ort.Tensor("float32", partsInput(rgba, 4), [1, PARTS_SIZE, PARTS_SIZE, 3]) });
+        return { classes: decodeParts(await floats(out[PARTS_OUTPUT])), region };
       });
     }
     return result;

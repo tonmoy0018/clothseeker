@@ -64,6 +64,68 @@ export function recoverGarment(image: RgbImage, garment: Mask, untilY: number): 
   return sealed;
 }
 
+/** How far (CIE ΔE) a pixel the body-parts model calls clothes may be from the garment's own colour. */
+const CLOTHES_NEAR = 22;
+/** Bites into the garment's outline up to about twice this share of the picture's width are filled. */
+const NOTCH = 0.04;
+
+/**
+ * The garment mask with what the body-parts model (lib/vision/models/parts.ts) sees as clothes on the
+ * mannequin added: the parts of a pale garment the colour-based finder loses where it looks like the
+ * backdrop (the Smocked Cotton Dress's puff sleeves and highlights). Only pixels joined to the garment,
+ * from its top down, close to its own colour, and within its outline once notches up to NOTCH of the
+ * picture's width are closed are added: what's lost are bites into the garment, while a mannequin's hand
+ * below a pale cuff or its neck (the model calls them clothes too) stick out of it. `clothes`: the
+ * model's clothes pixels, at the picture's size.
+ */
+export function withClothes(image: RgbImage, garment: Mask, clothes: Mask): Mask {
+  const { width, height } = garment;
+  let top = height;
+  let left = width;
+  let right = -1;
+  const samples: [number, number, number][] = [];
+  for (let p = 0; p < width * height; p += 1) {
+    if (!garment.data[p]) continue;
+    const x = p % width;
+    top = Math.min(top, Math.floor(p / width));
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    if (p % 7 === 0) samples.push(labAt(image, p));
+  }
+  if (right < 0 || samples.length === 0) return garment;
+  const median = (k: 0 | 1 | 2) => [...samples].sort((a, b) => a[k] - b[k])[Math.floor(samples.length / 2)]?.[k] ?? 0;
+  const own = [median(0), median(1), median(2)] as const;
+  const margin = Math.round((right - left) * 0.1);
+  const outline = closeMask(garment, Math.max(1, Math.round(width * NOTCH)));
+  const inside = (x: number, y: number) => y >= top && x >= left - margin && x <= right + margin && !!outline.data[y * width + x];
+  const near = (p: number) => {
+    const lab = labAt(image, p);
+    return Math.hypot(lab[0] - own[0], lab[1] - own[1], lab[2] - own[2]) <= CLOTHES_NEAR;
+  };
+  const out = { data: Uint8Array.from(garment.data), width, height };
+  const stack: number[] = [];
+  for (let p = 0; p < width * height; p += 1) if (out.data[p]) stack.push(p);
+  while (stack.length > 0) {
+    const p = stack.pop() ?? 0;
+    const x = p % width;
+    const y = Math.floor(p / width);
+    for (const [nx, ny] of [
+      [x - 1, y],
+      [x + 1, y],
+      [x, y - 1],
+      [x, y + 1],
+    ] as const) {
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height || !inside(nx, ny)) continue;
+      const q = ny * width + nx;
+      if (out.data[q] || !clothes.data[q] || !near(q)) continue;
+      out.data[q] = 1;
+      stack.push(q);
+    }
+  }
+  // The model's coarse grid leaves small notches along the added edges.
+  return fillSpecks(closeMask(out, Math.max(1, Math.round(width / 200))), Math.round(width * height * 0.0005));
+}
+
 /** The backdrop's colour: the median of the picture's border pixels, in Lab. */
 function backdropLab(image: RgbImage): [number, number, number] {
   const { width, height } = image;

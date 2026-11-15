@@ -227,6 +227,23 @@ describe("hiding the person's own clothes the garment doesn't cover", () => {
     expect(pixel(out, 100, 150)[3]).toBe(0);
   });
 
+  it("continues the neck's own light and shadow into the skin painted below it", () => {
+    const face = body.face;
+    if (!face) throw new Error("no face");
+    const skin = skinModel(rgba, width, height, 1, face);
+    if (!skin) throw new Error("no skin");
+    // The neck's left side (the picture's) in shadow.
+    const shaded = Uint8ClampedArray.from(rgba);
+    for (let y = 50; y < 62; y += 1) for (let x = 92; x < 100; x += 1) shaded.set([170, 120, 95, 255], (y * width + x) * 4);
+    const out = uncoverOwnClothes(shaded, width, height, 1, body, person, skin);
+    const under = (x: number) => pixel(out, x, 64);
+    expect(under(95)[3]).toBeGreaterThan(0);
+    expect(under(105)[3]).toBeGreaterThan(0);
+    // Under the shadowed side, darker; under the lit side, the lit colour.
+    expect(under(95)[0] ?? 0).toBeLessThan((under(105)[0] ?? 0) - 15);
+    expect(isSkin(skin, ...(under(95).slice(0, 3) as [number, number, number]))).toBe(true);
+  });
+
   it("leaves a forearm's own shaded skin alone", () => {
     const face = body.face;
     if (!face) throw new Error("no face");

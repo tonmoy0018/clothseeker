@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { hairFromParts, handsFromParts } from "@/lib/tryon/parts";
 import type { Keypoint, Pose } from "@/lib/vision/models/movenet";
-import { decodeParts, PART, partAt, PARTS_SIZE, partsInput, type BodyParts, type Part } from "@/lib/vision/models/parts";
+import { decodeParts, PART, partAt, partMask, PARTS_SIZE, partsInput, type BodyParts, type Part } from "@/lib/vision/models/parts";
 
 // The body-parts model's answer (what each pixel of a person is) and what the try-on keeps from it:
 // hair and face, and the hands that are in sight.
@@ -95,5 +95,18 @@ describe("what the try-on keeps, from the body parts", () => {
     expect(handsFromParts(painted([TOP, trousers, leftHand]), POSE)).toEqual({ left: true, right: false });
     // A wrist the body points didn't find counts as visible, as before.
     expect(handsFromParts(painted([TOP, trousers]), { ...POSE, rightWrist: at(220, 430, 0.1), leftWrist: at(380, 430, 0.1) })).toEqual({ left: true, right: true });
+  });
+});
+
+describe("one part as a mask of the picture", () => {
+  it("stretches the model's classes over their region, background outside it", () => {
+    // Clothes on the right half of the model's square, read over a 40×20 region at (10, 10).
+    const classes = new Uint8Array(PARTS_SIZE * PARTS_SIZE);
+    for (let y = 0; y < PARTS_SIZE; y += 1) for (let x = PARTS_SIZE / 2; x < PARTS_SIZE; x += 1) classes[y * PARTS_SIZE + x] = PART.clothes;
+    const mask = partMask({ classes, region: { left: 10, top: 10, width: 40, height: 20 } }, 60, 40, PART.clothes);
+    expect(mask.data[20 * 60 + 40]).toBe(1);
+    expect(mask.data[20 * 60 + 20]).toBe(0);
+    expect(mask.data[35 * 60 + 40]).toBe(0);
+    expect(mask.data[5 * 60 + 40]).toBe(0);
   });
 });

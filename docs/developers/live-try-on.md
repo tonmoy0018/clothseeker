@@ -60,12 +60,13 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
 
 "Live mirror" appears on product pages that have a try-on picture and on the design screen (tool rail). It opens a full-screen view (`app/(shop)/_try-on/live-mirror.tsx`, rendered into `document.body`).
 
-- **The camera starts only after "Start camera".** The notice says the camera stays on the device and nothing is recorded or uploaded. Frames go to the vision worker in the same tab: the body runs on every frame, the outline on every 2nd.
+- **The camera starts only after "Start camera".** The notice says the camera stays on the device and nothing is recorded or uploaded. Frames go to the vision worker in the same tab: the body runs on every frame, the outline on every 2nd, the body-parts model (hair) on every 6th.
 - **The garment picture** (`lib/vision/mirror/garment-source.ts`), prepared in the browser:
   - **Shop item:** its try-on picture (the first catalogue photo), cut out with the same code as the server (`findGarment`/`splitGarment` in `lib/garment-photo/segment.ts`). Storage answers with `Access-Control-Allow-Origin: *`, so the browser may read the pixels.
   - **Design:** the design screen's recoloured front picture with its printed items, cut out by the union of the picture's region masks.
   - **Cleaned up for wearing** (`lib/vision/mirror/garment-fill.ts`, shop items):
     - `recoverGarment` adds the coloured parts the garment finder misses because they aren't the main colour: a pale placket, an embroidered collar band, embroidery, a print's motifs on a skirt's edge (down to the hem; otherwise they'd leave bites in it). It grows only into clearly coloured pixels, so a mannequin's neck, shadows and the backdrop stay out.
+    - **What the body-parts model sees as clothes** (`withClothes`, since 2026-11-15, shop items and designs): the same model the mirror uses for hair (MediaPipe selfie multiclass, `lib/vision/models/parts.ts`) reads the garment picture once, and its clothes pixels are added where they join the garment, are close to its own colour (ΔE ≤ 22) and lie inside its outline once bites up to 4% of the picture wide are closed. That recovers pale garments' highlights that match the backdrop (the Smocked Cotton Dress's puff sleeves and bodice, +2.5%), while a mannequin's hand below a pale cuff, which the model also calls clothes, sticks out of the outline and stays out (checked on all 21 catalogue items). Without the model (it failed to load) the cut-out is as before.
     - Notches about 1% of the picture wide are sealed, and pixels at the edge with the backdrop's colour take the fabric's colour (`recolourBackdrop`).
     - The measurements (shoulders, waist, sleeves) still come from the plain cut-out, so a collar is never taken for the shoulders.
   - **Pieces:** the body and each sleeve. Only edges against the backdrop are softened, after dropping their outermost pixel ring (a pale fringe). Joins between pieces stay hard, and sleeves overlap the body by 2 px, so no background shows through.
@@ -86,6 +87,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - **Drawing:** an 8×24 mesh of affine triangles (`drawMesh` in `lib/vision/mirror/draw.ts`). The columns meet at the centre line, because each side is fitted on its own. Each triangle is grown by 1.3 px, so their edges overlap and no hairlines show. Facing away hides the garment with a hint.
 - **The person's own clothes where the garment doesn't cover them** (`lib/vision/mirror/uncover.ts`, `FrameCleaner` in `draw.ts`). For example, a T-shirt's sleeves around a sleeveless dress, or its neckline inside a low one. Before the garment is drawn, a smaller copy of the frame is cleaned (the shoulders about 60 px apart, at most 480 px wide; about 5 ms):
   - **Skin colour** is read around the nose (`skinModel`), and settles over frames. The paint itself takes the colour of the person's visible neck and arm skin, which is usually darker than a lit face.
+  - **Under the neck** (since 2026-11-15) the paint continues the neck's own colour column by column (its lowest skin, smoothed over 5 columns; columns beside it take the nearest), blending into the body's colour over 35% of the shoulder distance (`NECK_REACH`). A square or V neckline used to show a flat patch under a lit neck.
   - **On the shoulders, upper chest and arms**, clothing becomes skin:
     - the shoulders slope from the neck;
     - arms are 26% of the shoulder distance wide (`ARM_HALF`);
@@ -106,6 +108,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - It's compressed so it never reaches past the wrist.
   - Across the arm it's never narrower than 16% of the shoulder-joint distance either side (`MIN_SLEEVE_HALF`), a little more than the bare arm painted where the person's own sleeve was; a slim catalogue sleeve left strips of painted arm beside it.
 - **The head in front** (`headInFront`, since 2026-11-15): everything of the person above the chin is drawn back over the garment, so a stand collar never rides over the chin. The chin is 2.6 times the eyes-to-nose distance below the nose point (measured on the test people: 2.6–2.7), never below the shoulders, and the head is 2.2 eye-distances wide either side of the nose (with hair).
+- **Hair in front** (`PersonLayer.setParts`, since 2026-11-15): on every 6th frame the body-parts model reads the person from above the head to the hips (`partsRegion`, where they were in the frame before), and its hair pixels are drawn back over the garment, moved along with the body in between. So long hair falls over the shoulders and the garment instead of behind it.
 - **Arms in front:** the parts of the arms the garment doesn't cover are drawn back from the cleaned camera frame over the garment, masked by the person outline (`exposedArm`, `PersonLayer.drawInFront`). That's below a short sleeve, the hand below a long one, or almost the whole arm for a sleeveless garment. The stroke is about an arm wide (`ARM_WIDTH`, 21% of the shoulder distance); wider would redraw the person's own clothes beside the arm.
 - **Looks worn, not pasted** (`GarmentCompositor`, `lib/vision/mirror/relight.ts`):
   - The garment pieces are drawn into their own layer.
@@ -120,7 +123,8 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
   - **Use for the realistic try-on** passes the plain camera frame, cropped to a 3:4 portrait around the person, to the try-on panel. There it's offered as "Use my photo from the live mirror", only after consent, and goes through the usual on-device check and upload.
 - **Tests:**
   - `tests/unit/mirror.test.ts` and `mirror-fit.test.ts`: the fitting.
-  - `tests/unit/mirror-drape.test.ts`: the outline fit, turning, legs, the swing, gravity, and hiding the person's own clothes.
+  - `tests/unit/mirror-drape.test.ts`: the outline fit, turning, legs, the swing, gravity, and hiding the person's own clothes (with the neck's colour under it).
+  - `tests/unit/tryon-parts.test.ts`: the body-parts model's input, decoding and masks.
   - `tests/e2e/live-mirror.spec.ts` (`@supabase`): Chromium's fake camera plays `tests/fixtures/mirror-woman.mjpeg` (an AI-generated person). It checks that the body is found, a photo is taken and handed to the try-on, nothing goes to another site, and "Make it real" works only after consent.
 
 ### Make it real
@@ -139,12 +143,12 @@ It's a delay of about 25–60 s with the free IDM-VTON Spaces (instant with the 
 - **A 2D fit, not a photo:** the garment is fitted onto the body, moved and relit, but it isn't regenerated.
   - Uncovered clothes become painted skin or backdrop: convincing at a glance, flat up close. Clothes the same colour as the skin or the backdrop, or black clothes next to black hair, stay as they are. A busy backdrop shows the row-copied fill.
   - Below the upper chest, the customer's own clothes still show where a garment doesn't cover the torso (deliberately: no painted bare torso).
-  - Hair falling over the shoulders isn't drawn in front (only the head above the chin is).
+  - Hair is read on every 6th frame, so it trails a fast head turn by a moment.
   - Garments photographed from the side (the Off-Shoulder Evening Dress's catalogue photo is a three-quarter view) can't sit square on a person facing the camera.
   - Some catalogue photos leave a small gap at one shoulder that shows close to the camera (the Linen Casual Shirt).
   - Strongly sloped shoulders can leave a slight corner where the shoulder meets the sleeve.
   - The realistic photo is "Make it real" (the AI try-on). Photo-real live video would need a generative real-time model (e.g. Decart's Lucy VTON, paid per second).
 - **Checked framings (2026-11-01):** close-up (head to chest, hips out of view) and mid-shot (head to thighs) of an AI-generated man in the Linen Casual Shirt, Oxford Shirt and Embroidered Eid Panjabi, and the full-length test woman (in a T-shirt and leggings) in eight dresses, standing and stepping side to side.
-- **Cut-out quality:** pale or brightly lit garments can lose pieces in the cut-out, and the mirror shows those gaps. The Smocked Cotton Dress is the clear case: its mint is almost colourless (Lab chroma 7.6, lightness 84, against an 86 grey backdrop), and its missed highlights match the backdrop exactly, so no colour rule can recover them. It needs a learned cut-out, or a catalogue photo on a darker backdrop.
+- **Cut-out quality:** pale or brightly lit garments can lose pieces in the colour-based cut-out. The Smocked Cotton Dress is the clear case: its mint is almost colourless (Lab chroma 7.6, lightness 84, against an 86 grey backdrop), and its missed highlights match the backdrop exactly, so no colour rule can recover them. The body-parts model now fills them (`withClothes`); a garment it doesn't see as clothes (a flat-lay photo with no mannequin) still needs a catalogue photo on a darker backdrop.
 - **The camera needs a secure page:** `localhost` works; a phone on the local network needs HTTPS.
 - **Distance:** one person, about 1–4 m from the camera, facing it.

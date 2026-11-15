@@ -56,7 +56,7 @@ export function TryOnButton({
       {mirror && mirrorImageUrl && (
         <LiveMirror
           noun={noun}
-          loadGarment={async () => (await import("@/lib/vision/mirror/garment-source")).garmentFromPhoto(mirrorImageUrl)}
+          loadGarment={async (readParts) => (await import("@/lib/vision/mirror/garment-source")).garmentFromPhoto(mirrorImageUrl, readParts)}
           onClose={() => setMirror(false)}
           realistic={{ source: { kind: "product", productId }, signedIn, onSignIn: () => router.push(`/login?next=${encodeURIComponent(`/products/${slug}`)}`) }}
           onUsePhoto={(photo) => {

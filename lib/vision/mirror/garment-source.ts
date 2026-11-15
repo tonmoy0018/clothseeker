@@ -1,6 +1,8 @@
 import { findGarment, splitGarment, type GarmentParts, type Mask } from "@/lib/garment-photo/segment";
 
-import { recoverGarment } from "./garment-fill";
+import { PART, partMask, type BodyParts } from "../models/parts";
+
+import { recoverGarment, withClothes } from "./garment-fill";
 import { garmentFit, inSleeve, maskBounds, seamSleeves, sleeveFits, withLooseSleeves, type GarmentFit, type SleeveFit } from "./mirror";
 import { featherAlpha } from "./relight";
 
@@ -14,6 +16,18 @@ import { featherAlpha } from "./relight";
  * follow the arms. All pictures share the same pixel coordinates (`fit`).
  */
 export type MirrorGarment = { body: HTMLCanvasElement; sleeves: { fit: SleeveFit; image: HTMLCanvasElement }[]; fit: GarmentFit };
+
+/**
+ * Reads what's what in a picture with the body-parts model (hair, skin, clothes; the live mirror's vision
+ * worker), or null when that model isn't available.
+ */
+export type PartsReader = (picture: HTMLCanvasElement) => Promise<BodyParts | null>;
+
+/** The garment found by colour, with what the body-parts model sees as clothes on the mannequin added (garment-fill.ts). */
+async function withModelClothes(picture: HTMLCanvasElement, rgb: { data: Uint8Array; width: number; height: number }, mask: Mask, readParts?: PartsReader): Promise<Mask> {
+  const parts = readParts ? await readParts(picture).catch(() => null) : null;
+  return parts ? withClothes(rgb, mask, partMask(parts, rgb.width, rgb.height, PART.clothes)) : mask;
+}
 
 /** Catalogue photos are cut out at this width (the server works at 400–800 px). */
 const PHOTO_WIDTH = 600;
@@ -80,8 +94,12 @@ function prepare(picture: HTMLCanvasElement, parts: GarmentParts): MirrorGarment
   };
 }
 
-/** A shop item's catalogue photo (signed URL): finds the garment and cuts it out. Throws if none is found. */
-export async function garmentFromPhoto(url: string): Promise<MirrorGarment> {
+/**
+ * A shop item's catalogue photo (signed URL): finds the garment and cuts it out. Throws if none is found.
+ * With `readParts`, what the body-parts model sees as clothes fills what the colour-based finder misses
+ * on a pale garment.
+ */
+export async function garmentFromPhoto(url: string, readParts?: PartsReader): Promise<MirrorGarment> {
   const image = await loadImage(url);
   const width = PHOTO_WIDTH;
   const height = Math.max(1, Math.round((image.naturalHeight * width) / Math.max(1, image.naturalWidth)));
@@ -97,7 +115,7 @@ export async function garmentFromPhoto(url: string): Promise<MirrorGarment> {
   // The garment finder keeps only the garment's main colour; a pale placket or an embroidered collar is
   // added back, or the person's own clothes would show through them.
   const pixels = { data: rgb, width, height };
-  const found = findGarment(pixels);
+  const found = await withModelClothes(canvas, pixels, findGarment(pixels), readParts);
   const parts = splitGarment(found);
   // Down to the hem: plackets and embroidery run down the body, and a print's motifs on a skirt's edge
   // would otherwise leave bites in the hem. Only the pixels drawn change: the shoulders, waist and
@@ -114,7 +132,7 @@ export async function garmentFromPhoto(url: string): Promise<MirrorGarment> {
 }
 
 /** A design's recoloured picture (with its printed items) and the URLs of that picture's region masks. */
-export async function garmentFromDesign(picture: HTMLCanvasElement, maskUrls: readonly string[]): Promise<MirrorGarment> {
+export async function garmentFromDesign(picture: HTMLCanvasElement, maskUrls: readonly string[], readParts?: PartsReader): Promise<MirrorGarment> {
   const { width, height } = picture;
   const [, maskContext] = canvasOf(width, height);
   // Masks are white on opaque black: "lighten" keeps the union instead of each covering the last.
@@ -123,5 +141,11 @@ export async function garmentFromDesign(picture: HTMLCanvasElement, maskUrls: re
   const maskPixels = maskContext.getImageData(0, 0, width, height).data;
   const mask: Mask = { data: new Uint8Array(width * height), width, height };
   for (let p = 0; p < width * height; p += 1) mask.data[p] = (maskPixels[p * 4] ?? 0) >= 128 ? 1 : 0;
-  return prepare(picture, splitGarment(mask));
+  // The template's masks were cut by colour too: the body-parts model fills what they miss of a pale garment.
+  const pictureContext = picture.getContext("2d", { willReadFrequently: true });
+  if (!pictureContext || !readParts) return prepare(picture, splitGarment(mask));
+  const rgba = pictureContext.getImageData(0, 0, width, height).data;
+  const rgb = new Uint8Array(width * height * 3);
+  for (let p = 0; p < width * height; p += 1) for (let k = 0; k < 3; k += 1) rgb[p * 3 + k] = rgba[p * 4 + k] ?? 0;
+  return prepare(picture, splitGarment(await withModelClothes(picture, { data: rgb, width, height }, mask, readParts)));
 }

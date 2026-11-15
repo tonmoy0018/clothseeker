@@ -9,6 +9,7 @@ import {
   garmentMesh,
   garmentToBody,
   headInFront,
+  partsRegion,
   seamSleeves,
   maskBounds,
   MIN_SLEEVE_HALF,
@@ -243,6 +244,15 @@ describe("the head stays in front of the garment", () => {
     const bowed = headInFront(bodyAnchors(pose({ leftEye: at(510, 200), rightEye: at(490, 200), nose: at(500, 240) })) ?? fail());
     expect(bowed?.chinY).toBeLessThan(250);
     expect(headInFront(bodyAnchors(pose({ nose: at(500, 150, 0.1) })) ?? fail())).toBeNull();
+  });
+});
+
+describe("where hair is read", () => {
+  it("covers the person from above the head to the hips, a little wider than the shoulders, inside the frame", () => {
+    const body = bodyAnchors(pose()) ?? fail();
+    // Shoulders 120 apart: 1.3 of that above them, 0.2 below the hips, 0.7 either side.
+    expect(partsRegion(body, 1000, 800)).toEqual({ left: 356, top: 94, width: 288, height: 380 });
+    expect(partsRegion(body, 600, 400)).toEqual({ left: 356, top: 94, width: 244, height: 306 });
   });
 });
 

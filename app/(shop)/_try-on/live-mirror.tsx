@@ -9,9 +9,12 @@ import { Button } from "@/components/ui/button";
 import { downscalePhoto } from "@/lib/media/client-resize";
 import { TRYON_CONSENT_POINTS } from "@/lib/tryon/rules";
 import type { VisionClient } from "@/lib/vision/runtime/client";
+import type { VisionResult } from "@/lib/vision/runtime/engine";
 import type { PersonLayer } from "@/lib/vision/mirror/draw";
-import type { MirrorGarment } from "@/lib/vision/mirror/garment-source";
+import type { BodyAnchors } from "@/lib/vision/mirror/mirror";
+import type { MirrorGarment, PartsReader } from "@/lib/vision/mirror/garment-source";
 import type { Pose } from "@/lib/vision/models/movenet";
+import type { BodyParts } from "@/lib/vision/models/parts";
 import type { PersonMask } from "@/lib/vision/models/segment";
 
 import { getTryOnStatusAction, startTryOnAction, uploadTryOnPhotoAction } from "./actions";
@@ -24,6 +27,8 @@ import type { TryOnSource } from "./try-on-panel";
 
 /** The person outline runs on every 2nd frame; the body on every frame. */
 const MASK_EVERY = 2;
+/** The body-parts model (hair in front of the garment) runs on every PARTS_EVERY-th frame: it's the slowest. */
+const PARTS_EVERY = 6;
 
 type Phase = { kind: "intro" } | { kind: "starting" } | { kind: "running" } | { kind: "error"; message: string };
 type Capture = { mirroredUrl: string; plain: Blob; width: number; height: number };
@@ -47,8 +52,11 @@ export function LiveMirror({
   onUsePhoto,
   realistic,
 }: {
-  /** Prepares the garment picture (cut out and measured); called when the camera starts. */
-  loadGarment: () => Promise<MirrorGarment>;
+  /**
+   * Prepares the garment picture (cut out and measured); called when the camera starts, with a reader for
+   * the body-parts model (it fills what the colour-based cut-out misses of a pale garment).
+   */
+  loadGarment: (readParts: PartsReader) => Promise<MirrorGarment>;
   noun: string;
   onClose: () => void;
   /** Hands the plain camera frame (without the garment) to the realistic try-on. */
@@ -101,11 +109,16 @@ export function LiveMirror({
     }
     streamRef.current = stream;
     const [{ VisionClient }, { PersonLayer: Layer }, mirror] = await Promise.all([import("@/lib/vision/runtime/client"), import("@/lib/vision/mirror/draw"), import("@/lib/vision/mirror/mirror")]);
-    const vision = new VisionClient(["pose", "mask"]);
+    const vision = new VisionClient(["pose", "mask", "parts"]);
     visionRef.current = vision;
+    const readParts: PartsReader = async (picture: HTMLCanvasElement) => {
+      const bitmap = await createImageBitmap(picture);
+      return (await vision.analyse(bitmap, { parts: { left: 0, top: 0, width: picture.width, height: picture.height } })).parts;
+    };
     let garment: MirrorGarment;
     try {
-      [garment] = await Promise.all([loadGarment(), vision.ready]);
+      await vision.ready;
+      garment = await loadGarment(readParts);
     } catch {
       stream.getTracks().forEach((t) => t.stop());
       setPhase({ kind: "error", message: `The live mirror couldn't start for this ${noun} on this device.` });
@@ -132,6 +145,10 @@ export function LiveMirror({
     const sway = new ClothSway();
     const widthSmoother = new WidthSmoother();
     let mask: PersonMask | null = null;
+    /** Where the body was (unsmoothed) when hair was last read, and the latest body. */
+    let partsCentre: { x: number; y: number } | null = null;
+    let lastCentre: { x: number; y: number } | null = null;
+    let lastBody: BodyAnchors | null = null;
     /** Where the body was in the frame the person mask was made from. */
     let maskCentre: { x: number; y: number } | null = null;
     let tick = 0;
@@ -148,7 +165,9 @@ export function LiveMirror({
       const height = video.videoHeight;
       const bitmap = await createImageBitmap(video);
       const frame = await createImageBitmap(bitmap);
-      const result = await vision.analyse(bitmap, { pose: true, mask: tick % MASK_EVERY === 0 }).catch(() => null);
+      // Hair is read around where the person was last seen (the region needs the pose from before).
+      const partsAt: BodyParts["region"] | undefined = tick % PARTS_EVERY === 1 && lastBody ? mirror.partsRegion(lastBody, bitmap.width, bitmap.height) : undefined;
+      const result: VisionResult | null = await vision.analyse(bitmap, { pose: true, mask: tick % MASK_EVERY === 0, parts: partsAt }).catch(() => null);
       tick += 1;
       if (!result) {
         frame.close();
@@ -159,12 +178,16 @@ export function LiveMirror({
         mask = result.mask;
         maskCentre = null;
       }
+      if (partsAt) {
+        layer.setParts(result.parts);
+        partsCentre = lastCentre;
+      }
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
       context.setTransform(1, 0, 0, 1, 0, 0);
       context.drawImage(frame, 0, 0, width, height);
       const pose: Pose | null = result.pose ? smoother.next(result.pose, clock()) : null;
-      const body = pose ? mirror.bodyAnchors(pose) : null;
+      const body: BodyAnchors | null = pose ? mirror.bodyAnchors(pose) : null;
       centreRef.current = body ? (body.leftShoulder.x + body.rightShoulder.x + body.leftHip.x + body.rightHip.x) / 4 : null;
       if (pose && body) {
         const span = Math.hypot(body.leftShoulder.x - body.rightShoulder.x, body.leftShoulder.y - body.rightShoulder.y);
@@ -172,6 +195,8 @@ export function LiveMirror({
         const raw = result.pose ?? pose;
         const centre = { x: (raw.leftShoulder.x + raw.rightShoulder.x + raw.leftHip.x + raw.rightHip.x) / 4, y: (raw.leftShoulder.y + raw.rightShoulder.y + raw.leftHip.y + raw.rightHip.y) / 4 };
         maskCentre ??= centre;
+        lastCentre = centre;
+        lastBody = body;
         // The outline model runs on every other frame: in between, its mask is moved along with the body.
         const seenMask = mask;
         const shift = { x: centre.x - maskCentre.x, y: centre.y - maskCentre.y };
@@ -195,7 +220,8 @@ export function LiveMirror({
         const arms = (["left", "right"] as const).map((side) => mirror.exposedArm(garment.fit, body, side, sleeveOn(side)));
         // About an arm's width: wider would redraw the person's own clothes beside the arm. The head too,
         // so a collar never covers the chin.
-        layer.drawInFront(context, clean, width, height, arms, span * mirror.ARM_WIDTH, shift, mirror.headInFront(body));
+        const hairShift = partsCentre ? { x: centre.x - partsCentre.x, y: centre.y - partsCentre.y } : { x: 0, y: 0 };
+        layer.drawInFront(context, clean, width, height, arms, span * mirror.ARM_WIDTH, shift, mirror.headInFront(body), hairShift);
       } else {
         sway.reset();
         widthSmoother.reset();

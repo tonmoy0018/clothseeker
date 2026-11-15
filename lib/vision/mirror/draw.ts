@@ -1,6 +1,7 @@
 import { GapCloser } from "./gaps";
 import { triangleTransform, type BodyAnchors, type Point, type Triangle } from "./mirror";
 import { shadeFromFrame } from "./relight";
+import { PART, PARTS_SIZE, type BodyParts } from "../models/parts";
 import { SELFIE_SIZE, type PersonMask } from "../models/segment";
 import { skinModel, uncoverOwnClothes, type SkinModel } from "./uncover";
 
@@ -49,12 +50,38 @@ export class PersonLayer {
   private readonly maskSquare = document.createElement("canvas");
   private readonly person = document.createElement("canvas");
   private readonly arms = document.createElement("canvas");
+  private readonly hairSquare = document.createElement("canvas");
   private maskSet = false;
   private box: PersonMask["box"] | null = null;
+  private hairRegion: BodyParts["region"] | null = null;
 
   constructor() {
     this.maskSquare.width = SELFIE_SIZE;
     this.maskSquare.height = SELFIE_SIZE;
+  }
+
+  /** Remembers where the person's hair is (the body-parts model runs every few frames), or forgets it. */
+  setParts(parts: BodyParts | null) {
+    if (!parts) {
+      this.hairRegion = null;
+      return;
+    }
+    this.hairSquare.width = PARTS_SIZE;
+    this.hairSquare.height = PARTS_SIZE;
+    const context = this.hairSquare.getContext("2d");
+    if (!context) return;
+    const pixels = context.createImageData(PARTS_SIZE, PARTS_SIZE);
+    let any = false;
+    parts.classes.forEach((part, i) => {
+      if (part !== PART.hair) return;
+      pixels.data[i * 4] = 255;
+      pixels.data[i * 4 + 1] = 255;
+      pixels.data[i * 4 + 2] = 255;
+      pixels.data[i * 4 + 3] = 255;
+      any = true;
+    });
+    context.putImageData(pixels, 0, 0);
+    this.hairRegion = any ? parts.region : null;
   }
 
   /** Remembers the newest person mask (the outline model runs on every other frame). */
@@ -71,9 +98,10 @@ export class PersonLayer {
   }
 
   /**
-   * Draws the person's arms from `frame` along `paths` (camera pixels), and their head above the chin
-   * (`chinY`, null when the face isn't seen), over what's on `context`, masked by the person outline
-   * (moved by `shift` when it's from an earlier frame): arms in front of the body, and the face and hair,
+   * Draws the person's arms from `frame` along `paths` (camera pixels), their head above the chin
+   * (`chinY`, null when the face isn't seen) and their hair (the body-parts model's, moved by `hairShift`
+   * since it was read), over what's on `context`, masked by the person outline (moved by `shift` when
+   * it's from an earlier frame): arms in front of the body, the face and hair falling over the shoulders
    * show in front of the garment, so a collar or neckline never rides over the chin.
    */
   drawInFront(
@@ -85,8 +113,9 @@ export class PersonLayer {
     thickness: number,
     shift: Point = { x: 0, y: 0 },
     head: { chinY: number; centreX: number; halfWidth: number; fade: number } | null = null,
+    hairShift: Point = { x: 0, y: 0 },
   ) {
-    if (!this.maskSet || !this.box || (paths.every((p) => p.length < 2) && !head)) return;
+    if (!this.maskSet || !this.box || (paths.every((p) => p.length < 2) && !head && !this.hairRegion)) return;
     for (const canvas of [this.person, this.arms]) {
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
@@ -120,6 +149,11 @@ export class PersonLayer {
       gradient.addColorStop(1, "rgba(255,255,255,0)");
       arms.fillStyle = gradient;
       arms.fillRect(head.centreX - head.halfWidth, 0, head.halfWidth * 2, head.chinY + head.fade);
+    }
+    const hair = this.hairRegion;
+    if (hair) {
+      arms.imageSmoothingEnabled = true;
+      arms.drawImage(this.hairSquare, hair.left + hairShift.x, hair.top + hairShift.y, hair.width, hair.height);
     }
     arms.globalCompositeOperation = "source-in";
     arms.drawImage(this.person, 0, 0);

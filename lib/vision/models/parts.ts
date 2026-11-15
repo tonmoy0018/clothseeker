@@ -36,6 +36,13 @@ export function decodeParts(scores: ArrayLike<number>): Uint8Array {
 /** The classes of a region of the source picture: `classes` is PARTS_SIZE² values, stretched over `region`. */
 export type BodyParts = { classes: Uint8Array; region: { left: number; top: number; width: number; height: number } };
 
+/** A width×height mask (1 = that part) of the source picture, for one part. */
+export function partMask(parts: BodyParts, width: number, height: number, part: Part): { data: Uint8Array; width: number; height: number } {
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) data[y * width + x] = partAt(parts, x + 0.5, y + 0.5) === part ? 1 : 0;
+  return { data, width, height };
+}
+
 /** What the source pixel (x, y) is; background outside the region. */
 export function partAt(parts: BodyParts, x: number, y: number): Part {
   const { left, top, width, height } = parts.region;

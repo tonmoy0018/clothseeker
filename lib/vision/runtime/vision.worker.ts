@@ -30,7 +30,7 @@ addEventListener("message", (event: MessageEvent<unknown>) => {
   engine
     .then((ready) => ready.analyse(frame, frame.width, frame.height, request))
     .then(
-      (result) => reply({ type: "result", id, result }, result.mask ? [result.mask.alpha.buffer] : []),
+      (result) => reply({ type: "result", id, result }, [...(result.mask ? [result.mask.alpha.buffer] : []), ...(result.parts ? [result.parts.classes.buffer] : [])]),
       (error: unknown) => reply({ type: "error", id, message: error instanceof Error ? error.message : "analysis failed" }),
     )
     .finally(() => frame.close());

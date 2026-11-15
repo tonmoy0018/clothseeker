@@ -627,7 +627,7 @@ export function DesignEditor(props: DesignEditorProps) {
         {showMirror && (
           <LiveMirror
             noun={garment.noun}
-            loadGarment={async () => {
+            loadGarment={async (readParts) => {
               const front = garments.front;
               if (!front) throw new Error("The garment picture isn't ready yet");
               // The design as drawn on the front, with its printed items when the canvas has made them.
@@ -637,7 +637,7 @@ export function DesignEditor(props: DesignEditorProps) {
                 const url = key ? props.imageUrls[key] : undefined;
                 return url ? [url] : [];
               });
-              return (await import("@/lib/vision/mirror/garment-source")).garmentFromDesign(drawn, maskUrls);
+              return (await import("@/lib/vision/mirror/garment-source")).garmentFromDesign(drawn, maskUrls, readParts);
             }}
             onClose={() => setShowMirror(false)}
             realistic={{ source: { kind: "design", spec, designId }, signedIn: props.customerId !== null, onSignIn: () => handleResult({ status: "signin" }, () => undefined) }}
