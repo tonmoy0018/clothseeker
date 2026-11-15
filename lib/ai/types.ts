@@ -143,9 +143,10 @@ export interface SketchRenderer {
   /**
    * A photo of the garment drawn in `sketch` (image bytes, untrusted until re-encoded), or null when the
    * model can't or won't (quota, refusal, nothing drawn). `note`: the customer's words on what it should
-   * be made of (untrusted; providers pass it as a description, never as instructions).
+   * be made of (untrusted; providers pass it as a description, never as instructions). `variant`: which of
+   * several renderings this is (real models differ by themselves; the fake shades each a little apart).
    */
-  renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal): Promise<Buffer | null>;
+  renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal, variant?: number): Promise<Buffer | null>;
 }
 
 /**

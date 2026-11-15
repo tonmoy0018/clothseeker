@@ -63,7 +63,7 @@ async function ownDress(
   const fromSketch = options.sketch ? { sketch: true, note: options.sketch.note } : {};
   const { jobId } = await startDesignFrom(db, storage, customer, { mode: "own", referenceKey: reference.key, garmentType: options.garmentType ?? "auto", exact, ...fromSketch });
   await processNextJob(deps(options.planner, options.garmentShot, options.sketch?.renderer));
-  return { jobId, referenceKey: reference.key, status: await getStartStatus(db, customer, jobId) };
+  return { jobId, referenceKey: reference.key, status: await getStartStatus(db, storage, customer, jobId) };
 }
 
 async function built(customer: Actor, exact = false) {
@@ -281,5 +281,59 @@ describe("your own dress from a photo", () => {
       code: "BRAND_LOGO",
     });
     await expect(startDesignFrom(db, storage, ava, { mode: "own", referenceKey: reference.key, garmentType: "dress", exact: false, sketch: true, note: "x".repeat(201) })).rejects.toBeInstanceOf(AiError);
+  });
+
+  it("from a drawing, in two steps: three pictures to pick from, then the picked one becomes the dress", async () => {
+    const ava = await createUser();
+    const variants: (number | undefined)[] = [];
+    const fake = new FakeSketch();
+    const renderer: SketchRenderer = { name: "test", renderSketch: (image, note, signal, variant) => (variants.push(variant), fake.renderSketch(image, note, signal, variant)) };
+    const drawing = await uploadReferencePhoto(storage, ava, await sketchDrawing());
+
+    const first = await startDesignFrom(db, storage, ava, { mode: "sketch", referenceKey: drawing.key, note: "Navy linen" });
+    await processNextJob(deps(undefined, undefined, renderer));
+    const rendered = await getStartStatus(db, storage, ava, first.jobId);
+    if (rendered.state !== "rendered") throw new Error(`expected renderings, got ${JSON.stringify(rendered)}`);
+    expect(rendered.renders).toHaveLength(3);
+    expect(variants).toEqual([0, 1, 2]);
+    for (const render of rendered.renders) expect(render.key).toMatch(new RegExp(`^${ava.id}/sketch-renders/`));
+    // The same drawing and note give the same pictures; "show me three more" makes a new set.
+    expect((await startDesignFrom(db, storage, ava, { mode: "sketch", referenceKey: drawing.key, note: "Navy linen" })).cached).toBe(true);
+    const more = await startDesignFrom(db, storage, ava, { mode: "sketch", referenceKey: drawing.key, note: "Navy linen", round: 1 });
+    expect(more.cached).toBe(false);
+    await processNextJob(deps(undefined, undefined, renderer));
+    expect(variants).toEqual([0, 1, 2, 3, 4, 5]);
+
+    // The picked picture is built as it is: no rendering again.
+    const picked = rendered.renders[1]?.key ?? "";
+    const built = await startDesignFrom(db, storage, ava, { mode: "own", referenceKey: drawing.key, garmentType: "dress", exact: false, sketch: true, note: "Navy linen", renderKey: picked });
+    await processNextJob(deps(undefined, undefined, renderer));
+    const status = await getStartStatus(db, storage, ava, built.jobId);
+    if (status.state !== "done") throw new Error(`expected done, got ${JSON.stringify(status)}`);
+    expect(variants).toHaveLength(6);
+    const product = await db.product.findUniqueOrThrow({ where: { id: status.result.productId } });
+    expect(product.description).toContain("AI rendering of the customer's sketch");
+    expect(await db.design.findUniqueOrThrow({ where: { id: status.result.designId } })).toMatchObject({ referencePhotoKey: drawing.key, status: "DRAFT" });
+  });
+
+  it("a drawing's pictures are only its owner's to pick, and none at all is a clear message", async () => {
+    const ava = await createUser();
+    const bob = await createUser();
+    const drawing = await uploadReferencePhoto(storage, ava, await sketchDrawing());
+    const job = await startDesignFrom(db, storage, ava, { mode: "sketch", referenceKey: drawing.key });
+    await processNextJob(deps());
+    const rendered = await getStartStatus(db, storage, ava, job.jobId);
+    if (rendered.state !== "rendered") throw new Error("expected renderings");
+    const bobsDrawing = await uploadReferencePhoto(storage, bob, await sketchDrawing());
+    await expect(
+      startDesignFrom(db, storage, bob, { mode: "own", referenceKey: bobsDrawing.key, garmentType: "dress", exact: true, sketch: true, renderKey: rendered.renders[0]?.key }),
+    ).rejects.toMatchObject({ code: "INVALID" });
+
+    const refusing: SketchRenderer = { name: "test", renderSketch: async () => null };
+    const nothing = await startDesignFrom(db, storage, ava, { mode: "sketch", referenceKey: drawing.key, note: "Red silk" });
+    await processNextJob(deps(undefined, undefined, refusing));
+    expect(await getStartStatus(db, storage, ava, nothing.jobId)).toMatchObject({ state: "failed", code: "SKETCH_NOT_RENDERED" });
+    // Only the first set's three pictures are stored.
+    expect([...storage.objects.keys()].filter((id) => id.includes(`${ava.id}/sketch-renders/`))).toHaveLength(3);
   });
 });

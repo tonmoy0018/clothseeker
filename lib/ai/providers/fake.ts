@@ -350,7 +350,7 @@ export class FakeSketch implements SketchRenderer {
 
   constructor(private readonly delayMs = 0) {}
 
-  async renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal): Promise<Buffer | null> {
+  async renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal, variant = 0): Promise<Buffer | null> {
     await delay(Math.round(this.delayMs / 2), signal);
     const { data, info } = await sharp(sketch.data)
       .rotate()
@@ -379,7 +379,9 @@ export class FakeSketch implements SketchRenderer {
     let drawn = 0;
     for (let p = 0; p < width * height; p += 1) drawn += outside[p] ? 0 : 1;
     if (drawn < width * height * 0.01) return null;
-    const fabric = fakeFabricColour(note);
+    // Each rendering a little lighter or darker than the last, so a set of them differs.
+    const tone = [1, 1.15, 0.85][variant % 3] ?? 1;
+    const fabric = fakeFabricColour(note).map((c) => Math.min(255, c * tone));
     const rgb = Buffer.alloc(width * height * 3);
     for (let p = 0; p < width * height; p += 1) {
       const shade = outside[p] ? 1 : 0.55 + 0.45 * ((data[p] ?? 0) / 255);

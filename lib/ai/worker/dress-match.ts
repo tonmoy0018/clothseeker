@@ -3,12 +3,14 @@ import { loadDesignContext, type DesignContext } from "@/lib/design/service";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
 import { buildOwnDress, OwnDressError, removeOwnDress } from "@/lib/own-dress/build";
 import { parseGarmentReading } from "@/lib/own-dress/read";
+import { customerSketchRenderPrefix } from "@/lib/design/validate";
 import { BUCKETS } from "@/lib/storage/buckets";
+import { buildObjectKey } from "@/lib/storage/object-key";
 
 import { AiError, AiJobRejected, AiProviderError } from "../errors";
 import { createDesignRoundJob } from "../jobs";
 import { DressMatchError, matchToSpec, parseDressMatch, startingSpec } from "../match";
-import { dressMatchPayloadSchema, type DressMatchPayload, type DressMatchResult } from "../starts";
+import { dressMatchPayloadSchema, SKETCH_RENDERS, type DressMatchPayload, type DressMatchResult, type SketchRendersResult } from "../starts";
 import type { DressCandidate, ProviderImage } from "../types";
 
 import { leaseWhere, LostLease, type ClaimedJob } from "./claim";
@@ -17,9 +19,11 @@ import type { AiWorkerDeps } from "./run";
 // "Start from a dress photo / description", run by the worker:
 //   candidates (live customizable dresses) → brand-logo check (photo) → planner.matchDress
 //   → validated match → prefilled DRAFT design → (description) AI design round → job SUCCEEDED.
-// Or, for "your own dress": brand-logo check → (a drawing) a realistic photo of it (lib/ai/sketch.ts)
+// Or, for "your own dress": brand-logo check → (a drawing) the rendering the customer picked
 //   → the photo made into a private template (lib/own-dress) → a draft (customise) or saved (exact)
 //   design on it → job SUCCEEDED.
+// Or, for a drawing's renderings ("sketch"): brand-logo check → SKETCH_RENDERS realistic photos of it,
+//   stored for the customer to pick from → job SUCCEEDED.
 
 const MAX_CANDIDATES = 40;
 
@@ -85,7 +89,13 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
   let shot = false;
   const sketch = input.own.sketch === true;
   const garmentShot = deps.providers.garmentShot;
-  if (sketch) {
+  if (sketch && input.own.renderKey) {
+    // The rendering of the drawing the customer picked (a "sketch" job made it, under their own folder).
+    if (!input.own.renderKey.startsWith(customerSketchRenderPrefix(job.customerId))) throw new AiJobRejected("INTERNAL");
+    const picked = await deps.storage.get(BUCKETS.designAssets, input.own.renderKey);
+    if (!picked) throw new AiJobRejected("SKETCH_NOT_RENDERED");
+    source = { data: picked, mimeType: "image/webp" };
+  } else if (sketch) {
     // A drawing can't be cut out as it is: an image model draws the garment as a real one first. Without
     // a picture there's nothing to make (a busy service is retried: its error is thrown).
     const raw = await deps.providers.sketch?.renderSketch(photo, input.own.note ?? null, signal);
@@ -158,6 +168,55 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
   }
 }
 
+/**
+ * "From a drawing", first step: SKETCH_RENDERS realistic photos of the garment drawn, stored under the
+ * customer's sketch-renders/ for them to pick the closest (which then becomes their own dress). Renderings
+ * that fail are skipped; none at all is SKETCH_NOT_RENDERED. A busy service is retried (its error is thrown).
+ */
+async function runSketchRenders(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatchPayload, signal: AbortSignal): Promise<void> {
+  const { db, storage } = deps;
+  if (!input.renders || !input.referenceKey) {
+    throw new AiJobRejected("INTERNAL");
+  }
+  const drawing = await checkedPhoto(deps, job, input.referenceKey, signal);
+  const renderer = deps.providers.sketch;
+  if (!renderer) throw new AiJobRejected("SKETCH_NOT_RENDERED");
+  const stored: string[] = [];
+  try {
+    for (let i = 0; i < SKETCH_RENDERS; i += 1) {
+      // Later rounds ("show me more") get other variants of the fake; real models differ every time.
+      const raw = await renderer.renderSketch(drawing, input.renders.note, signal, input.renders.round * SKETCH_RENDERS + i);
+      if (signal.aborted) throw new AiProviderError("job aborted", true, "TIMEOUT");
+      if (!raw) continue;
+      let image;
+      try {
+        image = await processImage(raw, "aiInput");
+      } catch (error) {
+        if (error instanceof ImageValidationError) continue;
+        throw error;
+      }
+      const key = buildObjectKey(BUCKETS.designAssets, { ownerId: job.customerId, category: "sketch-renders", extension: image.extension });
+      await storage.put(BUCKETS.designAssets, key, image.data, image.contentType);
+      stored.push(key);
+    }
+    if (stored.length === 0) throw new AiJobRejected("SKETCH_NOT_RENDERED");
+    const result: SketchRendersResult = { renders: stored };
+    const now = (deps.now ?? (() => new Date()))();
+    const finished = await db.aIJob.updateMany({
+      where: leaseWhere(job, deps.workerId),
+      data: { status: "SUCCEEDED", result, finishedAt: now, lockedAt: null, lockedBy: null, error: null, errorCode: null },
+    });
+    if (finished.count !== 1) {
+      throw new LostLease();
+    }
+    deps.log?.("ai.sketch_rendered", { jobId: job.id, renders: stored.length, round: input.renders.round });
+  } catch (error) {
+    // The renderings belong to this attempt only.
+    await storage.remove(BUCKETS.designAssets, stored).catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function runDressMatch(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal): Promise<void> {
   const { db, storage, providers } = deps;
   const parsed = dressMatchPayloadSchema.safeParse(job.payload);
@@ -168,15 +227,19 @@ export async function runDressMatch(deps: AiWorkerDeps, job: ClaimedJob, signal:
   if (input.mode === "own") {
     return runOwnDress(deps, job, input, signal);
   }
+  if (input.mode === "sketch") {
+    return runSketchRenders(deps, job, input, signal);
+  }
+  const mode = input.mode;
 
-  const { candidates, contexts } = await loadCandidates(deps, input.mode === "description");
+  const { candidates, contexts } = await loadCandidates(deps, mode === "description");
   if (candidates.length === 0) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
 
-  const image = input.mode === "photo" ? await checkedPhoto(deps, job, input.referenceKey, signal) : null;
+  const image = mode === "photo" ? await checkedPhoto(deps, job, input.referenceKey, signal) : null;
 
-  const raw = await providers.planner.matchDress({ mode: input.mode, image, description: input.description, candidates, seed: input.seed }, signal);
+  const raw = await providers.planner.matchDress({ mode, image, description: input.description, candidates, seed: input.seed }, signal);
   let match;
   try {
     match = parseDressMatch(raw, candidates);
@@ -199,7 +262,7 @@ export async function runDressMatch(deps: AiWorkerDeps, job: ClaimedJob, signal:
   const base = startingSpec(
     { productId: template.productId, templateId: template.templateId, version: template.version, config: template.config },
     size,
-    input.mode,
+    mode,
     input.referenceKey,
   );
   const spec = matchToSpec(base, match, {

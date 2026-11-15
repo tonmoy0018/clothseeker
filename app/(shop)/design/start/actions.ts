@@ -63,7 +63,14 @@ export async function uploadDressPhotoAction(formData: FormData): Promise<Upload
  * ("customize") or exactly as it is ("exact"). `sketch`: the photo is a drawing, made into a realistic
  * picture first, with the customer's `note` on its fabric. Everything is re-checked in lib/ai/starts.ts.
  */
-export async function startFromPhotoAction(referenceKey: unknown, choice: unknown, garmentType: unknown, sketch: unknown = false, note: unknown = undefined): Promise<StartResult> {
+export async function startFromPhotoAction(
+  referenceKey: unknown,
+  choice: unknown,
+  garmentType: unknown,
+  sketch: unknown = false,
+  note: unknown = undefined,
+  renderKey: unknown = undefined,
+): Promise<StartResult> {
   const user = await customer();
   if (isFailure(user)) {
     return user;
@@ -71,12 +78,29 @@ export async function startFromPhotoAction(referenceKey: unknown, choice: unknow
   const input =
     choice === "closest"
       ? { mode: "photo", referenceKey }
-      : { mode: "own", referenceKey, garmentType, exact: choice === "exact", sketch, note: note === "" ? undefined : note };
+      : { mode: "own", referenceKey, garmentType, exact: choice === "exact", sketch, note: note === "" ? undefined : note, renderKey };
   if (choice !== "closest" && choice !== "customize" && choice !== "exact") {
     return { status: "error", message: "Choose what to do with your photo." };
   }
   try {
     const started = await startDesignFrom(getPrisma(), getStorage(), user, input);
+    return { status: "ok", jobId: started.jobId };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * A drawing: realistic pictures of the garment first, to pick the closest from (`round` > 0: "show me
+ * more"). The picked one then goes to startFromPhotoAction as `renderKey`.
+ */
+export async function renderSketchAction(referenceKey: unknown, note: unknown, round: unknown): Promise<StartResult> {
+  const user = await customer();
+  if (isFailure(user)) {
+    return user;
+  }
+  try {
+    const started = await startDesignFrom(getPrisma(), getStorage(), user, { mode: "sketch", referenceKey, note: note === "" ? undefined : note, round });
     return { status: "ok", jobId: started.jobId };
   } catch (error) {
     return failure(error);
@@ -104,7 +128,7 @@ export async function getStartStatusAction(jobId: unknown): Promise<StartStatusR
     return user;
   }
   try {
-    return { status: "ok", job: await getStartStatus(getPrisma(), user, jobId) };
+    return { status: "ok", job: await getStartStatus(getPrisma(), getStorage(), user, jobId) };
   } catch (error) {
     return failure(error);
   }

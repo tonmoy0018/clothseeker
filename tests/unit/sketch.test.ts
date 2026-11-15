@@ -76,6 +76,17 @@ describe("FakeSketch", () => {
     expect(again?.equals(out)).toBe(true);
   });
 
+  it("shades each of several versions a little apart", async () => {
+    const drawing = { data: await sketchDrawing(), mimeType: "image/png" as const };
+    const shades = [];
+    for (const variant of [0, 1, 2]) {
+      const out = await new FakeSketch().renderSketch(drawing, "Navy linen", signal, variant);
+      if (!out) throw new Error("expected a picture");
+      shades.push((await pixel(out, 300, 600))[2] ?? 0);
+    }
+    expect(new Set(shades).size).toBe(3);
+  });
+
   it("gives no picture for a blank page, and dusty blue when the note names no colour", async () => {
     const blank = await sharp({ create: { width: 600, height: 800, channels: 3, background: "#ffffff" } }).png().toBuffer();
     expect(await new FakeSketch().renderSketch({ data: blank, mimeType: "image/png" }, null, signal)).toBeNull();

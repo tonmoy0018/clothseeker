@@ -56,7 +56,7 @@ async function expectAiError(promise: Promise<unknown>, code: AiError["code"], m
 }
 
 async function finished(customer: Actor, jobId: string) {
-  const status = await getStartStatus(db, customer, jobId);
+  const status = await getStartStatus(db, storage, customer, jobId);
   if (status.state !== "done") throw new Error(`expected done, got ${JSON.stringify(status)}`);
   return status.result;
 }
@@ -70,7 +70,7 @@ describe("start from a dress photo", () => {
     expect(photo.key.startsWith(`${customer.id}/references/`)).toBe(true);
 
     const { jobId } = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key });
-    expect(await getStartStatus(db, customer, jobId)).toEqual({ state: "pending", position: "queued" });
+    expect(await getStartStatus(db, storage, customer, jobId)).toEqual({ state: "pending", position: "queued" });
     await processNextJob(deps());
     const result = await finished(customer, jobId);
 
@@ -93,7 +93,7 @@ describe("start from a dress photo", () => {
     const photo = await uploadReferencePhoto(storage, customer, await dressPhoto(FAKE_LOGO_MARKER));
     const { jobId } = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key });
     await runAiJobs(deps());
-    expect(await getStartStatus(db, customer, jobId)).toEqual({ state: "failed", message: BRAND_LOGO_MESSAGE, code: "BRAND_LOGO" });
+    expect(await getStartStatus(db, storage, customer, jobId)).toEqual({ state: "failed", message: BRAND_LOGO_MESSAGE, code: "BRAND_LOGO" });
     expect(await db.flaggedItem.findFirstOrThrow()).toMatchObject({ kind: "BRAND_LOGO", customerId: customer.id, aiJobId: jobId, storageKey: photo.key });
     expect(await db.design.count()).toBe(0);
   });
@@ -134,7 +134,7 @@ describe("start from a dress photo", () => {
     await runAiJobs(deps(rogue));
     await runAiJobs(deps(rogue));
     await runAiJobs(deps(rogue));
-    expect(await getStartStatus(db, customer, jobId)).toMatchObject({ state: "failed", code: "INVALID_PLAN" });
+    expect(await getStartStatus(db, storage, customer, jobId)).toMatchObject({ state: "failed", code: "INVALID_PLAN" });
     expect(await db.aIJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({ attempts: 3 });
     expect(await db.design.count()).toBe(0);
   });
@@ -186,6 +186,6 @@ describe("start from a description", () => {
     const bob = await createUser();
     await customizable("Linen Wrap Dress", "A breezy wrap dress in linen");
     const { jobId } = await startDesignFrom(db, storage, alice, { mode: "description", description: "A breezy linen wrap dress" });
-    await expectAiError(getStartStatus(db, bob, jobId), "NOT_FOUND");
+    await expectAiError(getStartStatus(db, storage, bob, jobId), "NOT_FOUND");
   });
 });

@@ -37,6 +37,11 @@ export function customerReferencePrefix(customerId: string): string {
   return `${customerId.toLowerCase()}/references/`;
 }
 
+/** AI renderings of a customer's drawing (to pick the closest from) live under `{customerId}/sketch-renders/`. */
+export function customerSketchRenderPrefix(customerId: string): string {
+  return `${customerId.toLowerCase()}/sketch-renders/`;
+}
+
 /** Decorations the customer cut out of ClothSeeker dresses live under `{customerId}/cutouts/`. */
 export function customerCutoutPrefix(customerId: string): string {
   return `${customerId.toLowerCase()}/cutouts/`;

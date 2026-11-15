@@ -3,7 +3,7 @@ import { z } from "zod";
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
 import { GARMENT_TYPE_IDS } from "@/lib/catalog/garment-types";
 import type { PrismaClient } from "@/lib/db/client";
-import { customerReferencePrefix } from "@/lib/design/validate";
+import { customerReferencePrefix, customerSketchRenderPrefix } from "@/lib/design/validate";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -20,14 +20,15 @@ import { DAILY_ROUND_LIMIT, DAILY_SUBMISSION_LIMIT, QUOTA_MESSAGE, startOfDhakaD
 // worker picks the closest customizable dress, prefills a draft design (lib/ai/worker/dress-match.ts)
 // and, for descriptions, queues an AI design round on it. With a photo the customer may instead ask for
 // their own dress (mode "own", lib/own-dress): made into a private template of its own, to customise or
-// to order exactly as it is, both through a quote. The photo may be a drawing ("sketch"): the worker first
-// has an image model turn it into a realistic photo of the garment (lib/ai/sketch.ts).
+// to order exactly as it is, both through a quote. The photo may be a drawing: the worker first makes
+// SKETCH_RENDERS realistic photos of the garment from it (mode "sketch", lib/ai/sketch.ts), the customer
+// picks the closest, and that one becomes their own dress (mode "own" with its `renderKey`).
 
 const key = z.string().max(200).refine(isSafeObjectKey);
 
 export const dressMatchPayloadSchema = z.object({
   kind: z.literal("dress_match"),
-  mode: z.enum(["photo", "description", "own"]),
+  mode: z.enum(["photo", "description", "own", "sketch"]),
   referenceKey: key.nullable(),
   description: z.string().min(10).max(500).nullable(),
   seed: z.string().length(64),
@@ -41,10 +42,21 @@ export const dressMatchPayloadSchema = z.object({
       exact: z.boolean(),
       sketch: z.boolean().optional(),
       note: z.string().max(SKETCH_NOTE_MAX).nullable().optional(),
+      /** The rendering of the drawing the customer picked (mode "sketch" made it); without one it's rendered here. */
+      renderKey: key.optional(),
     })
     .optional(),
+  /** Mode "sketch": the drawing's note, and which set of renderings this is ("show me more" asks for the next). */
+  renders: z.object({ note: z.string().max(SKETCH_NOTE_MAX).nullable(), round: z.number().int().min(0).max(20) }).optional(),
 });
 export type DressMatchPayload = z.infer<typeof dressMatchPayloadSchema>;
+
+/** How many renderings of a drawing are made at a time, to pick the closest from. */
+export const SKETCH_RENDERS = 3;
+
+/** What a "sketch" job made: the renderings' storage keys (the customer's own sketch-renders/). */
+export const sketchRendersResultSchema = z.object({ renders: z.array(key).min(1).max(SKETCH_RENDERS) });
+export type SketchRendersResult = z.infer<typeof sketchRendersResultSchema>;
 
 export const dressMatchResultSchema = z.object({
   designId: z.uuid(),
@@ -84,6 +96,13 @@ const startSchema = z.discriminatedUnion("mode", [
     exact: z.boolean(),
     sketch: z.boolean().default(false),
     note: z.string().trim().max(SKETCH_NOTE_MAX, "Keep your note under 200 characters.").optional(),
+    renderKey: z.string().max(200).optional(),
+  }),
+  z.object({
+    mode: z.literal("sketch"),
+    referenceKey: z.string().max(200),
+    note: z.string().trim().max(SKETCH_NOTE_MAX, "Keep your note under 200 characters.").optional(),
+    round: z.number().int().min(0).max(20).default(0),
   }),
   z.object({
     mode: z.literal("description"),
@@ -107,7 +126,7 @@ export async function startDesignFrom(
   const input = parsed.data;
   let referenceKey: string | null = null;
   let description: string | null = null;
-  if (input.mode === "photo" || input.mode === "own") {
+  if (input.mode === "photo" || input.mode === "own" || input.mode === "sketch") {
     if (!isSafeObjectKey(input.referenceKey) || !input.referenceKey.startsWith(customerReferencePrefix(actor.id))) {
       throw new AiError("INVALID", "That photo isn't yours.");
     }
@@ -122,14 +141,26 @@ export async function startDesignFrom(
     description = input.description.replace(/\s+/g, " ");
   }
 
-  if (input.mode === "own" && input.note && findBrandTerm(input.note)) {
+  if ((input.mode === "own" || input.mode === "sketch") && input.note && findBrandTerm(input.note)) {
     throw new AiError("BRAND_LOGO", BRAND_LOGO_MESSAGE);
+  }
+  // The rendering picked must be one made for this customer, and still there.
+  let renderKey: string | undefined;
+  if (input.mode === "own" && input.sketch && input.renderKey !== undefined) {
+    if (!isSafeObjectKey(input.renderKey) || !input.renderKey.startsWith(customerSketchRenderPrefix(actor.id))) {
+      throw new AiError("INVALID", "That picture isn't yours.");
+    }
+    if ((await storage.signReadUrls(BUCKETS.designAssets, [input.renderKey], 60)).size !== 1) {
+      throw new AiError("INVALID", "That picture is missing. Please make the pictures again.");
+    }
+    renderKey = input.renderKey;
   }
   // A drawing keeps its note (a photo has none); the request's hash, and so its cache, include both.
   const own =
     input.mode === "own"
-      ? { garmentType: input.garmentType, exact: input.exact, ...(input.sketch ? { sketch: true, note: cleanSketchNote(input.note) } : {}) }
+      ? { garmentType: input.garmentType, exact: input.exact, ...(input.sketch ? { sketch: true, note: cleanSketchNote(input.note), ...(renderKey ? { renderKey } : {}) } : {}) }
       : undefined;
+  const renders = input.mode === "sketch" ? { note: cleanSketchNote(input.note), round: input.round } : undefined;
   const inputHash = aiInputHash({
     v: 1,
     type: "DRESS_MATCH",
@@ -137,6 +168,7 @@ export async function startDesignFrom(
     referenceKey,
     description: description ? normalizeInstruction(description) : null,
     ...(own ? { mode: "own", own } : {}),
+    ...(renders ? { mode: "sketch", renders } : {}),
   });
   try {
     return await queueMatch();
@@ -157,7 +189,9 @@ export async function startDesignFrom(
       });
       const earlierResult = dressMatchResultSchema.safeParse(earlier?.result);
       const designStillThere = earlierResult.success ? (await tx.design.count({ where: { id: earlierResult.data.designId, customerId: actor.id } })) === 1 : false;
-      if (earlier && (earlier.status !== "SUCCEEDED" || designStillThere)) {
+      // Renderings are made once per drawing, note and round ("show me more" is the next round).
+      const rendered = sketchRendersResultSchema.safeParse(earlier?.result).success;
+      if (earlier && (earlier.status !== "SUCCEEDED" || designStillThere || rendered)) {
         return { jobId: earlier.id, cached: true };
       }
 
@@ -175,7 +209,7 @@ export async function startDesignFrom(
           throw new AiError("QUOTA", QUOTA_MESSAGE);
         }
       }
-      const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash, ...(own ? { own } : {}) } satisfies DressMatchPayload;
+      const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash, ...(own ? { own } : {}), ...(renders ? { renders } : {}) } satisfies DressMatchPayload;
       const job = await tx.aIJob.create({ data: { type: "DRESS_MATCH", customerId: actor.id, payload, inputHash, runAfter: now }, select: { id: true } });
       return { jobId: job.id, cached: false };
     });
@@ -185,9 +219,11 @@ export async function startDesignFrom(
 export type StartStatus =
   | { state: "pending"; position: "queued" | "running" }
   | { state: "done"; result: DressMatchResult }
+  /** A drawing's renderings, to pick the closest from (signed for this customer). */
+  | { state: "rendered"; renders: { key: string; url: string }[] }
   | { state: "failed"; message: string; code: string | null };
 
-export async function getStartStatus(db: PrismaClient, actor: Actor, rawJobId: unknown): Promise<StartStatus> {
+export async function getStartStatus(db: PrismaClient, storage: StorageAdapter, actor: Actor, rawJobId: unknown): Promise<StartStatus> {
   const jobId = z.uuid().safeParse(rawJobId);
   const job = jobId.success
     ? await db.aIJob.findFirst({ where: { id: jobId.data, customerId: actor.id, type: "DRESS_MATCH" }, select: { status: true, result: true, errorCode: true } })
@@ -200,6 +236,16 @@ export async function getStartStatus(db: PrismaClient, actor: Actor, rawJobId: u
   }
   if (job.status === "FAILED") {
     return { state: "failed", message: failureMessage(job.errorCode), code: job.errorCode };
+  }
+  const rendered = sketchRendersResultSchema.safeParse(job.result);
+  if (rendered.success) {
+    const own = rendered.data.renders.filter((k) => k.startsWith(customerSketchRenderPrefix(actor.id)));
+    const urls = await storage.signReadUrls(BUCKETS.designAssets, own);
+    const renders = own.flatMap((k) => {
+      const url = urls.get(k);
+      return url ? [{ key: k, url }] : [];
+    });
+    return renders.length > 0 ? { state: "rendered", renders } : { state: "failed", message: failureMessage("SKETCH_NOT_RENDERED"), code: "SKETCH_NOT_RENDERED" };
   }
   const result = dressMatchResultSchema.safeParse(job.result);
   return result.success ? { state: "done", result: result.data } : { state: "failed", message: failureMessage("INTERNAL"), code: "INTERNAL" };

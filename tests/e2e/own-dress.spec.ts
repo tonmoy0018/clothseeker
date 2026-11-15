@@ -35,7 +35,7 @@ test("the upload page offers just the dress photo, and signed-out visitors sign 
 });
 
 test.describe("@supabase your own dress", () => {
-  test("from a drawing: an AI makes it into a realistic picture, then it's the customer's own dress", async ({ page }) => {
+  test("from a drawing: three realistic versions to pick from, and the picked one is the customer's own dress", async ({ page }) => {
     test.setTimeout(150_000);
     await signUpFreshCustomer(page);
     await page.goto("/design/upload");
@@ -45,7 +45,13 @@ test.describe("@supabase your own dress", () => {
     await choices.getByTestId("is-sketch").check();
     await choices.getByLabel("What should it be made of?").fill("Red silk with a gold hem");
     await choices.getByRole("button", { name: /^Make this exact garment/ }).click();
-    await expect(page.getByTestId("start-waiting")).toContainText("Turning your drawing into a realistic picture");
+    await expect(page.getByTestId("start-waiting")).toContainText("three realistic versions");
+    const renders = page.getByTestId("sketch-renders");
+    await expect(renders.getByRole("button", { name: /^Use version/ })).toHaveCount(3, { timeout: 60_000 });
+    // None quite right: three more, then pick one.
+    await renders.getByRole("button", { name: "None of these: show me three more" }).click();
+    await expect(renders.getByRole("button", { name: /^Use version/ })).toHaveCount(3, { timeout: 60_000 });
+    await renders.getByRole("button", { name: "Use version 2" }).click();
     await expect(page).toHaveURL(/\/customize\/[0-9a-f-]{36}\?design=[0-9a-f-]{36}/, { timeout: 60_000 });
     await expect(page.getByTestId("own-dress-price")).toContainText("the ClothSeeker team prices it");
     await expect(page.getByTestId("quote-request")).toContainText("Get a price for your");
