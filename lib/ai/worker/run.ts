@@ -9,6 +9,7 @@ import type { AiProviders } from "../types";
 import { claimNextJob, leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import { runDesignRound } from "./design-round";
 import { runDressMatch } from "./dress-match";
+import { runGarmentModel } from "./garment-model";
 import { runTryOn } from "./try-on";
 
 // Runs claimed AI jobs with a hard timeout, retries transient failures with backoff, and recovers
@@ -58,6 +59,8 @@ async function execute(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal)
       return runTryOn(deps, job, signal);
     case "DRESS_MATCH":
       return runDressMatch(deps, job, signal);
+    case "GARMENT_MODEL":
+      return runGarmentModel(deps, job, signal);
   }
 }
 

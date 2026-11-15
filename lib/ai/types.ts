@@ -149,9 +149,22 @@ export interface SketchRenderer {
   renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal, variant?: number): Promise<Buffer | null>;
 }
 
+/** Turns a picture of a garment into a 3D model of it, for the 3D view (lib/model3d). */
+export interface GarmentModelProvider {
+  readonly name: string;
+  /**
+   * A GLB model (bytes, untrusted until checked by `checkGlb`) of the garment in `garment`: a PNG of the
+   * garment alone, its backdrop transparent. The front follows the picture; the back and sides are the
+   * model's guess.
+   */
+  buildModel(garment: ProviderImage, signal: AbortSignal): Promise<Buffer>;
+  close?(): void;
+}
+
 /**
  * `garmentShot` is optional: without it, customers' own garments are cut out of their photos as they are.
  * Without `sketch`, a customer's drawing can't become a garment (the job fails with SKETCH_NOT_RENDERED).
+ * Without `garmentModel`, there's no 3D view (its jobs fail with NOT_AVAILABLE).
  */
 export type AiProviders = {
   planner: PlannerProvider;
@@ -160,4 +173,5 @@ export type AiProviders = {
   photoCheck: TryOnPhotoChecker;
   garmentShot?: GarmentShotProvider;
   sketch?: SketchRenderer;
+  garmentModel?: GarmentModelProvider;
 };

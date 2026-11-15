@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 
 import { PATTERNS } from "@/lib/catalog/patterns";
+import { writeGlb } from "@/lib/model3d/glb";
 import { GARMENT_TYPES, styleGroupsOf } from "@/lib/catalog/garment-types";
 
 import { knockOutWhite } from "../image-utils";
@@ -10,6 +11,7 @@ import { cleanSketchNote } from "../sketch";
 import type {
   BrandLogoCheck,
   DressMatchRequest,
+  GarmentModelProvider,
   ImageProvider,
   MotifRequest,
   PlannerProvider,
@@ -30,6 +32,8 @@ import type {
 // - FakePhotoChecker rejects try-on photos that are dark (mean brightness < 60) or landscape.
 // - FakeSketch fills the drawn outline with a colour named in the note (dusty blue when none), and
 //   returns no picture for a blank page.
+// - FakeGarmentModel makes a puffy card: the garment picture on a front and back bulging out from the
+//   outline, cut out by the picture's alpha.
 // Real logo checks come from Gemini (lib/ai/providers/gemini.ts); real photo checks from the on-device models
 // (lib/ai/providers/photo-check-local.ts).
 
@@ -391,3 +395,50 @@ export class FakeSketch implements SketchRenderer {
     return sharp(rgb, { raw: { width, height, channels: 3 } }).png().toBuffer();
   }
 }
+
+/** The fake 3D model's grid (columns × rows) and how far its middle bulges, a share of its width. */
+const CARD_GRID = [16, 24] as const;
+const CARD_BULGE = 0.18;
+
+export class FakeGarmentModel implements GarmentModelProvider {
+  readonly name = "fake";
+
+  constructor(private readonly delayMs = 0) {}
+
+  async buildModel(garment: ProviderImage, signal: AbortSignal): Promise<Buffer> {
+    await delay(this.delayMs, signal);
+    // The garment alone (transparent around it), at most 512 px: the card's texture.
+    const texture = await sharp(garment.data).ensureAlpha().trim({ threshold: 0 }).resize(512, 512, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
+    const { width = 1, height = 1 } = await sharp(texture).metadata();
+    // 1.2 m tall, as wide as the picture says; the front at +z, the back at -z.
+    const tall = 1.2;
+    const wide = (tall * width) / height;
+    const [cols, rows] = CARD_GRID;
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    for (const side of [1, -1]) {
+      const first = positions.length / 3;
+      for (let r = 0; r <= rows; r += 1) {
+        for (let c = 0; c <= cols; c += 1) {
+          const u = c / cols;
+          const v = r / rows;
+          const across = 2 * u - 1;
+          positions.push((u - 0.5) * wide, (0.5 - v) * tall + tall / 2, side * CARD_BULGE * wide * Math.sqrt(Math.max(0, 1 - across * across)));
+          uvs.push(u, v);
+        }
+      }
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          const a = first + r * (cols + 1) + c;
+          const b = a + cols + 1;
+          // Facing outwards on both sides.
+          if (side > 0) indices.push(a, b, a + 1, a + 1, b, b + 1);
+          else indices.push(a, a + 1, b, a + 1, b + 1, b);
+        }
+      }
+    }
+    return writeGlb({ positions: Float32Array.from(positions), uvs: Float32Array.from(uvs), indices: Uint32Array.from(indices), texture });
+  }
+}
+

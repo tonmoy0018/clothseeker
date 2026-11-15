@@ -235,6 +235,8 @@ enum AIJobType {
   DESIGN_ROUND
   DRESS_MATCH
   TRY_ON
+  /// A 3D model of a garment for the 3D view (lib/model3d); result { modelKey }.
+  GARMENT_MODEL
 }
 
 enum AIJobStatus {
@@ -789,6 +791,7 @@ enum AiLimitFeature {
   TRY_ON
   SUBMISSIONS
   CUTOUT
+  GARMENT_MODEL
 }
 
 /// A customer was refused because a daily AI limit was reached (for the AI metrics page).

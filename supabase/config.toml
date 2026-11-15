@@ -129,7 +129,7 @@ allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
 [storage.buckets.design-assets]
 public = false
 file_size_limit = "10MiB"
-allowed_mime_types = ["image/png", "image/jpeg", "image/webp", "application/pdf"]
+allowed_mime_types = ["image/png", "image/jpeg", "image/webp", "application/pdf", "model/gltf-binary"]
 
 [storage.buckets.qc-photos]
 public = false

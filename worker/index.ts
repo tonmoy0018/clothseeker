@@ -74,6 +74,7 @@ async function main(): Promise<number> {
     closeModels = () => {
       providers.planner.close?.();
       providers.tryOn.close?.();
+      providers.garmentModel?.close?.();
     };
     const ai: AiWorkerDeps = {
       db: prisma,

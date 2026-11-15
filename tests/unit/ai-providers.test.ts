@@ -316,6 +316,7 @@ describe("getAiProviders", () => {
     GEMINI_IMAGE_MODEL: "gemini-2.5-flash-image",
     SKETCH_PROVIDER: "fake" as const,
     CLOUDFLARE_SKETCH_MODEL: "@cf/black-forest-labs/flux-2-klein-4b",
+    MODEL3D_PROVIDER: "fake" as const,
   };
 
   it("uses the fakes by default and the real adapters when configured", () => {
@@ -337,5 +338,10 @@ describe("getAiProviders", () => {
     const cloudflareKeys = { CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef", CLOUDFLARE_API_TOKEN: "test-token-0123456789" };
     expect(getAiProviders({ ...env, GARMENT_SHOT_PROVIDER: "cloudflare", ...cloudflareKeys }).garmentShot?.name).toBe("cloudflare");
     expect(() => getAiProviders({ ...env, GARMENT_SHOT_PROVIDER: "cloudflare" })).toThrow(/CLOUDFLARE_ACCOUNT_ID/);
+  });
+
+  it("makes 3D views with the fake by default, and the local model only once it's set up", () => {
+    expect(getAiProviders(env).garmentModel?.name).toBe("fake");
+    expect(() => getAiProviders({ ...env, MODEL3D_PROVIDER: "local", LOCAL_3D_DIR: "/nonexistent/local-3d" })).toThrow(/pnpm model3d:setup/);
   });
 });

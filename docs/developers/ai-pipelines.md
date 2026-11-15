@@ -225,7 +225,7 @@ browser: /customize/{product}?design=… (see it → "Try it on" → "Request a 
   - The rendering is needed, unlike a product shot: a busy service is retried; a refusal, no allowance left or an unusable picture ends the job with `SKETCH_NOT_RENDERED` ("We couldn't turn your drawing into a garment this time…"), leaving nothing behind.
   - The drawing stays the design's reference picture, so the team sees it beside the rendering on the quote; the product's description says its picture is an AI rendering of the customer's sketch ("make what it shows").
   - "Start from our closest dress" with a drawing matches it like a photo (the planner reads drawings), without rendering it.
-  - Not done yet: a 3D preview (TripoSR ran on the 8 GB Mac in about 10 s a garment, 3.2 GB at peak, in an experiment on 2026-11-15: a rigid "spin it round" shape, the back invented).
+  - A 3D preview of any garment or design is the 3D view ([3d-view.md](3d-view.md)): TripoSR on the worker's machine.
 - **The order on the design screen.** First the garment, then a "See it on you" step ("Try it on" opens the try-on panel), then "Get a price for your dress". The quote isn't pushed first. Both sit in the page, not in the bar pinned to the bottom, which keeps only the size and Save (a tall pinned bar covered the AI options).
 
 - **Private.** `status: PRIVATE` keeps it out of everything that shows ACTIVE products:

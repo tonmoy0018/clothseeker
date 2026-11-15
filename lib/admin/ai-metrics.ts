@@ -7,8 +7,8 @@ import type { AIJobStatus, AIJobType, AiLimitFeature } from "@/lib/generated/pri
 
 export const METRIC_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
-export const JOB_TYPES: readonly AIJobType[] = ["DESIGN_ROUND", "DRESS_MATCH", "TRY_ON"];
-export const LIMIT_FEATURES: readonly AiLimitFeature[] = ["DESIGN_ROUND", "TRY_ON", "SUBMISSIONS"];
+export const JOB_TYPES: readonly AIJobType[] = ["DESIGN_ROUND", "DRESS_MATCH", "TRY_ON", "GARMENT_MODEL"];
+export const LIMIT_FEATURES: readonly AiLimitFeature[] = ["DESIGN_ROUND", "TRY_ON", "SUBMISSIONS", "CUTOUT", "GARMENT_MODEL"];
 
 // ─── pure calculations (unit tested) ─────────────────────────────────────────
 
@@ -119,6 +119,7 @@ export async function getAiMetrics(db: PrismaClient, actor: Actor, now: Date = n
       TRY_ON: hitsToday.filter((h) => h.feature === "TRY_ON").length,
       SUBMISSIONS: hitsToday.filter((h) => h.feature === "SUBMISSIONS").length,
       CUTOUT: hitsToday.filter((h) => h.feature === "CUTOUT").length,
+      GARMENT_MODEL: hitsToday.filter((h) => h.feature === "GARMENT_MODEL").length,
     },
     limitHitSeries: dailyCounts(hits.map((h) => h.createdAt), now),
     workers: workers.map((w) => ({ workerId: w.workerId, planner: w.planner, image: w.image, tryOn: w.tryOn, lastSeenAt: w.lastSeenAt, startedAt: w.startedAt })),

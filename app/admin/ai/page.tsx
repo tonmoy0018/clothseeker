@@ -6,8 +6,8 @@ import { getPrisma } from "@/lib/db";
 
 export const metadata: Metadata = { title: "AI — ClothSeeker admin" };
 
-const JOB_LABEL = { DESIGN_ROUND: "AI design rounds", DRESS_MATCH: "Start from photo / description", TRY_ON: "Try-ons" } as const;
-const LIMIT_LABEL = { DESIGN_ROUND: "AI rounds (10/day)", TRY_ON: "Try-ons (5/day)", SUBMISSIONS: "All AI requests (30/day)", CUTOUT: "Decoration cut-outs (30/day)" } as const;
+const JOB_LABEL = { DESIGN_ROUND: "AI design rounds", DRESS_MATCH: "Start from photo / description", TRY_ON: "Try-ons", GARMENT_MODEL: "3D views" } as const;
+const LIMIT_LABEL = { DESIGN_ROUND: "AI rounds (10/day)", TRY_ON: "Try-ons (5/day)", SUBMISSIONS: "All AI requests (30/day)", CUTOUT: "Decoration cut-outs (30/day)", GARMENT_MODEL: "3D views (5/day)" } as const;
 const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Dhaka" });
 
 function seconds(ms: number | null): string {

@@ -14,7 +14,7 @@ import { ReviewForm } from "./review-form";
 export const metadata: Metadata = { title: "Logo flags — ClothSeeker admin" };
 
 const when = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Dhaka" });
-const JOB_LABEL = { DESIGN_ROUND: "AI design photo", DRESS_MATCH: "Garment photo (start a design)", TRY_ON: "Try-on" } as const;
+const JOB_LABEL = { DESIGN_ROUND: "AI design photo", DRESS_MATCH: "Garment photo (start a design)", TRY_ON: "Try-on", GARMENT_MODEL: "3D view" } as const;
 const STATUS_LABEL = { OPEN: "Open", CONFIRMED: "Confirmed logo", DISMISSED: "Dismissed" } as const;
 
 export default async function AdminFlagsPage({ searchParams }: PageProps<"/admin/flags">) {

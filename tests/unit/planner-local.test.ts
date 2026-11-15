@@ -348,6 +348,7 @@ describe("local planner setup", () => {
       GEMINI_IMAGE_MODEL: "gemini-2.5-flash-image",
       SKETCH_PROVIDER: "fake" as const,
       CLOUDFLARE_SKETCH_MODEL: "@cf/black-forest-labs/flux-2-klein-4b",
+      MODEL3D_PROVIDER: "fake" as const,
     };
     expect(() => getAiProviders(env)).toThrow(/pnpm llm:setup/);
   });

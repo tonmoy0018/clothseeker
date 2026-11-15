@@ -162,6 +162,7 @@ describe("choosing the sketch renderer", () => {
     GEMINI_IMAGE_MODEL: "gemini-2.5-flash-image",
     SKETCH_PROVIDER: "fake" as const,
     CLOUDFLARE_SKETCH_MODEL: "@cf/black-forest-labs/flux-2-klein-4b",
+    MODEL3D_PROVIDER: "fake" as const,
   };
 
   it("uses the fake by default, and the real renderers only with their keys", () => {

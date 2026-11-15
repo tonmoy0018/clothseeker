@@ -31,13 +31,16 @@ import type { AiWorkerDeps } from "./run";
 
 const GARMENT_RENDER_WIDTH = 900;
 
-/** The garment image for the try-on model, what kind of garment it is, and its length (cm, size M) if known. */
-async function garmentImage(
-  deps: AiWorkerDeps,
-  job: ClaimedJob,
+/**
+ * The garment image for the try-on model (on a white 3:4 canvas), the garment alone on a transparent
+ * backdrop (`cutout`, for the 3D view), what kind of garment it is, and its length (cm, size M) if known.
+ */
+export async function garmentImage(
+  deps: Pick<AiWorkerDeps, "db" | "storage">,
+  job: Pick<ClaimedJob, "customerId">,
   source: TryOnPayload["source"],
   expectedHash: string,
-): Promise<{ image: Buffer; type: GarmentType; description: string; lengthCm: number | null }> {
+): Promise<{ image: Buffer; cutout: Buffer; type: GarmentType; description: string; lengthCm: number | null }> {
   const { db, storage } = deps;
   if (source.kind === "design") {
     let checked;
@@ -65,7 +68,7 @@ async function garmentImage(
     });
     const description = garmentDescription({ name: checked.context.template.productName, noun: GARMENT_TYPES[config.garmentType].noun, colour, styles });
     const lengthCm = garmentLengthCm(config.garmentType, checked.spec.styleOptions, null);
-    return { image: await prepareGarment(flat), type: config.garmentType, description, lengthCm };
+    return { image: await prepareGarment(flat), cutout: flat, type: config.garmentType, description, lengthCm };
   }
   const imageKey = await productTryOnImageKey(db, source.productId);
   if (!imageKey || productSignature(source.productId, imageKey) !== expectedHash) {
@@ -84,10 +87,11 @@ async function garmentImage(
   // Try-on models want the garment alone: cut the dress out of the catalogue photo (mannequin and
   // backdrop removed). If it can't be found, the whole photo is still better than nothing.
   try {
-    return { image: await prepareGarment(await cutOutGarment(image)), type, description, lengthCm };
+    const cutout = await cutOutGarment(image);
+    return { image: await prepareGarment(cutout), cutout, type, description, lengthCm };
   } catch (error) {
     if (!(error instanceof SegmentationError)) throw error;
-    return { image: await prepareGarment(image), type, description, lengthCm };
+    return { image: await prepareGarment(image), cutout: image, type, description, lengthCm };
   }
 }
 

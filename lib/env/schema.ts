@@ -108,6 +108,13 @@ const aiEnvShape = {
     .max(768)
     .refine((w) => w % 24 === 0, "a multiple of 24")
     .default(384),
+  /**
+   * The 3D view (lib/model3d): "fake" (default) bulges the garment's picture into a card, for development
+   * and tests; "local" is TripoSR on this machine (run `pnpm model3d:setup` first; about 10 s a model).
+   */
+  MODEL3D_PROVIDER: z.enum(["fake", "local"]).default("fake"),
+  /** MODEL3D_PROVIDER=local: where `pnpm model3d:setup` put the model, its code and its Python (default ~/.cache/clothseeker/local-3d). */
+  LOCAL_3D_DIR: z.string().startsWith("/").max(500).optional(),
   /** Optional free Hugging Face account token; raises the shared ZeroGPU allowance. */
   HF_TOKEN: z.string().regex(/^hf_[A-Za-z0-9]{20,}$/).optional(),
   /** Comma-separated Spaces tried in order (see lib/ai/providers/tryon-hf.ts). */

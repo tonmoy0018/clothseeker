@@ -16,7 +16,7 @@ export type BucketName = (typeof BUCKETS)[keyof typeof BUCKETS];
 /** Allowed file extensions per bucket. Content type is also checked by Supabase Storage. */
 export const BUCKET_EXTENSIONS: Record<BucketName, readonly string[]> = {
   "product-media": ["png", "jpg", "jpeg", "webp"],
-  "design-assets": ["png", "jpg", "jpeg", "webp", "pdf"],
+  "design-assets": ["png", "jpg", "jpeg", "webp", "pdf", "glb"],
   "qc-photos": ["png", "jpg", "jpeg", "webp"],
   "tryon-private": ["png", "jpg", "jpeg", "webp"],
 };

@@ -1,13 +1,8 @@
-import { spawn as nodeSpawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createInterface } from "node:readline";
-import type { Readable, Writable } from "node:stream";
 
 import sharp from "sharp";
-import { z } from "zod";
 
 import { hairMask } from "@/lib/tryon/hair";
 import { visibleHands } from "@/lib/tryon/hands";
@@ -20,6 +15,9 @@ import { maskAtSmooth, SELFIE_SIZE, type PersonMask } from "@/lib/vision/models/
 import { AiJobRejected, AiProviderError } from "../errors";
 import type { TryOnProvider, TryOnRequest } from "../types";
 import type { ModelSlot } from "./model-slot";
+import { PythonModelProcess, type SpawnModel } from "./python-model";
+
+export type { ModelProcess, SpawnModel } from "./python-model";
 
 // Virtual try-on on our own machine (TRYON_PROVIDER=local): no photo leaves it, and there's no shared
 // daily GPU allowance. The worker finds the customer's body with the on-device models, masks the area
@@ -213,186 +211,28 @@ async function putBack(rgb: Buffer, width: number, height: number, box: Box, mas
     .toBuffer();
 }
 
-const replySchema = z.union([
-  z.object({ ready: z.literal(true) }).loose(),
-  z.object({ id: z.string().nullable(), ok: z.literal(true) }).loose(),
-  z.object({ id: z.string().nullable(), ok: z.literal(false), error: z.enum(["OUT_OF_MEMORY", "INVALID_REQUEST", "FAILED"]) }),
-]);
-
-/** What the runner uses of the model's child process (a fake in tests). */
-export type ModelProcess = {
-  stdin: Writable;
-  stdout: Readable;
-  kill(signal: NodeJS.Signals): boolean;
-  once(event: "exit", listener: () => void): unknown;
-  once(event: "error", listener: (error: Error) => void): unknown;
-};
-export type SpawnModel = (python: string, args: string[], env: Record<string, string>) => ModelProcess;
-
-const defaultSpawn: SpawnModel = (python, args, env) => nodeSpawn(python, args, { env: { ...env, NODE_ENV: process.env.NODE_ENV }, stdio: ["pipe", "pipe", "ignore"] });
-
 export type CatVtonOptions = {
   /** The setup's Python (its virtual environment) and the model folder `pnpm tryon:setup` fills. */
   python: string;
   weights: string;
   script?: string;
-  /** Unload the model after this long without a try-on, giving the memory back. */
   idleMs?: number;
-  /** Limit for loading the model. */
   loadTimeoutMs?: number;
-  /** Shared with the other big local models: loading this one stops whichever holds the memory. */
   slot?: ModelSlot;
   spawn?: SpawnModel;
 };
 
-/** A try-on waiting for its answer, from the process it was sent to. */
-type Pending = { process: ModelProcess; resolve: () => void; reject: (error: Error) => void };
-
-/**
- * The model process: started on the first try-on, kept loaded between jobs, stopped when idle or when a
- * try-on runs out of time (a stuck model can't be interrupted otherwise). Gets only the variables it
- * needs, never the worker's keys. Its stderr is ignored: nothing it prints reaches our logs.
- */
-export class CatVtonProcess implements LocalTryOnRunner {
-  private child: ModelProcess | null = null;
-  private ready: Promise<void> | null = null;
-  private readonly pending = new Map<string, Pending>();
-  private queue: Promise<unknown> = Promise.resolve();
-  private idleTimer: NodeJS.Timeout | null = null;
-  private readonly spawnModel: SpawnModel;
-
-  constructor(private readonly options: CatVtonOptions) {
-    this.spawnModel = options.spawn ?? defaultSpawn;
-  }
-
-  run(job: LocalTryOnJob, signal: AbortSignal): Promise<void> {
-    const next = this.queue.then(() => this.runNow(job, signal));
-    this.queue = next.catch(() => undefined);
-    return next;
-  }
-
-  close(): void {
-    this.stop();
-  }
-
-  private async runNow(job: LocalTryOnJob, signal: AbortSignal): Promise<void> {
-    if (signal.aborted) throw new AiProviderError("local try-on aborted", true, "TIMEOUT");
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.options.slot?.claim(this);
-    try {
-      const child = await this.start(signal);
-      const id = randomUUID();
-      await new Promise<void>((resolve, reject) => {
-        const onAbort = () => {
-          this.stop();
-          reject(new AiProviderError("local try-on aborted", true, "TIMEOUT"));
-        };
-        signal.addEventListener("abort", onAbort, { once: true });
-        const done = () => signal.removeEventListener("abort", onAbort);
-        this.pending.set(id, {
-          process: child,
-          resolve: () => {
-            done();
-            resolve();
-          },
-          reject: (error) => {
-            done();
-            reject(error);
-          },
-        });
-        child.stdin.write(`${JSON.stringify({ id, ...job })}\n`);
-      });
-    } finally {
-      this.idleTimer = setTimeout(() => this.stop(), this.options.idleMs ?? 600_000);
-      this.idleTimer.unref();
-    }
-  }
-
-  private start(signal: AbortSignal): Promise<ModelProcess> {
-    const running = this.child;
-    if (running && this.ready) return this.ready.then(() => running);
-    const script = this.options.script ?? path.join(process.cwd(), "worker", "local-tryon", "catvton_server.py");
-    const child = this.spawnModel(this.options.python, [script, this.options.weights], {
-      PATH: process.env.PATH ?? "",
-      HOME: process.env.HOME ?? "",
-      PYTHONNOUSERSITE: "1",
-      PYTHONUNBUFFERED: "1",
-      // Never reach the network: everything was downloaded and checked by the setup.
-      HF_HUB_OFFLINE: "1",
+/** The CatVTON process (worker/local-tryon/catvton_server.py). */
+export class CatVtonProcess extends PythonModelProcess<LocalTryOnJob> implements LocalTryOnRunner {
+  constructor({ python, weights, script, ...rest }: CatVtonOptions) {
+    super({
+      ...rest,
+      python,
+      script: script ?? path.join(process.cwd(), "worker", "local-tryon", "catvton_server.py"),
+      args: [weights],
+      label: "local try-on",
       // Caps what the Mac's GPU may hold (of its memory), so a try-on can't push the machine into swap.
-      PYTORCH_MPS_HIGH_WATERMARK_RATIO: "0.55",
-      PYTORCH_MPS_LOW_WATERMARK_RATIO: "0.45",
+      env: { PYTORCH_MPS_HIGH_WATERMARK_RATIO: "0.55", PYTORCH_MPS_LOW_WATERMARK_RATIO: "0.45" },
     });
-    this.child = child;
-    // Writing to a process that just died fails here; its "exit" reports it.
-    child.stdin.on("error", () => undefined);
-    this.ready = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.stop();
-        reject(new AiProviderError("local try-on model took too long to load", true, "TIMEOUT"));
-      }, this.options.loadTimeoutMs ?? 300_000);
-      const onAbort = () => {
-        clearTimeout(timer);
-        this.stop();
-        reject(new AiProviderError("local try-on aborted", true, "TIMEOUT"));
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      createInterface({ input: child.stdout }).on("line", (line) => {
-        const reply = parseReply(line);
-        if (!reply) return;
-        if ("ready" in reply) {
-          clearTimeout(timer);
-          signal.removeEventListener("abort", onAbort);
-          resolve();
-          return;
-        }
-        const waiting = reply.id ? this.pending.get(reply.id) : undefined;
-        if (!waiting || !reply.id) return;
-        this.pending.delete(reply.id);
-        if (reply.ok) waiting.resolve();
-        else waiting.reject(new AiProviderError(`local try-on failed (${reply.error})`, reply.error !== "INVALID_REQUEST"));
-      });
-      child.once("exit", () => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-        if (this.child === child) {
-          this.child = null;
-          this.ready = null;
-        }
-        const stopped = new AiProviderError("local try-on model stopped", true);
-        reject(stopped);
-        // Only this process's try-ons: a killed process may exit after its replacement has started.
-        for (const [id, waiting] of this.pending) {
-          if (waiting.process !== child) continue;
-          this.pending.delete(id);
-          waiting.reject(stopped);
-        }
-      });
-      child.once("error", () => {
-        // The Python couldn't be started (setup missing): "exit" may not follow.
-        clearTimeout(timer);
-        this.child = null;
-        this.ready = null;
-        reject(new AiProviderError("local try-on model couldn't start", true));
-      });
-    });
-    return this.ready.then(() => child);
-  }
-
-  private stop(): void {
-    const child = this.child;
-    this.child = null;
-    this.ready = null;
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    child?.kill("SIGKILL");
-  }
-}
-
-function parseReply(line: string): z.infer<typeof replySchema> | null {
-  try {
-    const parsed = replySchema.safeParse(JSON.parse(line));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Redo2, ScanFace, Shirt, Undo2 } from "lucide-react";
+import { Box, Redo2, ScanFace, Shirt, Undo2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,7 @@ import { styleOptionsFor, templateStyleGroups, type PlacementArea, type Template
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
 import { CutoutDialog } from "./cutout-dialog";
+import { Garment3dView } from "@/app/(shop)/_model-3d/garment-3d-view";
 import { LiveMirror } from "@/app/(shop)/_try-on/live-mirror";
 import { TryOnPanel } from "@/app/(shop)/_try-on/try-on-panel";
 
@@ -141,6 +142,7 @@ export function DesignEditor(props: DesignEditorProps) {
   const [showTryOn, setShowTryOn] = useState(false);
   const tryOnPanel = useRef<HTMLDivElement>(null);
   const [showMirror, setShowMirror] = useState(false);
+  const [show3d, setShow3d] = useState(false);
   const [mirrorPhoto, setMirrorPhoto] = useState<Blob | null>(null);
   /** The front garment with its items printed on it, as last drawn by the canvas. */
   const printedRef = useRef<{ garment: HTMLCanvasElement; printed: HTMLCanvasElement } | null>(null);
@@ -537,6 +539,12 @@ export function DesignEditor(props: DesignEditorProps) {
           Live mirror
         </Button>
       )}
+      {pictures.front.garmentKey !== null && (
+        <Button variant="outline" data-testid="open-3d-view" onClick={() => setShow3d(true)}>
+          <Box className="size-4" />
+          3D view
+        </Button>
+      )}
     </>
   );
 
@@ -596,6 +604,11 @@ export function DesignEditor(props: DesignEditorProps) {
                 <ScanFace className="size-4" />
               </RailButton>
             )}
+            {pictures.front.garmentKey !== null && (
+              <RailButton label="3D view" pressed={show3d} onClick={() => setShow3d(true)}>
+                <Box className="size-4" />
+              </RailButton>
+            )}
           </div>
           <div className="absolute right-3 bottom-3 flex flex-col gap-2" role="group" aria-label="Garment side">
             {(["front", "back"] as const).filter((s) => pictures[s].garmentKey !== null).map((s) => (
@@ -622,6 +635,15 @@ export function DesignEditor(props: DesignEditorProps) {
             garment={{ type: config.garmentType, sizes: props.availableSizes, productLengthCm: null }}
             offeredPhoto={mirrorPhoto}
             onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+          />
+        )}
+        {show3d && (
+          <Garment3dView
+            source={{ kind: "design", spec, designId }}
+            signedIn={props.customerId !== null}
+            noun={garment.noun}
+            onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+            onClose={() => setShow3d(false)}
           />
         )}
         {showMirror && (

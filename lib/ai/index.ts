@@ -1,11 +1,13 @@
 import type { WorkerEnv } from "@/lib/env/schema";
 
 import { CloudflareGarmentShot, CloudflareImage, CloudflareSketch } from "./providers/cloudflare";
-import { FakeImage, FakePhotoChecker, FakePlanner, FakeSketch, FakeTryOn } from "./providers/fake";
+import { FakeGarmentModel, FakeImage, FakePhotoChecker, FakePlanner, FakeSketch, FakeTryOn } from "./providers/fake";
 import { GeminiGarmentShot, GeminiPlanner, GeminiSketch } from "./providers/gemini";
 import { LlamaServerProcess } from "./providers/llama-server";
 import { findLlamaServer, localLlmPaths, localLlmReady } from "./providers/local-llm-setup";
 import { ModelSlot } from "./providers/model-slot";
+import { LocalGarmentModel, TripoSrProcess } from "./providers/model3d-local";
+import { local3dPaths, local3dReady } from "./providers/model3d-local-setup";
 import { LocalPhotoChecker } from "./providers/photo-check-local";
 import { FallbackPlanner } from "./providers/planner-fallback";
 import { LocalPlanner } from "./providers/planner-local";
@@ -46,6 +48,8 @@ type ProviderEnv = Pick<
   | "LOCAL_TRYON_SAMPLER"
   | "LOCAL_TRYON_GUIDED"
   | "LOCAL_TRYON_WIDTH"
+  | "MODEL3D_PROVIDER"
+  | "LOCAL_3D_DIR"
 >;
 
 export class AiConfigError extends Error {
@@ -163,5 +167,17 @@ export function getAiProviders(env: ProviderEnv, onPlannerFallback?: (task: stri
     sketch = new FakeSketch(env.AI_FAKE_DELAY_MS);
   }
 
-  return { planner, image, tryOn, photoCheck, sketch, ...(garmentShot ? { garmentShot } : {}) };
+  // The 3D view: TripoSR on this machine, or the fake that bulges the picture into a card.
+  let garmentModel;
+  if (env.MODEL3D_PROVIDER === "local") {
+    const paths = local3dPaths(env.LOCAL_3D_DIR);
+    if (!local3dReady(paths)) {
+      throw new AiConfigError("The local 3D model isn't set up: run `pnpm model3d:setup` (needed when MODEL3D_PROVIDER=local)");
+    }
+    garmentModel = new LocalGarmentModel(new TripoSrProcess({ python: paths.python, weights: paths.weights, source: paths.source, slot }));
+  } else {
+    garmentModel = new FakeGarmentModel(env.AI_FAKE_DELAY_MS);
+  }
+
+  return { planner, image, tryOn, photoCheck, sketch, garmentModel, ...(garmentShot ? { garmentShot } : {}) };
 }
