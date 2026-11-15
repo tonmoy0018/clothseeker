@@ -314,6 +314,8 @@ describe("getAiProviders", () => {
     LOCAL_TRYON_GUIDED: 1,
     GARMENT_SHOT_PROVIDER: "none" as const,
     GEMINI_IMAGE_MODEL: "gemini-2.5-flash-image",
+    SKETCH_PROVIDER: "fake" as const,
+    CLOUDFLARE_SKETCH_MODEL: "@cf/black-forest-labs/flux-2-klein-4b",
   };
 
   it("uses the fakes by default and the real adapters when configured", () => {

@@ -13,13 +13,15 @@ import { findBrandTerm } from "./brands";
 import { AiError, BRAND_LOGO_MESSAGE, failureMessage } from "./errors";
 import { aiInputHash, normalizeInstruction } from "./hash";
 import { recordLimitHit } from "./limit-hits";
+import { cleanSketchNote, SKETCH_NOTE_MAX } from "./sketch";
 import { DAILY_ROUND_LIMIT, DAILY_SUBMISSION_LIMIT, QUOTA_MESSAGE, startOfDhakaDay, SUBMISSION_LIMIT_MESSAGE } from "./quota";
 
 // "Start a design from a dress photo or a description" (app side). Queues a DRESS_MATCH job; the
 // worker picks the closest customizable dress, prefills a draft design (lib/ai/worker/dress-match.ts)
 // and, for descriptions, queues an AI design round on it. With a photo the customer may instead ask for
 // their own dress (mode "own", lib/own-dress): made into a private template of its own, to customise or
-// to order exactly as it is, both through a quote.
+// to order exactly as it is, both through a quote. The photo may be a drawing ("sketch"): the worker first
+// has an image model turn it into a realistic photo of the garment (lib/ai/sketch.ts).
 
 const key = z.string().max(200).refine(isSafeObjectKey);
 
@@ -29,8 +31,18 @@ export const dressMatchPayloadSchema = z.object({
   referenceKey: key.nullable(),
   description: z.string().min(10).max(500).nullable(),
   seed: z.string().length(64),
-  /** Mode "own": what the garment is ("auto": the AI reads it), and whether to order it exactly as it is (else to customise it). */
-  own: z.object({ garmentType: z.enum([...GARMENT_TYPE_IDS, "auto"]), exact: z.boolean() }).optional(),
+  /**
+   * Mode "own": what the garment is ("auto": the AI reads it), and whether to order it exactly as it is
+   * (else to customise it). `sketch`: the photo is a drawing, with the customer's `note` on its fabric.
+   */
+  own: z
+    .object({
+      garmentType: z.enum([...GARMENT_TYPE_IDS, "auto"]),
+      exact: z.boolean(),
+      sketch: z.boolean().optional(),
+      note: z.string().max(SKETCH_NOTE_MAX).nullable().optional(),
+    })
+    .optional(),
 });
 export type DressMatchPayload = z.infer<typeof dressMatchPayloadSchema>;
 
@@ -65,7 +77,14 @@ export async function uploadReferencePhoto(storage: StorageAdapter, actor: Actor
 
 const startSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("photo"), referenceKey: z.string().max(200) }),
-  z.object({ mode: z.literal("own"), referenceKey: z.string().max(200), garmentType: z.enum([...GARMENT_TYPE_IDS, "auto"]), exact: z.boolean() }),
+  z.object({
+    mode: z.literal("own"),
+    referenceKey: z.string().max(200),
+    garmentType: z.enum([...GARMENT_TYPE_IDS, "auto"]),
+    exact: z.boolean(),
+    sketch: z.boolean().default(false),
+    note: z.string().trim().max(SKETCH_NOTE_MAX, "Keep your note under 200 characters.").optional(),
+  }),
   z.object({
     mode: z.literal("description"),
     description: z.string().trim().min(10, "Describe the dress in a sentence or two.").max(500, "Keep your description under 500 characters."),
@@ -103,7 +122,14 @@ export async function startDesignFrom(
     description = input.description.replace(/\s+/g, " ");
   }
 
-  const own = input.mode === "own" ? { garmentType: input.garmentType, exact: input.exact } : undefined;
+  if (input.mode === "own" && input.note && findBrandTerm(input.note)) {
+    throw new AiError("BRAND_LOGO", BRAND_LOGO_MESSAGE);
+  }
+  // A drawing keeps its note (a photo has none); the request's hash, and so its cache, include both.
+  const own =
+    input.mode === "own"
+      ? { garmentType: input.garmentType, exact: input.exact, ...(input.sketch ? { sketch: true, note: cleanSketchNote(input.note) } : {}) }
+      : undefined;
   const inputHash = aiInputHash({
     v: 1,
     type: "DRESS_MATCH",

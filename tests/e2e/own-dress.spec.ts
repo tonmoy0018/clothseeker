@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { chooseFabric, openDesignTab, signUpFreshCustomer } from "./helpers";
+import { sketchDrawing } from "../fixtures/sketch";
 
 // @supabase — a customer's own dress from their photo: made exactly as it is, or customised, and priced
 // by the team through a quote. Needs the local Supabase stack and the worker (fake AI providers).
@@ -34,6 +35,22 @@ test("the upload page offers just the dress photo, and signed-out visitors sign 
 });
 
 test.describe("@supabase your own dress", () => {
+  test("from a drawing: an AI makes it into a realistic picture, then it's the customer's own dress", async ({ page }) => {
+    test.setTimeout(150_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/design/upload");
+    await page.getByLabel("Upload a dress photo").setInputFiles({ name: "my-sketch.png", mimeType: "image/png", buffer: await sketchDrawing() });
+    const choices = page.getByTestId("photo-choices");
+    await expect(choices).toBeVisible({ timeout: 30_000 });
+    await choices.getByTestId("is-sketch").check();
+    await choices.getByLabel("What should it be made of?").fill("Red silk with a gold hem");
+    await choices.getByRole("button", { name: /^Make this exact garment/ }).click();
+    await expect(page.getByTestId("start-waiting")).toContainText("Turning your drawing into a realistic picture");
+    await expect(page).toHaveURL(/\/customize\/[0-9a-f-]{36}\?design=[0-9a-f-]{36}/, { timeout: 60_000 });
+    await expect(page.getByTestId("own-dress-price")).toContainText("the ClothSeeker team prices it");
+    await expect(page.getByTestId("quote-request")).toContainText("Get a price for your");
+  });
+
   test("make this exact dress: see it, try it on, then ask for a price; no shop price or cart", async ({ page }) => {
     test.setTimeout(150_000);
     await signUpFreshCustomer(page);

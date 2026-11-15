@@ -5,7 +5,8 @@ import { STYLE_GROUP_IDS, styleGroupsOf } from "@/lib/catalog/garment-types";
 import { AiProviderError } from "../errors";
 import { providerFetch, type FetchLike } from "./http";
 import { OPTIONS_PER_ROUND, PLACEMENT_ACROSS, PLACEMENT_DOWN, PLACEMENT_SIZES } from "../plan";
-import type { BrandLogoCheck, DressMatchRequest, GarmentShotProvider, PlanConstraints, PlannerProvider, PlanRequest, ProviderImage } from "../types";
+import { sketchPrompt } from "../sketch";
+import type { BrandLogoCheck, DressMatchRequest, GarmentShotProvider, PlanConstraints, PlannerProvider, PlanRequest, ProviderImage, SketchRenderer } from "../types";
 
 // Google Gemini planner (REST generateContent with a JSON response schema).
 //
@@ -373,6 +374,42 @@ export class GeminiGarmentShot implements GarmentShotProvider {
     } catch (error) {
       if (signal.aborted) throw error;
       return null;
+    }
+    const body = shotResponseSchema.safeParse(await response.json().catch(() => null));
+    const data = body.success ? body.data.candidates?.[0]?.content?.parts.find((p) => p.inlineData)?.inlineData?.data : undefined;
+    return data ? Buffer.from(data, "base64") : null;
+  }
+}
+
+/**
+ * Gemini's image model, turning a customer's drawing of a garment into a realistic photo of it
+ * (lib/ai/sketch.ts). Billed per image on a paid key; free keys have no image allowance (Google answers
+ * 429), which is "no picture" and ends the job with a message, as does a block.
+ */
+export class GeminiSketch implements SketchRenderer {
+  readonly name = "gemini";
+  private readonly fetchImpl: FetchLike;
+
+  constructor(private readonly options: { apiKey: string; model: string; fetch?: FetchLike }) {
+    this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
+  }
+
+  async renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal): Promise<Buffer | null> {
+    let response: Response;
+    try {
+      response = await providerFetch(this.fetchImpl, "gemini-image", `${API_BASE}/${encodeURIComponent(this.options.model)}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": this.options.apiKey },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: sketchPrompt(note) }, inlineImage(sketch)] }],
+          generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } },
+        }),
+        signal,
+      });
+    } catch (error) {
+      // Busy (5xx) or a network failure is retried; a refusal or no image allowance (4xx) won't change.
+      if (!signal.aborted && error instanceof AiProviderError && error.status !== undefined && error.status < 500 && error.status !== 408) return null;
+      throw error;
     }
     const body = shotResponseSchema.safeParse(await response.json().catch(() => null));
     const data = body.success ? body.data.candidates?.[0]?.content?.parts.find((p) => p.inlineData)?.inlineData?.data : undefined;

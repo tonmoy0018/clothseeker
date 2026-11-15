@@ -1,8 +1,8 @@
 import type { WorkerEnv } from "@/lib/env/schema";
 
-import { CloudflareGarmentShot, CloudflareImage } from "./providers/cloudflare";
-import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "./providers/fake";
-import { GeminiGarmentShot, GeminiPlanner } from "./providers/gemini";
+import { CloudflareGarmentShot, CloudflareImage, CloudflareSketch } from "./providers/cloudflare";
+import { FakeImage, FakePhotoChecker, FakePlanner, FakeSketch, FakeTryOn } from "./providers/fake";
+import { GeminiGarmentShot, GeminiPlanner, GeminiSketch } from "./providers/gemini";
 import { LlamaServerProcess } from "./providers/llama-server";
 import { findLlamaServer, localLlmPaths, localLlmReady } from "./providers/local-llm-setup";
 import { ModelSlot } from "./providers/model-slot";
@@ -35,6 +35,8 @@ type ProviderEnv = Pick<
   | "CLOUDFLARE_IMAGE_MODEL"
   | "CLOUDFLARE_FALLBACK_IMAGE_MODELS"
   | "CLOUDFLARE_SHOT_MODEL"
+  | "SKETCH_PROVIDER"
+  | "CLOUDFLARE_SKETCH_MODEL"
   | "AI_FAKE_DELAY_MS"
   | "TRYON_PROVIDER"
   | "HF_TOKEN"
@@ -144,5 +146,22 @@ export function getAiProviders(env: ProviderEnv, onPlannerFallback?: (task: stri
     garmentShot = new GeminiGarmentShot({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_IMAGE_MODEL });
   }
 
-  return { planner, image, tryOn, photoCheck, ...(garmentShot ? { garmentShot } : {}) };
+  // A customer's drawing made into a realistic photo of the garment: FLUX.2 on Cloudflare's free allowance,
+  // Gemini's image model (billed per image), or the fake that fills the drawn outline with a colour.
+  let sketch;
+  if (env.SKETCH_PROVIDER === "cloudflare") {
+    if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_API_TOKEN) {
+      throw new AiConfigError("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when SKETCH_PROVIDER=cloudflare");
+    }
+    sketch = new CloudflareSketch({ accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, model: env.CLOUDFLARE_SKETCH_MODEL });
+  } else if (env.SKETCH_PROVIDER === "gemini") {
+    if (!env.GEMINI_API_KEY) {
+      throw new AiConfigError("GEMINI_API_KEY is required when SKETCH_PROVIDER=gemini");
+    }
+    sketch = new GeminiSketch({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_IMAGE_MODEL });
+  } else {
+    sketch = new FakeSketch(env.AI_FAKE_DELAY_MS);
+  }
+
+  return { planner, image, tryOn, photoCheck, sketch, ...(garmentShot ? { garmentShot } : {}) };
 }

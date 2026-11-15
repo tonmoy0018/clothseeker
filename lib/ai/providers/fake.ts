@@ -6,6 +6,7 @@ import { PATTERNS } from "@/lib/catalog/patterns";
 import { GARMENT_TYPES, styleGroupsOf } from "@/lib/catalog/garment-types";
 
 import { knockOutWhite } from "../image-utils";
+import { cleanSketchNote } from "../sketch";
 import type {
   BrandLogoCheck,
   DressMatchRequest,
@@ -14,6 +15,7 @@ import type {
   PlannerProvider,
   PlanRequest,
   ProviderImage,
+  SketchRenderer,
   TryOnPhotoCheck,
   TryOnPhotoChecker,
   TryOnProvider,
@@ -26,6 +28,8 @@ import type {
 // Testing conventions:
 // - FakePlanner reports a brand logo for any photo whose dominant color is the marker red #E4002B.
 // - FakePhotoChecker rejects try-on photos that are dark (mean brightness < 60) or landscape.
+// - FakeSketch fills the drawn outline with a colour named in the note (dusty blue when none), and
+//   returns no picture for a blank page.
 // Real logo checks come from Gemini (lib/ai/providers/gemini.ts); real photo checks from the on-device models
 // (lib/ai/providers/photo-check-local.ts).
 
@@ -305,5 +309,83 @@ export class FakeTryOn implements TryOnProvider {
       .composite([{ input: garment, left: Math.round((width - (placed.width ?? garmentWidth)) / 2), top: Math.round(height * 0.2) }])
       .png()
       .toBuffer();
+  }
+}
+
+/** Colour words the fake sketch renderer understands in a note. */
+const FABRIC_COLOURS: [RegExp, [number, number, number]][] = [
+  [/\b(maroon|burgundy)\b/, [122, 30, 48]],
+  [/\bred\b/, [190, 40, 45]],
+  [/\bnavy\b/, [31, 42, 68]],
+  [/\bteal\b/, [30, 120, 120]],
+  [/\bblue\b/, [60, 100, 180]],
+  [/\bmint\b/, [170, 220, 195]],
+  [/\bgreen\b/, [50, 125, 80]],
+  [/\byellow\b/, [235, 200, 60]],
+  [/\b(gold|golden)\b/, [205, 160, 60]],
+  [/\borange\b/, [225, 120, 50]],
+  [/\bpink\b/, [225, 140, 170]],
+  [/\b(purple|lilac|violet)\b/, [140, 100, 180]],
+  [/\bbrown\b/, [120, 80, 50]],
+  [/\b(black)\b/, [35, 35, 38]],
+  [/\b(grey|gray)\b/, [130, 130, 135]],
+  [/\b(ivory|cream|white)\b/, [240, 232, 214]],
+];
+const DEFAULT_FABRIC: [number, number, number] = [143, 163, 200];
+const STUDIO: [number, number, number] = [241, 240, 237];
+
+/** The fabric colour a note names (its first colour word), or dusty blue. */
+export function fakeFabricColour(note: string | null): [number, number, number] {
+  const words = (cleanSketchNote(note) ?? "").toLowerCase();
+  return FABRIC_COLOURS.find(([pattern]) => pattern.test(words))?.[1] ?? DEFAULT_FABRIC;
+}
+
+/**
+ * Fills the garment drawn in a sketch: the paper reachable from the picture's edge becomes a studio
+ * backdrop, everything inside the drawn outline becomes fabric of the note's colour, shaded by the pencil
+ * lines. Obviously not a real rendering, but deterministic and instant. A blank page gives no picture.
+ */
+export class FakeSketch implements SketchRenderer {
+  readonly name = "fake";
+
+  constructor(private readonly delayMs = 0) {}
+
+  async renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal): Promise<Buffer | null> {
+    await delay(Math.round(this.delayMs / 2), signal);
+    const { data, info } = await sharp(sketch.data)
+      .rotate()
+      .resize(768, 1024, { fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const { width, height } = info;
+    const paper = (p: number) => (data[p] ?? 0) >= 200;
+    // The paper around the drawing: light pixels joined to the picture's edge.
+    const outside = new Uint8Array(width * height);
+    const stack: number[] = [];
+    for (let x = 0; x < width; x += 1) stack.push(x, (height - 1) * width + x);
+    for (let y = 0; y < height; y += 1) stack.push(y * width, y * width + width - 1);
+    while (stack.length > 0) {
+      const p = stack.pop() ?? 0;
+      if (outside[p] || !paper(p)) continue;
+      outside[p] = 1;
+      const x = p % width;
+      if (x > 0) stack.push(p - 1);
+      if (x < width - 1) stack.push(p + 1);
+      if (p >= width) stack.push(p - width);
+      if (p + width < width * height) stack.push(p + width);
+    }
+    let drawn = 0;
+    for (let p = 0; p < width * height; p += 1) drawn += outside[p] ? 0 : 1;
+    if (drawn < width * height * 0.01) return null;
+    const fabric = fakeFabricColour(note);
+    const rgb = Buffer.alloc(width * height * 3);
+    for (let p = 0; p < width * height; p += 1) {
+      const shade = outside[p] ? 1 : 0.55 + 0.45 * ((data[p] ?? 0) / 255);
+      const colour = outside[p] ? STUDIO : fabric;
+      for (let c = 0; c < 3; c += 1) rgb[p * 3 + c] = Math.round((colour[c] ?? 0) * shade);
+    }
+    return sharp(rgb, { raw: { width, height, channels: 3 } }).png().toBuffer();
   }
 }

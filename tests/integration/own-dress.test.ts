@@ -5,12 +5,12 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { getAdminProduct, listAdminProducts } from "@/lib/admin/products";
-import { AiProviderError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
+import { AiError, AiProviderError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
+import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeSketch, FakeTryOn } from "@/lib/ai/providers/fake";
 import { createDesignRoundJob, getJobStatus } from "@/lib/ai/jobs";
 import { storedOptionsSchema } from "@/lib/ai/rounds";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";
-import type { GarmentShotProvider, PlannerProvider } from "@/lib/ai/types";
+import type { GarmentShotProvider, PlannerProvider, SketchRenderer } from "@/lib/ai/types";
 import { processNextJob, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import type { Actor } from "@/lib/auth/policy";
 import { getCustomizationTemplate } from "@/lib/catalog/template-loader";
@@ -23,6 +23,7 @@ import type { MemoryStorageAdapter } from "@/lib/storage/memory";
 import { parseDesignSpec } from "@/types/design-spec";
 
 import { storageWithTemplateAssets } from "../fixtures/design";
+import { sketchDrawing } from "../fixtures/sketch";
 
 import { createProduct, createUser, db, resetDatabaseBeforeEach } from "./helpers";
 
@@ -38,11 +39,11 @@ beforeEach(async () => {
   await createProduct({ variants: [{ size: "M", color: "Sage", priceMinor: 320_000, stock: 3 }] });
 });
 
-function deps(planner: PlannerProvider = new FakePlanner(), garmentShot?: GarmentShotProvider): AiWorkerDeps {
+function deps(planner: PlannerProvider = new FakePlanner(), garmentShot?: GarmentShotProvider, sketch: SketchRenderer = new FakeSketch()): AiWorkerDeps {
   return {
     db,
     storage,
-    providers: { planner, image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker(), ...(garmentShot ? { garmentShot } : {}) },
+    providers: { planner, image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker(), sketch, ...(garmentShot ? { garmentShot } : {}) },
     workerId: "worker-a",
     timeoutMs: 30_000,
     backoffMs: () => 0,
@@ -52,10 +53,16 @@ function deps(planner: PlannerProvider = new FakePlanner(), garmentShot?: Garmen
 /** An AI-generated catalogue photo of a dress on a plain backdrop. */
 const dressPhoto = () => readFile(path.join(process.cwd(), "prisma", "seed-photos", "cotton-tiered-midi.jpg"));
 
-async function ownDress(customer: Actor, exact: boolean, photo?: Buffer, options: { garmentType?: string; planner?: PlannerProvider; garmentShot?: GarmentShotProvider } = {}) {
+async function ownDress(
+  customer: Actor,
+  exact: boolean,
+  photo?: Buffer,
+  options: { garmentType?: string; planner?: PlannerProvider; garmentShot?: GarmentShotProvider; sketch?: { note?: string; renderer?: SketchRenderer } } = {},
+) {
   const reference = await uploadReferencePhoto(storage, customer, photo ?? (await dressPhoto()));
-  const { jobId } = await startDesignFrom(db, storage, customer, { mode: "own", referenceKey: reference.key, garmentType: options.garmentType ?? "auto", exact });
-  await processNextJob(deps(options.planner, options.garmentShot));
+  const fromSketch = options.sketch ? { sketch: true, note: options.sketch.note } : {};
+  const { jobId } = await startDesignFrom(db, storage, customer, { mode: "own", referenceKey: reference.key, garmentType: options.garmentType ?? "auto", exact, ...fromSketch });
+  await processNextJob(deps(options.planner, options.garmentShot, options.sketch?.renderer));
   return { jobId, referenceKey: reference.key, status: await getStartStatus(db, customer, jobId) };
 }
 
@@ -239,5 +246,40 @@ describe("your own dress from a photo", () => {
     await db.user.delete({ where: { id: ava.id } });
     expect(await db.product.findUniqueOrThrow({ where: { id: productId } })).toMatchObject({ status: "PRIVATE", ownerId: null });
     expect(await loadDesignContext(db, storage, productId)).toBeNull();
+  });
+
+  it("from a drawing: an AI makes a realistic picture of it first, and the sketch stays the reference", async () => {
+    const ava = await createUser();
+    const notes: (string | null)[] = [];
+    const fake = new FakeSketch();
+    const renderer: SketchRenderer = { name: "test", renderSketch: (image, note, signal) => (notes.push(note), fake.renderSketch(image, note, signal)) };
+    const { status, referenceKey } = await ownDress(ava, true, await sketchDrawing(), { garmentType: "dress", sketch: { note: "Red silk <b>!", renderer } });
+    if (status.state !== "done") throw new Error(`expected done, got ${JSON.stringify(status)}`);
+    // The note reached the renderer cleaned (plain words only).
+    expect(notes).toEqual(["Red silk b"]);
+    const product = await db.product.findUniqueOrThrow({ where: { id: status.result.productId }, include: { template: true } });
+    expect(product).toMatchObject({ status: "PRIVATE", ownerId: ava.id, garmentType: "dress" });
+    expect(product.description).toContain("AI rendering of the customer's sketch");
+    expect(product.template).not.toBeNull();
+    // The team makes what the sketch shows: it's the design's reference picture.
+    expect(await db.design.findUniqueOrThrow({ where: { id: status.result.designId } })).toMatchObject({ referencePhotoKey: referenceKey, status: "SAVED" });
+  });
+
+  it("from a drawing the AI can't render: a clear message, and nothing left behind", async () => {
+    const ava = await createUser();
+    const refusing: SketchRenderer = { name: "test", renderSketch: async () => null };
+    const { status } = await ownDress(ava, false, await sketchDrawing(), { sketch: { renderer: refusing } });
+    expect(status).toMatchObject({ state: "failed", code: "SKETCH_NOT_RENDERED", message: expect.stringContaining("drawing") });
+    expect(await db.product.count({ where: { status: "PRIVATE" } })).toBe(0);
+    expect(await db.design.count()).toBe(0);
+  });
+
+  it("refuses a brand name in a drawing's note", async () => {
+    const ava = await createUser();
+    const reference = await uploadReferencePhoto(storage, ava, await sketchDrawing());
+    await expect(startDesignFrom(db, storage, ava, { mode: "own", referenceKey: reference.key, garmentType: "dress", exact: false, sketch: true, note: "Like a Gucci gown" })).rejects.toMatchObject({
+      code: "BRAND_LOGO",
+    });
+    await expect(startDesignFrom(db, storage, ava, { mode: "own", referenceKey: reference.key, garmentType: "dress", exact: false, sketch: true, note: "x".repeat(201) })).rejects.toBeInstanceOf(AiError);
   });
 });

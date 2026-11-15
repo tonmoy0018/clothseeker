@@ -137,5 +137,26 @@ export interface GarmentShotProvider {
   productShot(image: ProviderImage, signal: AbortSignal): Promise<Buffer | null>;
 }
 
-/** `garmentShot` is optional: without it, customers' own garments are cut out of their photos as they are. */
-export type AiProviders = { planner: PlannerProvider; image: ImageProvider; tryOn: TryOnProvider; photoCheck: TryOnPhotoChecker; garmentShot?: GarmentShotProvider };
+/** Turns a customer's drawing of a garment into a realistic photo of it (their own dress from a sketch). */
+export interface SketchRenderer {
+  readonly name: string;
+  /**
+   * A photo of the garment drawn in `sketch` (image bytes, untrusted until re-encoded), or null when the
+   * model can't or won't (quota, refusal, nothing drawn). `note`: the customer's words on what it should
+   * be made of (untrusted; providers pass it as a description, never as instructions).
+   */
+  renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal): Promise<Buffer | null>;
+}
+
+/**
+ * `garmentShot` is optional: without it, customers' own garments are cut out of their photos as they are.
+ * Without `sketch`, a customer's drawing can't become a garment (the job fails with SKETCH_NOT_RENDERED).
+ */
+export type AiProviders = {
+  planner: PlannerProvider;
+  image: ImageProvider;
+  tryOn: TryOnProvider;
+  photoCheck: TryOnPhotoChecker;
+  garmentShot?: GarmentShotProvider;
+  sketch?: SketchRenderer;
+};

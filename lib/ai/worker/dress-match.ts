@@ -1,6 +1,6 @@
 import { styleOptionsFor, templateStyleGroups } from "@/types/template";
 import { loadDesignContext, type DesignContext } from "@/lib/design/service";
-import { processImage } from "@/lib/media/process-image";
+import { ImageValidationError, processImage } from "@/lib/media/process-image";
 import { buildOwnDress, OwnDressError, removeOwnDress } from "@/lib/own-dress/build";
 import { parseGarmentReading } from "@/lib/own-dress/read";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -17,8 +17,9 @@ import type { AiWorkerDeps } from "./run";
 // "Start from a dress photo / description", run by the worker:
 //   candidates (live customizable dresses) → brand-logo check (photo) → planner.matchDress
 //   → validated match → prefilled DRAFT design → (description) AI design round → job SUCCEEDED.
-// Or, for "your own dress": brand-logo check → the photo made into a private template (lib/own-dress)
-//   → a draft (customise) or saved (exact) design on it → job SUCCEEDED.
+// Or, for "your own dress": brand-logo check → (a drawing) a realistic photo of it (lib/ai/sketch.ts)
+//   → the photo made into a private template (lib/own-dress) → a draft (customise) or saved (exact)
+//   design on it → job SUCCEEDED.
 
 const MAX_CANDIDATES = 40;
 
@@ -80,12 +81,25 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
     throw new AiJobRejected("INTERNAL");
   }
   const photo = await checkedPhoto(deps, job, input.referenceKey, signal);
-  // A clean product shot of the same garment, when an image model is configured and willing (it isn't on
-  // a free key without an image allowance): the garment is then read and cut out of that instead.
   let source = photo;
   let shot = false;
+  const sketch = input.own.sketch === true;
   const garmentShot = deps.providers.garmentShot;
-  if (garmentShot) {
+  if (sketch) {
+    // A drawing can't be cut out as it is: an image model draws the garment as a real one first. Without
+    // a picture there's nothing to make (a busy service is retried: its error is thrown).
+    const raw = await deps.providers.sketch?.renderSketch(photo, input.own.note ?? null, signal);
+    if (!raw) throw new AiJobRejected("SKETCH_NOT_RENDERED");
+    try {
+      const image = await processImage(raw, "aiInput");
+      source = { data: image.data, mimeType: "image/webp" };
+    } catch (error) {
+      if (error instanceof ImageValidationError) throw new AiJobRejected("SKETCH_NOT_RENDERED");
+      throw error;
+    }
+  } else if (garmentShot) {
+    // A clean product shot of the same garment, when an image model is configured and willing (it isn't on
+    // a free key without an image allowance): the garment is then read and cut out of that instead.
     try {
       const raw = await garmentShot.productShot(photo, signal);
       if (raw) {
@@ -120,6 +134,7 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
       exact: input.own.exact,
       reading,
       shot,
+      sketch,
     });
   } catch (error) {
     if (error instanceof OwnDressError) throw new AiJobRejected("GARMENT_NOT_FOUND");
@@ -135,7 +150,7 @@ async function runOwnDress(deps: AiWorkerDeps, job: ClaimedJob, input: DressMatc
     if (finished.count !== 1) {
       throw new LostLease();
     }
-    deps.log?.("ai.start_own_dress", { jobId: job.id, exact: input.own.exact, read: reading !== null, boxed: reading?.box != null, parts: reading?.parts.length ?? 0, shot });
+    deps.log?.("ai.start_own_dress", { jobId: job.id, exact: input.own.exact, read: reading !== null, boxed: reading?.box != null, parts: reading?.parts.length ?? 0, shot, sketch });
   } catch (error) {
     // The dress belongs to this attempt only.
     await removeOwnDress(db, storage, built.productId).catch(() => undefined);

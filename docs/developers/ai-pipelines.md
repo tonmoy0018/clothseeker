@@ -88,7 +88,7 @@ The local planner (above) keeps everything on the worker's machine.
 
 On the **free tier, Google may use prompts and images to improve its products.** That includes customer photos attached to AI requests. That's acceptable for testing with your own pictures. Before real customers use it, move to a paid tier (which doesn't use data for training) or state it clearly in the privacy policy.
 
-Cloudflare Workers AI receives the planner's short motif description. With `GARMENT_SHOT_PROVIDER=cloudflare` it also receives **the customer's photo of their garment** (re-encoded first, so only its pixels leave), which may show a person wearing it. That's off by default. Before real customers use it, check what Cloudflare keeps and say so in the privacy policy. Try-on photos never go to Cloudflare or Gemini.
+Cloudflare Workers AI receives the planner's short motif description. With `GARMENT_SHOT_PROVIDER=cloudflare` it also receives **the customer's photo of their garment** (re-encoded first, so only its pixels leave), which may show a person wearing it. That's off by default. With `SKETCH_PROVIDER=cloudflare` (or `gemini`) it receives **customers' drawings** and the note they add; also off by default (the fake renders them locally). Before real customers use it, check what Cloudflare keeps and say so in the privacy policy. Try-on photos never go to Cloudflare or Gemini.
 
 ### The fakes
 
@@ -216,6 +216,13 @@ browser: /customize/{product}?design=… (see it → "Try it on" → "Request a 
   - `cloudflare` (added 2026-11-11): FLUX.2 klein 4B on Workers AI (`CLOUDFLARE_SHOT_MODEL`), about 125 neurons a shot from the free daily allowance it shares with the motifs. The photo is sent to Cloudflare. When the allowance is used up, or the model refuses or answers oddly, there's no shot.
   - `gemini`: `GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`). On a free key Google answers 429, since there's no image allowance; it's billed per image once billing is on.
 - **Paired parts** (2026-11-11). The AI boxes "Left sleeve" and "Right sleeve" separately (tight boxes tell the sides from the body between them); the two sides become one part, "Sleeves", that the customer recolours together (`pairName`, `lib/garment-photo/parts.ts`).
+- **From a drawing** (added 2026-11-15). The customer ticks "This is a drawing or sketch" on the Upload page and may add a note on what it should be made of ("Red silk with a gold hem", at most 200 characters, brand names refused like descriptions).
+  - The job (`own.sketch`, `own.note` in the payload) checks the drawing for brand logos, then has a `SketchRenderer` turn it into a realistic product photo of the garment (`lib/ai/sketch.ts`: the garment exactly as drawn, the note only for fabric and colours, front view on an invisible mannequin, studio grey backdrop). From there it's the photo path above: reading, parts, cut-out, private product, quote.
+  - `SKETCH_PROVIDER`: `fake` (default: fills the drawn outline with the note's colour, for development and tests), `cloudflare` (FLUX.2 klein, `CLOUDFLARE_SKETCH_MODEL`, within the free daily allowance) or `gemini` (`GEMINI_IMAGE_MODEL`, paid keys only).
+  - The rendering is needed, unlike a product shot: a busy service is retried; a refusal, no allowance left or an unusable picture ends the job with `SKETCH_NOT_RENDERED` ("We couldn't turn your drawing into a garment this time…"), leaving nothing behind.
+  - The drawing stays the design's reference picture, so the team sees it beside the rendering on the quote; the product's description says its picture is an AI rendering of the customer's sketch ("make what it shows").
+  - "Start from our closest dress" with a drawing matches it like a photo (the planner reads drawings), without rendering it.
+  - Not done yet: a choice of several renderings (one is made per request), and a 3D preview (TripoSR ran on the 8 GB Mac in about 10 s a garment, 3.2 GB at peak, in an experiment on 2026-11-15: a rigid "spin it round" shape, the back invented).
 - **The order on the design screen.** First the garment, then a "See it on you" step ("Try it on" opens the try-on panel), then "Get a price for your dress". The quote isn't pushed first. Both sit in the page, not in the bar pinned to the bottom, which keeps only the size and Save (a tall pinned bar covered the AI options).
 
 - **Private.** `status: PRIVATE` keeps it out of everything that shows ACTIVE products:

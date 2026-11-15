@@ -72,6 +72,14 @@ const aiEnvShape = {
   GARMENT_SHOT_PROVIDER: z.enum(["none", "gemini", "cloudflare"]).default("none"),
   CLOUDFLARE_SHOT_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-2-klein-4b"),
   GEMINI_IMAGE_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-2.5-flash-image"),
+  /**
+   * A customer's drawing of a garment turned into a realistic photo of it, to make into their own dress
+   * (lib/ai/sketch.ts). "fake" (default): fills the drawn outline with a colour, for development and tests.
+   * "cloudflare": FLUX.2 klein within the free daily allowance (the drawing is sent to Cloudflare).
+   * "gemini": Gemini's image model (needs a paid key; free keys are refused).
+   */
+  SKETCH_PROVIDER: z.enum(["fake", "cloudflare", "gemini"]).default("fake"),
+  CLOUDFLARE_SKETCH_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-2-klein-4b"),
   /** Artificial latency of the fake providers, so loading states are visible in development. */
   AI_FAKE_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(1_500),
   /** Hard limit for one attempt at an AI job. */
@@ -143,13 +151,13 @@ export const workerEnvSchema = z.object({
 
 /** Keys the chosen providers need but don't have. */
 export function missingAiKeys(
-  env: { PLANNER_PROVIDER: string; IMAGE_PROVIDER: string; GARMENT_SHOT_PROVIDER?: string } & Partial<Record<"GEMINI_API_KEY" | "CLOUDFLARE_ACCOUNT_ID" | "CLOUDFLARE_API_TOKEN", string>>,
+  env: { PLANNER_PROVIDER: string; IMAGE_PROVIDER: string; GARMENT_SHOT_PROVIDER?: string; SKETCH_PROVIDER?: string } & Partial<Record<"GEMINI_API_KEY" | "CLOUDFLARE_ACCOUNT_ID" | "CLOUDFLARE_API_TOKEN", string>>,
 ): string[] {
   const missing: string[] = [];
-  if ((env.PLANNER_PROVIDER === "gemini" || env.GARMENT_SHOT_PROVIDER === "gemini") && !env.GEMINI_API_KEY) {
+  if ((env.PLANNER_PROVIDER === "gemini" || env.GARMENT_SHOT_PROVIDER === "gemini" || env.SKETCH_PROVIDER === "gemini") && !env.GEMINI_API_KEY) {
     missing.push("GEMINI_API_KEY");
   }
-  if (env.IMAGE_PROVIDER === "cloudflare" || env.GARMENT_SHOT_PROVIDER === "cloudflare") {
+  if (env.IMAGE_PROVIDER === "cloudflare" || env.GARMENT_SHOT_PROVIDER === "cloudflare" || env.SKETCH_PROVIDER === "cloudflare") {
     if (!env.CLOUDFLARE_ACCOUNT_ID) {
       missing.push("CLOUDFLARE_ACCOUNT_ID");
     }

@@ -42,6 +42,8 @@ export type OwnDressInput = {
   reading: GarmentReading | null;
   /** `photo` is an AI product shot made from the customer's photo (the team is told so). */
   shot?: boolean;
+  /** `photo` is an AI rendering of the customer's drawing (`referenceKey`, the team's reference). */
+  sketch?: boolean;
 };
 
 /** The style option labels say what the AI saw ("V-neck"), else "As in your photo". */
@@ -132,7 +134,8 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
           slug: `own-${productId}`,
           name: ownDressName(reading, type),
           description: [
-            reading?.description ?? `Your own ${noun}, from your photo.`,
+            reading?.description ?? `Your own ${noun}, from your ${input.sketch ? "drawing" : "photo"}.`,
+            input.sketch ? "Picture: an AI rendering of the customer's sketch (their sketch is the reference: make what it shows)." : null,
             input.shot ? "Picture: an AI product shot made from the customer's photo (their own photo is the reference)." : null,
           ]
             .filter((s): s is string => s !== null)

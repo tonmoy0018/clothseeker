@@ -60,9 +60,10 @@ export async function uploadDressPhotoAction(formData: FormData): Promise<Upload
 
 /**
  * What to make of an uploaded dress photo: our closest dress ("closest"), their own dress to customise
- * ("customize") or exactly as it is ("exact"). Everything is re-checked in lib/ai/starts.ts.
+ * ("customize") or exactly as it is ("exact"). `sketch`: the photo is a drawing, made into a realistic
+ * picture first, with the customer's `note` on its fabric. Everything is re-checked in lib/ai/starts.ts.
  */
-export async function startFromPhotoAction(referenceKey: unknown, choice: unknown, garmentType: unknown): Promise<StartResult> {
+export async function startFromPhotoAction(referenceKey: unknown, choice: unknown, garmentType: unknown, sketch: unknown = false, note: unknown = undefined): Promise<StartResult> {
   const user = await customer();
   if (isFailure(user)) {
     return user;
@@ -70,7 +71,7 @@ export async function startFromPhotoAction(referenceKey: unknown, choice: unknow
   const input =
     choice === "closest"
       ? { mode: "photo", referenceKey }
-      : { mode: "own", referenceKey, garmentType, exact: choice === "exact" };
+      : { mode: "own", referenceKey, garmentType, exact: choice === "exact", sketch, note: note === "" ? undefined : note };
   if (choice !== "closest" && choice !== "customize" && choice !== "exact") {
     return { status: "error", message: "Choose what to do with your photo." };
   }

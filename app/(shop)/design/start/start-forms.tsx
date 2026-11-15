@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { nativeSelectClass } from "@/components/ui/select";
 import { GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 import { downscalePhoto } from "@/lib/media/client-resize";
@@ -17,18 +18,20 @@ import { textareaClass } from "@/components/ui/textarea";
 // to our closest dress, queues a dress match and opens the design screen on that dress (with an AI round
 // running for descriptions). A photo can instead become the customer's own dress, to customise or to have
 // made exactly as it is: both open the design screen on it, and are priced by the team through a quote.
+// The photo may be a drawing: an AI then turns it into a realistic picture of the garment first.
 
 const POLL_MS = 1500;
 const GIVE_UP_MS = 8 * 60 * 1000;
 
 type PhotoChoice = "exact" | "customize" | "closest";
-type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; mode: "photo" | "description"; choice?: PhotoChoice } | { kind: "error"; message: string };
+type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; mode: "photo" | "description"; choice?: PhotoChoice; sketch?: boolean } | { kind: "error"; message: string };
 
 const WAITING: Record<PhotoChoice, string> = {
   exact: "Getting your own dress ready…",
   customize: "Getting your own dress ready to customise…",
   closest: "Matching your photo to our dresses…",
 };
+const WAITING_SKETCH = "Turning your drawing into a realistic picture, then getting it ready… (about a minute)";
 
 const EXAMPLES = ["A flowy floral midi for a summer wedding", "A simple black dress with long sleeves for work", "A bright tiered dress for a beach holiday"];
 
@@ -44,6 +47,9 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
   // "auto": the AI reads what it is from the photo.
   const [garmentType, setGarmentType] = useState<GarmentType | "auto">("auto");
   const noun = garmentType === "auto" ? "garment" : GARMENT_TYPES[garmentType].noun;
+  // The upload is a drawing: an AI makes it into a realistic picture first; `note` says what it's made of.
+  const [sketch, setSketch] = useState(false);
+  const [note, setNote] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [pending, startTransition] = useTransition();
 
@@ -93,7 +99,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
     };
   }, [waitingJob, router]);
 
-  function handle(result: StartResult, mode: "photo" | "description", choice?: PhotoChoice) {
+  function handle(result: StartResult, mode: "photo" | "description", choice?: PhotoChoice, fromSketch = false) {
     if (result.status === "signin") {
       signIn();
       return;
@@ -102,7 +108,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
       setPhase({ kind: "error", message: result.message });
       return;
     }
-    setPhase({ kind: "waiting", jobId: result.jobId, mode, choice });
+    setPhase({ kind: "waiting", jobId: result.jobId, mode, choice, sketch: fromSketch });
   }
 
   function uploadPhoto(file: File) {
@@ -135,7 +141,8 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
   function choose(choice: PhotoChoice) {
     if (!photoKey) return;
     setPhase({ kind: "idle" });
-    startTransition(async () => handle(await startFromPhotoAction(photoKey, choice, garmentType), "photo", choice));
+    const ownSketch = sketch && choice !== "closest";
+    startTransition(async () => handle(await startFromPhotoAction(photoKey, choice, garmentType, ownSketch, ownSketch ? note : undefined), "photo", choice, ownSketch));
   }
 
   function startFromDescription() {
@@ -154,12 +161,12 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
       {!signedIn && <p className="text-sm text-muted-foreground">You&apos;ll be asked to sign in first.</p>}
       <div className={cn("grid gap-4", photoOnly ? "max-w-xl" : "md:grid-cols-2")}>
         <section className="flex flex-col gap-3 rounded-2xl border bg-card p-5" data-testid="start-photo">
-          <h2 className="font-medium">From a dress photo</h2>
+          <h2 className="font-medium">From a dress photo or a drawing</h2>
           <p className="text-sm text-muted-foreground">
-            Upload a photo of a dress you like. We can make it exactly as it is, let you customise it, or start you from our closest dress.
+            Upload a photo of a dress you like, or your own sketch of one. We can make it exactly as it is, let you customise it, or start you from our closest dress.
           </p>
           <label className={cn(buttonVariants({ variant: "outline" }), "w-fit cursor-pointer", busy && "pointer-events-none opacity-50")}>
-            {photoKey ? "Use another photo" : "Upload a dress photo"}
+            {photoKey ? "Use another picture" : "Upload a photo or drawing"}
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -175,7 +182,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
           </label>
           {preview && (photoKey || (phase.kind === "waiting" && phase.mode === "photo")) && (
             <span className="relative block h-40 w-28 overflow-hidden rounded-lg bg-muted">
-              <Image src={preview} alt="Your dress photo" fill unoptimized className="object-cover" />
+              <Image src={preview} alt={sketch ? "Your drawing" : "Your dress photo"} fill unoptimized className="object-cover" />
             </span>
           )}
           {photoKey && (
@@ -196,10 +203,30 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
                   ))}
                 </select>
               </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-0.5 size-4" checked={sketch} disabled={busy} onChange={(e) => setSketch(e.target.checked)} data-testid="is-sketch" />
+                <span>
+                  This is a drawing or sketch
+                  <span className="block text-xs text-muted-foreground">Our AI turns it into a realistic picture of the {noun} first, so you can see it, customise it and try it on.</span>
+                </span>
+              </label>
+              {sketch && (
+                <label className="flex flex-col gap-1 text-sm">
+                  What should it be made of? (optional)
+                  <Input
+                    value={note}
+                    maxLength={200}
+                    disabled={busy}
+                    placeholder="e.g. Red silk with gold embroidery on the hem"
+                    onChange={(e) => setNote(e.target.value)}
+                    aria-label="What should it be made of?"
+                  />
+                </label>
+              )}
               <div className="flex flex-col gap-2">
                 <ChoiceButton
                   title={`Make this exact ${noun}`}
-                  detail="We make it just like your photo. See it, try it on, then ask for a price: we reply within 24 hours."
+                  detail={sketch ? "We make it just as you drew it. See it, try it on, then ask for a price: we reply within 24 hours." : "We make it just like your photo. See it, try it on, then ask for a price: we reply within 24 hours."}
                   onClick={() => choose("exact")}
                   disabled={busy}
                 />
@@ -250,7 +277,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
 
       {phase.kind === "waiting" && (
         <p role="status" className="text-sm text-muted-foreground" data-testid="start-waiting">
-          {phase.mode === "photo" ? WAITING[phase.choice ?? "closest"] : "Finding the best dress for your description…"}
+          {phase.mode === "photo" ? (phase.sketch ? WAITING_SKETCH : WAITING[phase.choice ?? "closest"]) : "Finding the best dress for your description…"}
         </p>
       )}
       {phase.kind === "error" && (

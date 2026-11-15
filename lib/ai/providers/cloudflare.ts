@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import { AiProviderError } from "../errors";
 import { providerFetch, type FetchLike } from "./http";
-import type { GarmentShotProvider, ImageProvider, MotifRequest, ProviderImage } from "../types";
+import { sketchPrompt } from "../sketch";
+import type { GarmentShotProvider, ImageProvider, MotifRequest, ProviderImage, SketchRenderer } from "../types";
 
 // Cloudflare Workers AI images (free daily allowance of 10,000 neurons, shared by everything below).
 //
@@ -17,7 +18,8 @@ import type { GarmentShotProvider, ImageProvider, MotifRequest, ProviderImage } 
 // same allowance, so retrying would just fail the round. Short rate limits (other 429s) still retry.
 //
 // Product shots (CloudflareGarmentShot): FLUX.2 [klein] also edits pictures, so it can turn a customer's
-// photo of a garment into a clean studio shot of the same garment (about 125 neurons).
+// photo of a garment into a clean studio shot of the same garment (about 125 neurons). The same goes for a
+// customer's drawing of a garment (CloudflareSketch): it becomes a realistic photo of it.
 
 export const DEFAULT_CLOUDFLARE_IMAGE_MODEL = "@cf/black-forest-labs/flux-2-klein-4b";
 export const DEFAULT_CLOUDFLARE_FALLBACK_IMAGE_MODELS = ["@cf/black-forest-labs/flux-1-schnell"] as const;
@@ -136,6 +138,19 @@ const SHOT_INPUT_SIDE = 1024;
 const SHOT_WIDTH = 768;
 const SHOT_HEIGHT = 1024;
 
+/** Sends a picture and an instruction to an image-editing model (FLUX.2 klein takes a multipart form). */
+async function editPicture(fetchImpl: FetchLike, provider: string, accountId: string, apiToken: string, model: string, prompt: string, image: ProviderImage, signal: AbortSignal): Promise<Response> {
+  const jpeg = await sharp(image.data).rotate().resize(SHOT_INPUT_SIDE, SHOT_INPUT_SIDE, { fit: "inside", withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 90 }).toBuffer();
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("input_image_0", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "garment.jpg");
+  form.append("width", String(SHOT_WIDTH));
+  form.append("height", String(SHOT_HEIGHT));
+  return providerFetch(fetchImpl, provider, runUrl(accountId, model), { method: "POST", headers: { authorization: `Bearer ${apiToken}` }, body: form, signal });
+}
+
+type EditOptions = { accountId: string; apiToken: string; model: string; fetch?: FetchLike };
+
 /**
  * FLUX.2 [klein] on Workers AI, making a clean product shot of a customer's own garment from their photo
  * (lib/own-dress). It only helps: anything but a picture (the daily allowance used up, a refusal, an odd
@@ -146,28 +161,56 @@ export class CloudflareGarmentShot implements GarmentShotProvider {
   readonly name = "cloudflare";
   private readonly fetchImpl: FetchLike;
 
-  constructor(private readonly options: { accountId: string; apiToken: string; model: string; fetch?: FetchLike }) {
+  constructor(private readonly options: EditOptions) {
     this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
   }
 
   async productShot(image: ProviderImage, signal: AbortSignal): Promise<Buffer | null> {
+    const { accountId, apiToken, model } = this.options;
     let response: Response;
     try {
-      const jpeg = await sharp(image.data).rotate().resize(SHOT_INPUT_SIDE, SHOT_INPUT_SIDE, { fit: "inside", withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 90 }).toBuffer();
-      const form = new FormData();
-      form.append("prompt", SHOT_PROMPT);
-      form.append("input_image_0", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "garment.jpg");
-      form.append("width", String(SHOT_WIDTH));
-      form.append("height", String(SHOT_HEIGHT));
-      response = await providerFetch(this.fetchImpl, "cloudflare-shot", runUrl(this.options.accountId, this.options.model), {
-        method: "POST",
-        headers: { authorization: `Bearer ${this.options.apiToken}` },
-        body: form,
-        signal,
-      });
+      response = await editPicture(this.fetchImpl, "cloudflare-shot", accountId, apiToken, model, SHOT_PROMPT, image, signal);
     } catch (error) {
       if (signal.aborted) throw error;
       return null;
+    }
+    try {
+      return await imageFrom(response);
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * FLUX.2 [klein] on Workers AI, turning a customer's drawing of a garment into a realistic photo of it
+ * (lib/ai/sketch.ts). The drawing is needed, unlike a product shot: a busy service or a short rate limit is
+ * retried (the error is thrown); a refusal or the daily allowance used up is "no picture" (null), which
+ * ends the job with a message. The drawing is sent to Cloudflare, re-encoded so only its pixels leave.
+ */
+export class CloudflareSketch implements SketchRenderer {
+  readonly name = "cloudflare";
+  private readonly fetchImpl: FetchLike;
+
+  constructor(private readonly options: EditOptions) {
+    this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
+  }
+
+  async renderSketch(sketch: ProviderImage, note: string | null, signal: AbortSignal): Promise<Buffer | null> {
+    const { accountId, apiToken, model } = this.options;
+    let allowanceUsed = false;
+    const checked: FetchLike = async (input, init) => {
+      const response = await this.fetchImpl(input, init);
+      if (response.status === 429) allowanceUsed = await isDailyAllowanceUsed(response.clone());
+      return response;
+    };
+    let response: Response;
+    try {
+      response = await editPicture(checked, "cloudflare-sketch", accountId, apiToken, model, sketchPrompt(note), sketch, signal);
+    } catch (error) {
+      // Refused (HTTP 400, its safety filter) or out of today's allowance: trying again won't help today.
+      if (!signal.aborted && error instanceof AiProviderError && (error.status === 400 || allowanceUsed)) return null;
+      throw error;
     }
     try {
       return await imageFrom(response);
