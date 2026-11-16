@@ -46,9 +46,9 @@ export default async function QuotePage({ params }: PageProps<"/account/quotes/[
           {quote.referencePhotoUrl && (
             <figure className="flex w-24 flex-col gap-1">
               <span className="relative block aspect-[3/4] overflow-hidden rounded-xl bg-muted">
-                <Image src={quote.referencePhotoUrl} alt="Your reference photo" fill unoptimized className="object-cover" />
+                <Image src={quote.referencePhotoUrl} alt={quote.referenceIsDrawing ? "Your drawing" : "Your reference photo"} fill unoptimized className="object-cover" />
               </span>
-              <figcaption className="text-xs text-muted-foreground">Your photo</figcaption>
+              <figcaption className="text-xs text-muted-foreground">{quote.referenceIsDrawing ? "Your drawing" : "Your photo"}</figcaption>
             </figure>
           )}
         </div>

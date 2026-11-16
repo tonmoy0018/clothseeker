@@ -169,6 +169,7 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
     };
     if (input.exact) {
       const saved = await saveDesign(db, storage, { id: input.customerId, role: "CUSTOMER" }, { spec });
+      if (input.sketch) await db.design.update({ where: { id: saved.designId }, data: { referenceIsDrawing: true } });
       return { productId, designId: saved.designId };
     }
     const design = await db.design.create({
@@ -180,6 +181,7 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
         spec,
         startedFrom: "PHOTO",
         referencePhotoKey: input.referenceKey,
+        referenceIsDrawing: input.sketch === true,
         status: "DRAFT",
       },
       select: { id: true },

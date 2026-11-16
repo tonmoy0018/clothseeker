@@ -163,7 +163,8 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
       startTransition(async () => handle(await renderSketchAction(photoKey, note, round), "photo", picked, "render"));
       return;
     }
-    startTransition(async () => handle(await startFromPhotoAction(photoKey, picked, garmentType), "photo", picked));
+    // "Closest dress" matches a drawing like a photo; the design remembers it was a drawing.
+    startTransition(async () => handle(await startFromPhotoAction(photoKey, picked, garmentType, sketch), "photo", picked));
   }
 
   /** "Show me three more": the next set of pictures of the drawing. */
@@ -351,7 +352,7 @@ export function StartForms({ signedIn, photoOnly = false, path = "/design/start"
 
       {phase.kind === "waiting" && (
         <p role="status" className="text-sm text-muted-foreground" data-testid="start-waiting">
-          {phase.mode === "photo" ? (phase.sketch ? WAITING_SKETCH[phase.sketch] : WAITING[phase.choice ?? "closest"]) : "Finding the best dress for your description…"}
+          {phase.mode === "photo" ? (phase.sketch ? WAITING_SKETCH[phase.sketch] : (sketch && (phase.choice ?? "closest") === "closest" ? "Matching your drawing to our dresses…" : WAITING[phase.choice ?? "closest"])) : "Finding the best dress for your description…"}
         </p>
       )}
       {phase.kind === "error" && (

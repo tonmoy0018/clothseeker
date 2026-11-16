@@ -276,6 +276,8 @@ export type DesignForEdit = {
   saved: boolean;
   /** Signed URL of the dress photo the design was started from, if any. */
   referencePhotoUrl: string | null;
+  /** That reference is the customer's drawing, not a photo. */
+  referenceIsDrawing: boolean;
 };
 
 /** The customer's own design for the editor, or null. Image layers get signed URLs. */
@@ -292,7 +294,7 @@ export async function getDesignForEdit(
   }
   const design = await db.design.findFirst({
     where: { id: designId.data, customerId: actor.id, productId },
-    select: { id: true, spec: true, status: true },
+    select: { id: true, spec: true, status: true, referenceIsDrawing: true },
   });
   if (!design) {
     return null;
@@ -308,7 +310,7 @@ export async function getDesignForEdit(
   const urls = await storage.signReadUrls(BUCKETS.designAssets, reference ? [...keys, reference] : keys);
   const referencePhotoUrl = reference ? (urls.get(reference) ?? null) : null;
   if (reference) urls.delete(reference);
-  return { designId: design.id, spec, uploadUrls: Object.fromEntries(urls), saved: design.status !== "DRAFT", referencePhotoUrl };
+  return { designId: design.id, spec, uploadUrls: Object.fromEntries(urls), saved: design.status !== "DRAFT", referencePhotoUrl, referenceIsDrawing: design.referenceIsDrawing };
 }
 
 export type DesignPriceCheck = { price: DesignPrice; issue: null } | { price: null; issue: string };

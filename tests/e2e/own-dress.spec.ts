@@ -53,7 +53,9 @@ test.describe("@supabase your own dress", () => {
     await expect(renders.getByRole("button", { name: /^Use version/ })).toHaveCount(3, { timeout: 60_000 });
     await renders.getByRole("button", { name: "Use version 2" }).click();
     await expect(page).toHaveURL(/\/customize\/[0-9a-f-]{36}\?design=[0-9a-f-]{36}/, { timeout: 60_000 });
-    await expect(page.getByTestId("own-dress-price")).toContainText("the ClothSeeker team prices it");
+    await expect(page.getByTestId("own-dress-price")).toHaveText("Made to order from your drawing: the ClothSeeker team prices it.");
+    await expect(page.getByTestId("start-info")).toContainText("from your drawing");
+    await expect(page.getByTestId("start-info").getByRole("img", { name: "Your reference drawing" })).toBeVisible();
     await expect(page.getByTestId("quote-request")).toContainText("Get a price for your");
   });
 

@@ -61,7 +61,7 @@ export type DesignEditorProps = {
   basePrices: Partial<Record<Size, number>>;
   /** Signed-in customer's id (for image ownership checks), or null. */
   customerId: string | null;
-  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean; referencePhotoUrl: string | null } | null;
+  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean; referencePhotoUrl: string | null; referenceIsDrawing: boolean } | null;
   /** An AI round already queued for this design (after "start from a description"). */
   initialAiJobId?: string | null;
   /** Other good matches from a photo/description start. */
@@ -143,6 +143,8 @@ export function DesignEditor(props: DesignEditorProps) {
   const tryOnPanel = useRef<HTMLDivElement>(null);
   const [showMirror, setShowMirror] = useState(false);
   const [show3d, setShow3d] = useState(false);
+  /** What the design was started from, in the customer's words: their photo or their drawing. */
+  const reference = props.initialDesign?.referenceIsDrawing ? "drawing" : "photo";
   const [mirrorPhoto, setMirrorPhoto] = useState<Blob | null>(null);
   /** The front garment with its items printed on it, as last drawn by the canvas. */
   const printedRef = useRef<{ garment: HTMLCanvasElement; printed: HTMLCanvasElement } | null>(null);
@@ -675,17 +677,17 @@ export function DesignEditor(props: DesignEditorProps) {
             {props.initialDesign?.referencePhotoUrl && (
               <figure className="flex flex-col gap-1">
                 <span className="relative block h-28 w-20 overflow-hidden rounded-lg bg-muted">
-                  <Image src={props.initialDesign.referencePhotoUrl} alt="Your reference photo" fill unoptimized className="object-cover" />
+                  <Image src={props.initialDesign.referencePhotoUrl} alt={`Your reference ${reference}`} fill unoptimized className="object-cover" />
                 </span>
-                <figcaption className="text-xs text-muted-foreground">Your photo</figcaption>
+                <figcaption className="text-xs text-muted-foreground">Your {reference}</figcaption>
               </figure>
             )}
             <div className="flex flex-col gap-1">
               <p>
                 {props.ownDress
-                  ? `This is the ${garment.noun} from your photo. Change its colours or add text, decorations and embroidery, or keep it exactly as it is. Try it on, then ask us for a price.`
+                  ? `This is the ${garment.noun} from your ${reference}. Change its colours or add text, decorations and embroidery, or keep it exactly as it is. Try it on, then ask us for a price.`
                   : spec.startedFrom === "photo"
-                    ? `We matched your photo to this ${garment.noun} and copied its main colors.`
+                    ? `We matched your ${reference} to this ${garment.noun} and copied its main colors.`
                     : `We matched your description to this ${garment.noun}.`}
               </p>
               {props.alternatives && props.alternatives.length > 0 && (
@@ -835,7 +837,7 @@ export function DesignEditor(props: DesignEditorProps) {
         {/* Your own dress: the price request, in the page (not the pinned bar, which it would make too tall). */}
         {props.ownDress && (
           <div className="mt-6 flex flex-col gap-3">
-            <QuoteRequest ownDress designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+            <QuoteRequest ownDress reference={reference} designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
           </div>
         )}
 
@@ -857,7 +859,7 @@ export function DesignEditor(props: DesignEditorProps) {
           )}
 
           {spec.startedFrom === "photo" && !props.ownDress && (
-            <QuoteRequest designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+            <QuoteRequest reference={reference} designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
           )}
 
           <div className="flex flex-wrap items-center gap-2">
@@ -880,7 +882,7 @@ export function DesignEditor(props: DesignEditorProps) {
           {props.ownDress ? (
             <div className="flex flex-wrap items-center gap-3">
               <p className="mr-auto text-sm text-muted-foreground" data-testid="own-dress-price">
-                Made to order from your photo: the ClothSeeker team prices it.
+                Made to order from your {reference}: the ClothSeeker team prices it.
               </p>
               {tryOnButton}
               <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>

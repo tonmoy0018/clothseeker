@@ -123,6 +123,7 @@ describe("cut-outs in a design", () => {
     expect(printDpi({ width: 600, height: 400 }, { width: 10, height: 7.5 })).toBeGreaterThanOrEqual(PRINTABLE_DPI);
   });
 
+  // Renders several pictures: slower than the default 5 s when the whole suite runs at once.
   it("render mirrored and as a border; plain images keep their old plan", async () => {
     const plain = normalizeForRender(withImage({}, KEYS.upload), TEMPLATE).front.areas.flatMap((a) => a.layers).find((l) => l.kind === "image");
     expect(plain && ("mirror" in plain || "repeat" in plain)).toBe(false);
@@ -167,5 +168,5 @@ describe("cut-outs in a design", () => {
     const mirrored = await redRuns({ ...withImage({ mirror: true }), layers: withImage({ mirror: true }).layers.map((l) => (l.kind === "image" ? { ...l, ...single } : l)) }, span);
     expect(straight[0]).toBeDefined();
     expect(mirrored[0] ?? 0).toBeGreaterThan((straight[0] ?? 0) + 10);
-  });
+  }, 15_000);
 });

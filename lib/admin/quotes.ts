@@ -36,6 +36,7 @@ const select = {
   createdAt: true,
   previewKey: true,
   referencePhotoKey: true,
+  referenceIsDrawing: true,
   specSnapshot: true,
   design: { select: { productId: true, product: { select: { name: true, status: true, description: true } } } },
   cartItems: { select: { id: true } },

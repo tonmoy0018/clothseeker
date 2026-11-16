@@ -52,9 +52,9 @@ export default async function AdminQuotePage({ params }: PageProps<"/admin/quote
           {quote.referencePhotoUrl && (
             <figure className="flex w-36 flex-col gap-1">
               <span className="relative block aspect-[3/4] overflow-hidden rounded-xl bg-muted">
-                <Image src={quote.referencePhotoUrl} alt="Customer's reference photo" fill unoptimized className="object-cover" />
+                <Image src={quote.referencePhotoUrl} alt={quote.referenceIsDrawing ? "Customer's drawing" : "Customer's reference photo"} fill unoptimized className="object-cover" />
               </span>
-              <figcaption className="text-xs text-muted-foreground">Reference photo</figcaption>
+              <figcaption className="text-xs text-muted-foreground">{quote.referenceIsDrawing ? "Customer's drawing" : "Reference photo"}</figcaption>
             </figure>
           )}
         </div>

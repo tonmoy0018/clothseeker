@@ -77,7 +77,7 @@ export async function startFromPhotoAction(
   }
   const input =
     choice === "closest"
-      ? { mode: "photo", referenceKey }
+      ? { mode: "photo", referenceKey, sketch }
       : { mode: "own", referenceKey, garmentType, exact: choice === "exact", sketch, note: note === "" ? undefined : note, renderKey };
   if (choice !== "closest" && choice !== "customize" && choice !== "exact") {
     return { status: "error", message: "Choose what to do with your photo." };

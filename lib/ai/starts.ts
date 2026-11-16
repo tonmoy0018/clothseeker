@@ -46,6 +46,8 @@ export const dressMatchPayloadSchema = z.object({
       renderKey: key.optional(),
     })
     .optional(),
+  /** Mode "photo": the photo is the customer's drawing (the design says "your drawing"). */
+  drawing: z.literal(true).optional(),
   /** Mode "sketch": the drawing's note, and which set of renderings this is ("show me more" asks for the next). */
   renders: z.object({ note: z.string().max(SKETCH_NOTE_MAX).nullable(), round: z.number().int().min(0).max(20) }).optional(),
 });
@@ -88,7 +90,8 @@ export async function uploadReferencePhoto(storage: StorageAdapter, actor: Actor
 }
 
 const startSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("photo"), referenceKey: z.string().max(200) }),
+  /** `sketch`: the photo is a drawing (matched like a photo; only the wording changes). */
+  z.object({ mode: z.literal("photo"), referenceKey: z.string().max(200), sketch: z.boolean().default(false) }),
   z.object({
     mode: z.literal("own"),
     referenceKey: z.string().max(200),
@@ -161,6 +164,7 @@ export async function startDesignFrom(
       ? { garmentType: input.garmentType, exact: input.exact, ...(input.sketch ? { sketch: true, note: cleanSketchNote(input.note), ...(renderKey ? { renderKey } : {}) } : {}) }
       : undefined;
   const renders = input.mode === "sketch" ? { note: cleanSketchNote(input.note), round: input.round } : undefined;
+  const drawing = input.mode === "photo" && input.sketch;
   const inputHash = aiInputHash({
     v: 1,
     type: "DRESS_MATCH",
@@ -169,6 +173,7 @@ export async function startDesignFrom(
     description: description ? normalizeInstruction(description) : null,
     ...(own ? { mode: "own", own } : {}),
     ...(renders ? { mode: "sketch", renders } : {}),
+    ...(drawing ? { drawing: true } : {}),
   });
   try {
     return await queueMatch();
@@ -209,7 +214,7 @@ export async function startDesignFrom(
           throw new AiError("QUOTA", QUOTA_MESSAGE);
         }
       }
-      const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash, ...(own ? { own } : {}), ...(renders ? { renders } : {}) } satisfies DressMatchPayload;
+      const payload = { kind: "dress_match", mode: input.mode, referenceKey, description, seed: inputHash, ...(own ? { own } : {}), ...(renders ? { renders } : {}), ...(drawing ? { drawing: true as const } : {}) } satisfies DressMatchPayload;
       const job = await tx.aIJob.create({ data: { type: "DRESS_MATCH", customerId: actor.id, payload, inputHash, runAfter: now }, select: { id: true } });
       return { jobId: job.id, cached: false };
     });

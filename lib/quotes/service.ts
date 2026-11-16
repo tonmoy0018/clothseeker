@@ -60,7 +60,7 @@ export async function requestQuote(
   const input = parsed.data;
   const design = await db.design.findFirst({
     where: { id: input.designId, customerId: actor.id },
-    select: { id: true, status: true, startedFrom: true, referencePhotoKey: true, spec: true },
+    select: { id: true, status: true, startedFrom: true, referencePhotoKey: true, referenceIsDrawing: true, spec: true },
   });
   if (!design) {
     throw new QuoteError("NOT_FOUND", "That design doesn't exist or isn't yours.");
@@ -103,6 +103,7 @@ export async function requestQuote(
           specSnapshot: checked.spec,
           previewKey,
           referencePhotoKey: design.referencePhotoKey,
+          referenceIsDrawing: design.referenceIsDrawing,
           respondBy: new Date(now.getTime() + QUOTE_RESPONSE_WINDOW_MS),
           createdAt: now,
         },
@@ -133,6 +134,8 @@ export type QuoteView = {
   createdAt: string;
   previewUrl: string | null;
   referencePhotoUrl: string | null;
+  /** The reference is the customer's drawing, not a photo. */
+  referenceIsDrawing: boolean;
   inCart: boolean;
 };
 
@@ -148,6 +151,7 @@ const quoteSelect = {
   createdAt: true,
   previewKey: true,
   referencePhotoKey: true,
+  referenceIsDrawing: true,
   specSnapshot: true,
   design: { select: { productId: true, product: { select: { name: true, status: true, description: true } } } },
   cartItems: { select: { id: true } },
@@ -165,6 +169,7 @@ type QuoteRow = {
   createdAt: Date;
   previewKey: string | null;
   referencePhotoKey: string | null;
+  referenceIsDrawing: boolean;
   specSnapshot: unknown;
   design: { productId: string; product: { name: string; status: string; description: string } };
   cartItems: { id: string }[];
@@ -197,6 +202,7 @@ export async function toQuoteViews(storage: StorageAdapter, rows: QuoteRow[], no
       createdAt: r.createdAt.toISOString(),
       previewUrl: r.previewKey ? (urls.get(r.previewKey) ?? null) : null,
       referencePhotoUrl: r.referencePhotoKey ? (urls.get(r.referencePhotoKey) ?? null) : null,
+      referenceIsDrawing: r.referenceIsDrawing,
       inCart: r.cartItems.length > 0,
     };
   });

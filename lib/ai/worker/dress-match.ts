@@ -282,6 +282,7 @@ export async function runDressMatch(deps: AiWorkerDeps, job: ClaimedJob, signal:
       spec,
       startedFrom: input.mode === "photo" ? "PHOTO" : "DESCRIPTION",
       referencePhotoKey: input.referenceKey,
+      referenceIsDrawing: input.mode === "photo" && input.drawing === true,
       status: "DRAFT",
     },
     select: { id: true },

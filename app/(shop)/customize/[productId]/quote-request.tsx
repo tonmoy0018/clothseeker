@@ -13,7 +13,20 @@ import { textareaClass } from "@/components/ui/textarea";
  * customer's own dress (`ownDress`) is always priced this way, and needs no notes. Only saved designs can
  * be quoted (the quote freezes what was saved).
  */
-export function QuoteRequest({ designId, saved, onSignIn, ownDress = false }: { designId: string | null; saved: boolean; onSignIn: () => void; ownDress?: boolean }) {
+export function QuoteRequest({
+  designId,
+  saved,
+  onSignIn,
+  ownDress = false,
+  reference = "photo",
+}: {
+  designId: string | null;
+  saved: boolean;
+  onSignIn: () => void;
+  ownDress?: boolean;
+  /** What the design was started from: the customer's photo or drawing. */
+  reference?: "photo" | "drawing";
+}) {
   const router = useRouter();
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +55,7 @@ export function QuoteRequest({ designId, saved, onSignIn, ownDress = false }: { 
       <p className="text-sm text-muted-foreground">
         {ownDress
           ? "When you're happy with it (your size chosen, any changes saved), the ClothSeeker team will reply with a price within 24 hours; you then have 7 days to order."
-          : "If the garment in your photo needs changes our templates can't make, describe them and the ClothSeeker team will reply with a price within 24 hours."}
+          : `If the garment in your ${reference} needs changes our templates can't make, describe them and the ClothSeeker team will reply with a price within 24 hours.`}
       </p>
       {!designId || !saved ? (
         <p className="text-sm">Save your design first, then request a quote.</p>

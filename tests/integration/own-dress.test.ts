@@ -86,7 +86,7 @@ describe("your own dress from a photo", () => {
     expect(product.template).toMatchObject({ isActive: true, aiEnabled: true });
 
     const design = await db.design.findUniqueOrThrow({ where: { id: designId } });
-    expect(design).toMatchObject({ customerId: ava.id, productId, status: "DRAFT", startedFrom: "PHOTO", referencePhotoKey: referenceKey });
+    expect(design).toMatchObject({ customerId: ava.id, productId, status: "DRAFT", startedFrom: "PHOTO", referencePhotoKey: referenceKey, referenceIsDrawing: false });
     const spec = parseDesignSpec(design.spec);
     expect(Object.values(spec.styleOptions).every((option) => option === AS_PHOTO)).toBe(true);
     expect(spec.parts).toEqual({});
@@ -262,7 +262,10 @@ describe("your own dress from a photo", () => {
     expect(product.description).toContain("AI rendering of the customer's sketch");
     expect(product.template).not.toBeNull();
     // The team makes what the sketch shows: it's the design's reference picture.
-    expect(await db.design.findUniqueOrThrow({ where: { id: status.result.designId } })).toMatchObject({ referencePhotoKey: referenceKey, status: "SAVED" });
+    expect(await db.design.findUniqueOrThrow({ where: { id: status.result.designId } })).toMatchObject({ referencePhotoKey: referenceKey, status: "SAVED", referenceIsDrawing: true });
+    // Its quote says "drawing" too.
+    const { quoteId } = await requestQuote(db, storage, ava, { designId: status.result.designId, notes: "" });
+    expect(await db.quoteRequest.findUniqueOrThrow({ where: { id: quoteId } })).toMatchObject({ referenceIsDrawing: true });
   });
 
   it("from a drawing the AI can't render: a clear message, and nothing left behind", async () => {
@@ -313,7 +316,7 @@ describe("your own dress from a photo", () => {
     expect(variants).toHaveLength(6);
     const product = await db.product.findUniqueOrThrow({ where: { id: status.result.productId } });
     expect(product.description).toContain("AI rendering of the customer's sketch");
-    expect(await db.design.findUniqueOrThrow({ where: { id: status.result.designId } })).toMatchObject({ referencePhotoKey: drawing.key, status: "DRAFT" });
+    expect(await db.design.findUniqueOrThrow({ where: { id: status.result.designId } })).toMatchObject({ referencePhotoKey: drawing.key, status: "DRAFT", referenceIsDrawing: true });
   });
 
   it("a drawing's pictures are only its owner's to pick, and none at all is a clear message", async () => {

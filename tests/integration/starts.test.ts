@@ -75,7 +75,7 @@ describe("start from a dress photo", () => {
     const result = await finished(customer, jobId);
 
     const design = await db.design.findUniqueOrThrow({ where: { id: result.designId } });
-    expect(design).toMatchObject({ customerId: customer.id, productId: result.productId, status: "DRAFT", startedFrom: "PHOTO", referencePhotoKey: photo.key });
+    expect(design).toMatchObject({ customerId: customer.id, productId: result.productId, status: "DRAFT", startedFrom: "PHOTO", referencePhotoKey: photo.key, referenceIsDrawing: false });
     const spec = parseDesignSpec(design.spec);
     expect(spec.startedFrom).toBe("photo");
     expect(spec.referencePhotoKey).toBe(photo.key);
@@ -85,6 +85,13 @@ describe("start from a dress photo", () => {
     expect(validateDesignAgainstTemplate(spec, TEMPLATE, { productId: result.productId, templateId: template.id, availableSizes: ["M"], customerId: customer.id })).toEqual([]);
     expect(result.alternatives).not.toContain(result.productId);
     expect(result.roundJobId).toBeNull();
+
+    // The same picture marked as a drawing: matched the same way, and the design says "your drawing".
+    const drawn = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key, sketch: true });
+    expect(drawn.cached).toBe(false);
+    await processNextJob(deps());
+    const fromDrawing = await finished(customer, drawn.jobId);
+    expect(await db.design.findUniqueOrThrow({ where: { id: fromDrawing.designId } })).toMatchObject({ startedFrom: "PHOTO", referenceIsDrawing: true });
   });
 
   it("rejects photos with a clothing brand logo and flags them", async () => {
