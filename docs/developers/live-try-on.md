@@ -7,17 +7,25 @@ Status: **all three steps are done**:
 2. try-on photo checks on the device and in the worker ([try-on.md](try-on.md#photo-checks));
 3. the live mirror, with the real garment drawn on the customer (below).
 
-## Models (all from Hugging Face)
+## Models
 
 | Job | Model | File | Size | Licence |
 |---|---|---|---|---|
-| Body: 17 points (nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles; the person's own left/right) | `Xenova/movenet-singlepose-lightning` | `onnx/model.onnx` (fp32) | 9.4 MB | Apache-2.0 |
+| **Live mirror body:** 17 points (nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles; the person's own left/right) | RTMPose-s, body7 weights (OpenMMLab, [mmpose](https://github.com/open-mmlab/mmpose/tree/main/projects/rtmpose)); from OpenMMLab's own download site (below) | `end2end.onnx` in `rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip` | 21.9 MB | Apache-2.0 |
+| Photo checks' body: the same 17 points | `Xenova/movenet-singlepose-lightning` | `onnx/model.onnx` (fp32) | 9.4 MB | Apache-2.0 |
 | Faces: boxes and 5 landmarks, also small faces at full-body distance | `opencv/face_detection_yunet` | `face_detection_yunet_2023mar_int8.onnx` | 0.1 MB | MIT |
 | Person outline (to put arms in front of the garment) | `onnx-community/mediapipe_selfie_segmentation` | `onnx/model_int8.onnx` | 0.2 MB | Apache-2.0 |
+| **Sharper person outline** (live mirror, only with WebGPU) | `Xenova/modnet` (portrait matting) | `onnx/model_fp16.onnx` | 13.0 MB | Apache-2.0 |
+| Body parts: hair, skin, clothes | `senty-au/selfie_multiclass_256x256-ONNX` (Google's MediaPipe model, converted) | `onnx/model.onnx` | 16.5 MB | Apache-2.0 |
 
 - **Use the fp32 MoveNet.** Its int8 and fp16 versions give near-zero scores in ONNX Runtime Web (checked on 2026-10-29).
-- Each model is pinned by SHA-256 in [`lib/vision/runtime/assets.ts`](../../lib/vision/runtime/assets.ts). If a file on Hugging Face changes, the fetch fails rather than serving something unchecked.
-- Google's MediaPipe pose models track a little better, but they aren't hosted on Hugging Face. Jitter is handled by smoothing instead (`OneEuro` in `lib/vision/mirror/smooth.ts`).
+- Each model is pinned by SHA-256 in [`lib/vision/runtime/assets.ts`](../../lib/vision/runtime/assets.ts). If a file at its source changes, the fetch fails rather than serving something unchecked.
+- **RTMPose comes from OpenMMLab itself.** Its ONNX export is published only as a zip on `download.openmmlab.com` (the file the [rtmlib](https://github.com/Tau-J/rtmlib) project uses); the copies on Hugging Face are personal re-uploads that differ from it. `pnpm vision:fetch` downloads the zip, takes `end2end.onnx` out of it (`archive` in `assets.ts`) and checks that file's SHA-256.
+- **Why RTMPose for the mirror** (compared on 2026-11-17, see Measurements): MoveNet Lightning put elbows and hips visibly too high and was unsure of the fake-camera person (mean body score 0.50); RTMPose-s found every joint where the much larger RTMPose-m and RTMO-s did, sure of them (0.95), at about twice Lightning's cost. MoveNet Thunder was slower than RTMPose-s and less accurate; RTMO (no person box needed) is exported only at 640×640, about 650 ms a frame without a GPU; YOLO pose models are AGPL; MediaPipe's BlazePose is only published as TFLite.
+- **The photo checks and the worker keep MoveNet:** their rules (`photo-check.ts`, the try-on mask) were tuned on its scores, and a single photo has no previous frame to find the person from.
+- **The body model reads a crop around the person** (it's a top-down model, `lib/vision/models/rtmpose.ts`). The crop is where the person was in the last frame (`poseBox`: their sure joints, grown by a shoulder width), widened to this frame's outline when the outline model ran (`maskBox`, `unionBox`: legs coming into view as they step back); with no pose yet, the last outline; with neither, the whole frame. It lets go when the shoulders are lost, and starts afresh when the frame size changes.
+- **The sharper outline** (MODNet) only loads when the browser has WebGPU: without one it's about 8× slower than the selfie model, which then draws the outline. It takes the frame in its own shape (384 px on the long side, `matteSize`). The try-on's body measurement keeps the selfie model it was tuned on.
+- Jitter is handled by smoothing (`OneEuro` in `lib/vision/mirror/smooth.ts`).
 
 ## Runtime
 
@@ -26,14 +34,14 @@ Status: **all three steps are done**:
   - The models are downloaded from Hugging Face and checked.
   - The runtime's `.wasm`/`.mjs` files are copied from `node_modules`.
   - Paths contain the version or hash, and `next.config.ts` serves `/vision/*` with `Cache-Control: immutable`.
-- **Download size for a customer, once:** the WebAssembly runtime is 3.7 MB compressed (the WebGPU build is about 7 MB), plus the models at 9.7 MB. Browsers request nothing from third parties (an E2E test checks this).
+- **Download size for a customer, once:** the WebAssembly runtime is 3.7 MB compressed (the WebGPU build is about 7 MB). The photo checks' models are 9.7 MB; the live mirror's are about 39 MB (body, outline, body parts), plus 13 MB for the sharper outline with WebGPU. Browsers request nothing from third parties (an E2E test checks this).
 
 ## Code
 
 | File | Role |
 |---|---|
 | `lib/vision/models/geometry.ts` | Letterboxing frames into the models' square inputs and mapping points back |
-| `lib/vision/models/movenet.ts`, `yunet.ts`, `segment.ts` | Each model's input layout and output decoding (pure, unit-tested) |
+| `lib/vision/models/movenet.ts`, `rtmpose.ts`, `yunet.ts`, `segment.ts`, `parts.ts` | Each model's input layout and output decoding (pure, unit-tested); `rtmpose.ts` also finds the person's crop (`cropFor`, `poseBox`, `maskBox`) |
 | `lib/vision/mirror/smooth.ts` | One Euro filter for keypoints |
 | `lib/vision/runtime/engine.ts` | Loads the models and runs them on a frame (OffscreenCanvas → tensors → decoded results) |
 | `lib/vision/runtime/vision.worker.ts`, `protocol.ts`, `client.ts` | The worker thread and the page's handle on it; frames go in as transferred `ImageBitmap`s |
@@ -50,7 +58,19 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
 |---|---|---|---|
 | Per run | 27–54 ms | 28–38 ms | 126–136 ms |
 
-- **Live camera: 18 frames a second.** The body runs on every frame, the outline on every 2nd and the face on every 10th.
+- **Live camera: 18 frames a second** (with MoveNet). The body runs on every frame, the outline on every 2nd and the face on every 10th.
+
+**Body models compared** on 2026-11-17 in Node (ONNX Runtime Web 1.30, WebAssembly, one thread, the Mac mini), on the two try-on test photos and a frame of the fake-camera video; mean score of the 12 body joints:
+
+| | Per run | Test woman | Test man | Fake-camera frame |
+|---|---|---|---|---|
+| MoveNet Lightning (photo checks) | 27 ms | 0.78 | 0.79 | 0.50 |
+| MoveNet Thunder | 83 ms | 0.79 | 0.84 | 0.61 |
+| **RTMPose-s body7 (live mirror)** | **49 ms** | **0.97** | **0.94** | **0.95** |
+| RTMPose-m body7 | 119 ms | 0.93 | 0.92 | 0.88 |
+| RTMO-s (640×640) | 656 ms | 1.00 | 1.00 | 0.99 |
+
+The scores of different models aren't strictly comparable; the pictures were: Lightning's elbows and hips sat too high, while RTMPose-s, RTMPose-m and RTMO-s agreed. Without a GPU the mirror now does about 49 ms of body work a frame instead of 27; WebGPU in Chrome or Safari is much faster. Measure on real devices with `/mirror/check`, which shows the body and outline times.
 - Node (WebAssembly) gave similar times.
 - WebGPU in a normal Chrome or Safari should be faster. Measure on real devices with `/mirror/check`.
 - **Phones:** the camera only works on secure pages. `localhost` counts as secure; `http://<computer-ip>:3002` from a phone does not, so phone tests need HTTPS (e.g. a tunnel, or `next dev --experimental-https`).
@@ -60,7 +80,7 @@ These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAss
 
 "Live mirror" appears on product pages that have a try-on picture and on the design screen (tool rail). It opens a full-screen view (`app/(shop)/_try-on/live-mirror.tsx`, rendered into `document.body`).
 
-- **The camera starts only after "Start camera".** The notice says the camera stays on the device and nothing is recorded or uploaded. Frames go to the vision worker in the same tab: the body runs on every frame, the outline on every 2nd, the body-parts model (hair) on every 6th.
+- **The camera starts only after "Start camera".** The notice says the camera stays on the device and nothing is recorded or uploaded. Frames go to the vision worker in the same tab: the body (RTMPose-s, in a crop around the person) runs on every frame, the outline on every 2nd (MODNet with WebGPU, else the selfie model), the body-parts model (hair) on every 6th.
 - **The garment picture** (`lib/vision/mirror/garment-source.ts`), prepared in the browser:
   - **Shop item:** its try-on picture (the first catalogue photo), cut out with the same code as the server (`findGarment`/`splitGarment` in `lib/garment-photo/segment.ts`). Storage answers with `Access-Control-Allow-Origin: *`, so the browser may read the pixels.
   - **Design:** the design screen's recoloured front picture with its printed items, cut out by the union of the picture's region masks.

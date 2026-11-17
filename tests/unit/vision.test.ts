@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { modelPath, ORT_VERSION, VISION_MODELS } from "@/lib/vision/runtime/assets";
-import { fitSquare, letterboxRgba, toSource } from "@/lib/vision/models/geometry";
+import { fitRect, fitSquare, letterboxRgba, toSource } from "@/lib/vision/models/geometry";
 import { decodeMovenet, MOVENET_SIZE, movenetInput } from "@/lib/vision/models/movenet";
 import { isFromWorker, isToWorker } from "@/lib/vision/runtime/protocol";
-import { maskAt, SELFIE_SIZE, selfieInput } from "@/lib/vision/models/segment";
+import { maskAt, matteInput, matteSize, SELFIE_SIZE, selfieInput } from "@/lib/vision/models/segment";
 import { OneEuro, PoseSmoother } from "@/lib/vision/mirror/smooth";
 import { decodeYunet, YUNET_SIZE, yunetInput } from "@/lib/vision/models/yunet";
 
@@ -103,8 +103,25 @@ describe("decoding", () => {
     const box = fitSquare(512, 256, SELFIE_SIZE); // scale 0.5, offsetY 64
     const alpha = new Float32Array(SELFIE_SIZE * SELFIE_SIZE);
     alpha[(64 + 10) * SELFIE_SIZE + 50] = 0.8;
-    expect(maskAt({ alpha, box }, 100, 20)).toBeCloseTo(0.8);
-    expect(maskAt({ alpha, box }, -5, 20)).toBe(0);
+    const mask = { alpha, width: SELFIE_SIZE, height: SELFIE_SIZE, box };
+    expect(maskAt(mask, 100, 20)).toBeCloseTo(0.8);
+    expect(maskAt(mask, -5, 20)).toBe(0);
+  });
+
+  it("fits the matting model to the frame's own shape and reads its outline back at frame coordinates", () => {
+    // A 16:9 camera: 384 × 224 (multiples of 32), the frame letterboxed with 4 px above and below.
+    expect(matteSize(1280, 720)).toEqual({ width: 384, height: 224 });
+    expect(matteSize(720, 1280)).toEqual({ width: 224, height: 384 });
+    const box = fitRect(1280, 720, 384, 224);
+    expect(box).toMatchObject({ scale: 0.3, offsetX: 0, offsetY: 4, width: 384, height: 216 });
+    const alpha = new Float32Array(384 * 224);
+    alpha[(4 + 30) * 384 + 60] = 0.9;
+    const mask = { alpha, width: 384, height: 224, box };
+    expect(maskAt(mask, 200, 100)).toBeCloseTo(0.9);
+    expect(maskAt(mask, 200, 2000)).toBe(0);
+    // Its input: RGB planes scaled to −1…1.
+    const input = matteInput(Uint8ClampedArray.from([255, 0, 127.5, 255]), 1, 1);
+    expect(Array.from(input).map((v) => Math.round(v * 100) / 100)).toEqual([1, -1, 0]);
   });
 });
 

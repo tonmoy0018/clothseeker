@@ -43,7 +43,7 @@ const POSE: Pose = {
 
 const body = (pose: Pose | null) => ({
   analyse: async () => ({ width: W, height: H, pose }),
-  personMask: async () => ({ alpha: new Float32Array(SELFIE_SIZE * SELFIE_SIZE), box: fitSquare(W, H, SELFIE_SIZE) }),
+  personMask: async () => ({ alpha: new Float32Array(SELFIE_SIZE * SELFIE_SIZE), width: SELFIE_SIZE, height: SELFIE_SIZE, box: fitSquare(W, H, SELFIE_SIZE) }),
 });
 
 /** A model that paints everything red, recording what it was given. */

@@ -109,7 +109,7 @@ export function LiveMirror({
     }
     streamRef.current = stream;
     const [{ VisionClient }, { PersonLayer: Layer }, mirror] = await Promise.all([import("@/lib/vision/runtime/client"), import("@/lib/vision/mirror/draw"), import("@/lib/vision/mirror/mirror")]);
-    const vision = new VisionClient(["pose", "mask", "parts"]);
+    const vision = new VisionClient(["body", "mask", "matte", "parts"]);
     visionRef.current = vision;
     const readParts: PartsReader = async (picture: HTMLCanvasElement) => {
       const bitmap = await createImageBitmap(picture);

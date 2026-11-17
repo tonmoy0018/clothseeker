@@ -20,6 +20,17 @@ export function fitSquare(sourceWidth: number, sourceHeight: number, size: numbe
   return { size, scale, offsetX: Math.floor((size - width) / 2), offsetY: Math.floor((size - height) / 2), width, height };
 }
 
+/**
+ * Like fitSquare, into a width×height rectangle (a model that takes the frame's own shape): the source
+ * keeps its proportions, centred, with black padding. `size` is the longer side.
+ */
+export function fitRect(sourceWidth: number, sourceHeight: number, width: number, height: number): FitBox {
+  const scale = Math.min(width / Math.max(sourceWidth, 1), height / Math.max(sourceHeight, 1));
+  const w = Math.max(1, Math.round(sourceWidth * scale));
+  const h = Math.max(1, Math.round(sourceHeight * scale));
+  return { size: Math.max(width, height), scale, offsetX: Math.floor((width - w) / 2), offsetY: Math.floor((height - h) / 2), width: w, height: h };
+}
+
 /** A point in model pixels → the same point in source pixels. */
 export function toSource(box: FitBox, x: number, y: number): [number, number] {
   return [(x - box.offsetX) / box.scale, (y - box.offsetY) / box.scale];

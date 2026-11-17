@@ -6,7 +6,6 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import type { VisionClient } from "@/lib/vision/runtime/client";
 import type { VisionBackend, VisionResult } from "@/lib/vision/runtime/engine";
 import { KEYPOINT_NAMES } from "@/lib/vision/models/movenet";
-import { SELFIE_SIZE } from "@/lib/vision/models/segment";
 import { PoseSmoother } from "@/lib/vision/mirror/smooth";
 
 // Runs the on-device models on the camera or a chosen photo and shows what they find and how fast.
@@ -48,7 +47,7 @@ export function VisionCheck() {
     setStatus({ kind: "loading" });
     const started = clock();
     const { VisionClient } = await import("@/lib/vision/runtime/client");
-    const created = new VisionClient(["pose", "face", "mask"]);
+    const created = new VisionClient(["body", "face", "mask", "matte"]);
     clientRef.current = created;
     try {
       const backend = await created.ready;
@@ -145,12 +144,13 @@ export function VisionCheck() {
     }
     context.drawImage(source, 0, 0, width, height);
     if (result.mask) {
-      const tint = new ImageData(SELFIE_SIZE, SELFIE_SIZE);
+      const { width: mw, height: mh } = result.mask;
+      const tint = new ImageData(mw, mh);
       result.mask.alpha.forEach((a, i) => tint.data.set([0, 190, 255, Math.round(a * 110)], i * 4));
-      const square = new OffscreenCanvas(SELFIE_SIZE, SELFIE_SIZE);
+      const square = new OffscreenCanvas(mw, mh);
       square.getContext("2d")?.putImageData(tint, 0, 0);
       const { scale, offsetX, offsetY } = result.mask.box;
-      context.drawImage(square, -offsetX / scale, -offsetY / scale, SELFIE_SIZE / scale, SELFIE_SIZE / scale);
+      context.drawImage(square, -offsetX / scale, -offsetY / scale, mw / scale, mh / scale);
     }
     const dot = Math.max(3, width / 120);
     if (result.pose) {
@@ -210,7 +210,7 @@ export function VisionCheck() {
           <div>
             <dt className="text-muted-foreground">Body / outline / face</dt>
             <dd className="font-medium">
-              {stats.ms.pose ?? "–"} / {stats.ms.mask ?? "–"} / {stats.ms.face ?? "–"} ms
+              {stats.ms.body ?? stats.ms.pose ?? "–"} / {stats.ms.matte ?? stats.ms.mask ?? "–"} / {stats.ms.face ?? "–"} ms
             </dd>
           </div>
           <div>

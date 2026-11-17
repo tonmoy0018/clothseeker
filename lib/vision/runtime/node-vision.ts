@@ -76,7 +76,7 @@ export class NodeVision {
     const meta = await sharp(image).rotate().metadata();
     const { rgba, box } = await letterbox(image, meta.autoOrient.width, meta.autoOrient.height, SELFIE_SIZE);
     const out = await session.run({ pixel_values: new ort.Tensor("float32", selfieInput(rgba), [1, 3, SELFIE_SIZE, SELFIE_SIZE]) });
-    return { alpha: floats(out.alphas), box };
+    return { alpha: floats(out.alphas), width: SELFIE_SIZE, height: SELFIE_SIZE, box };
   }
 
   /**

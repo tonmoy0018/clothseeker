@@ -10,7 +10,7 @@ import { blendTryOn, tryOnCrop, tryOnMask, type Box } from "@/lib/tryon/mask";
 import { hairFromParts, handsFromParts } from "@/lib/tryon/parts";
 import type { Pose } from "@/lib/vision/models/movenet";
 import type { BodyParts } from "@/lib/vision/models/parts";
-import { maskAtSmooth, SELFIE_SIZE, type PersonMask } from "@/lib/vision/models/segment";
+import { maskAtSmooth, type PersonMask } from "@/lib/vision/models/segment";
 
 import { AiJobRejected, AiProviderError } from "../errors";
 import type { TryOnProvider, TryOnRequest } from "../types";
@@ -149,9 +149,9 @@ function personBounds(person: PersonMask, width: number, height: number): Box | 
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (let y = 0; y < SELFIE_SIZE; y += 1) {
-    for (let x = 0; x < SELFIE_SIZE; x += 1) {
-      if ((person.alpha[y * SELFIE_SIZE + x] ?? 0) < 0.5) continue;
+  for (let y = 0; y < person.height; y += 1) {
+    for (let x = 0; x < person.width; x += 1) {
+      if ((person.alpha[y * person.width + x] ?? 0) < 0.5) continue;
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x + 1);
       minY = Math.min(minY, y);

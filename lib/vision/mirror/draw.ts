@@ -2,7 +2,7 @@ import { GapCloser } from "./gaps";
 import { triangleTransform, type BodyAnchors, type Point, type Triangle } from "./mirror";
 import { shadeFromFrame } from "./relight";
 import { PART, PARTS_SIZE, type BodyParts } from "../models/parts";
-import { SELFIE_SIZE, type PersonMask } from "../models/segment";
+import type { PersonMask } from "../models/segment";
 import { skinModel, uncoverOwnClothes, type SkinModel } from "./uncover";
 
 // Canvas drawing for the live mirror (browser only). The geometry comes from mirror.ts.
@@ -55,11 +55,6 @@ export class PersonLayer {
   private box: PersonMask["box"] | null = null;
   private hairRegion: BodyParts["region"] | null = null;
 
-  constructor() {
-    this.maskSquare.width = SELFIE_SIZE;
-    this.maskSquare.height = SELFIE_SIZE;
-  }
-
   /** Remembers where the person's hair is (the body-parts model runs every few frames), or forgets it. */
   setParts(parts: BodyParts | null) {
     if (!parts) {
@@ -86,9 +81,11 @@ export class PersonLayer {
 
   /** Remembers the newest person mask (the outline model runs on every other frame). */
   setMask(mask: PersonMask) {
+    if (this.maskSquare.width !== mask.width) this.maskSquare.width = mask.width;
+    if (this.maskSquare.height !== mask.height) this.maskSquare.height = mask.height;
     const context = this.maskSquare.getContext("2d");
     if (!context) return;
-    const pixels = context.createImageData(SELFIE_SIZE, SELFIE_SIZE);
+    const pixels = context.createImageData(mask.width, mask.height);
     mask.alpha.forEach((a, i) => {
       pixels.data[i * 4 + 3] = Math.round(Math.min(1, Math.max(0, (a - 0.3) / 0.4)) * 255);
     });
@@ -126,7 +123,7 @@ export class PersonLayer {
     const { scale, offsetX, offsetY } = this.box;
     person.clearRect(0, 0, width, height);
     person.globalCompositeOperation = "source-over";
-    person.drawImage(this.maskSquare, -offsetX / scale + shift.x, -offsetY / scale + shift.y, SELFIE_SIZE / scale, SELFIE_SIZE / scale);
+    person.drawImage(this.maskSquare, -offsetX / scale + shift.x, -offsetY / scale + shift.y, this.maskSquare.width / scale, this.maskSquare.height / scale);
     person.globalCompositeOperation = "source-in";
     person.drawImage(frame, 0, 0, width, height);
 
