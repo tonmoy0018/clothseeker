@@ -112,6 +112,7 @@ export const styleVariantSchema = z.object({
 });
 
 export const MAX_STYLE_VARIANTS = 256;
+export const MAX_PLACEMENT_AREAS = 8;
 
 export const templateConfigSchema = z
   .object({
@@ -119,7 +120,7 @@ export const templateConfigSchema = z
     garmentType: z.enum(GARMENT_TYPE_IDS),
     garmentImages: z.object({ front: storageKey.optional(), back: storageKey.optional() }),
     regions: z.array(templateRegionSchema).min(1, "Add at least one region").max(12),
-    placementAreas: z.array(placementAreaSchema).max(8),
+    placementAreas: z.array(placementAreaSchema).max(MAX_PLACEMENT_AREAS),
     /** Options for each of the garment type's style groups (exactly those groups). */
     styleOptions: z.partialRecord(styleGroup, styleOptionList),
     allowedColors: z

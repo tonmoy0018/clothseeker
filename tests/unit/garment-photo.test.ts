@@ -145,6 +145,16 @@ describe("recolouring photos (shade)", () => {
     expect(framed.pictureCm.w).toBeLessThan(250);
   });
 
+  it("gives a customer's own garment a back: every part on it, and a print area across it", async () => {
+    const input = await photo({ colour: "#1f6f50", sleeves: "short", hem: 330 });
+    const { regions, printAreas, back } = await ownPhotoPicture(input, "dress");
+    expect(Object.keys(back.masks).sort()).toEqual(regions.map((r) => r.id).sort());
+    const info = await sharp(back.image).metadata();
+    expect([info.width, info.height, info.format]).toEqual([PHOTO_WIDTH, PHOTO_HEIGHT, "webp"]);
+    expect(printAreas.find((a) => a.id === "whole-back")).toMatchObject({ side: "back", clipToFabric: true });
+    expect(printAreas.length).toBeLessThanOrEqual(8);
+  });
+
   it("finds a garment of several colours in a customer's photo (a jacket open over a shirt)", async () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
       <rect width="400" height="400" fill="#e2e2e0"/>

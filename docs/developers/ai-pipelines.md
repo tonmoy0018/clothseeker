@@ -177,9 +177,10 @@ worker: brand-logo check (as above)
         → garmentShot.productShot (optional: an AI product shot of the same garment; null = use the photo)
         → planner.readGarment → parseGarmentReading (lib/own-dress/read.ts; failures = no reading)
         → ownPhotoPicture (lib/garment-photo/template.ts → frameGarmentPhoto: the whole garment cut out
-          onto the studio backdrop, cut into Sleeves/Bodice/Skirt or Body)
+          onto the studio backdrop, cut into Sleeves/Bodice/Skirt or Body;
+          backPicture: a back made from the front, lib/garment-photo/back.ts)
         → PRIVATE product (owner = the customer; every size, price 0, never sold directly)
-          + template (AI on; front picture, part masks, print areas, recolor "shade",
+          + template (AI on; front and back pictures, part masks, print areas, recolor "shade",
             one style option per group: "As in your photo")
         → design: SAVED with a preview (exact) or DRAFT (customize)
 browser: /customize/{product}?design=… (see it → "Try it on" → "Request a price")
@@ -189,6 +190,11 @@ browser: /customize/{product}?design=… (see it → "Try it on" → "Request a 
   - **Not lined up.** It isn't lined up like the catalogue's style pictures: that framing crops to the shoulders-to-waist and enlarges, which cut most of a long garment away and blurred the rest. Instead the whole garment is fitted into the 900×1170 picture, uncropped and centred. The mannequin, stand and backdrop are removed, and the garment is placed on a plain studio backdrop (`BACKDROP`).
   - **Several colours.** Customer photos are cut out with `findGarment(…, { colours: "several" })`. It follows the garment wherever it stands in the photo, keeps every main colour (a k-means of the garment's middle), and fills pale fabric inside the garment's rows that barely differs from the backdrop (a white shirt inside an open black jacket).
   - **Print sizes.** They come from the garment's shoulder width (37 cm for dresses, 46 cm for tops), kept within 45–100% of the garment's width.
+  - **The back** (added 2026-11-24). There's only one photo or drawing, so without a back picture the design screen showed the front only and nothing could go on the back. `backView` makes one from the front: the outline and parts mirrored (seen from behind), with the front's own fabric, folds and all-over pattern. Then what only the front has is painted over with the same part's fabric around it:
+    - the neckline, closed to 30% of its depth between the shoulder tops;
+    - small details that stand out from the fabric around them (buttons, embroidery, a print), with their soft edges;
+    - parts the AI named as front details (`frontOnlyPart`: buttons, pocket, placket, zip, logo…), which join the nearest other part.
+    A part where details cover more than 12% is taken to be patterned and kept as it is. The template gets the back picture, a back mask per part, a back style picture and a "Whole back" print area, so the AI design box can place items on the back too. Limits: it's a guess. Dense front embroidery can leave a faint trace, and a back that really differs (an open back, a zip, a bow) isn't known. Garments built before this have no back; build them again to get one.
 - **What the AI reads** (decided 2026-11-05). The worker asks the planner one more question about the photo (`readGarment`, Gemini about 2–5 s). It gets back:
   - the type (dress, shirt, panjabi or other; jackets, coats and tops count as shirts);
   - a name;

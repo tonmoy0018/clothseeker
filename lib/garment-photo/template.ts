@@ -2,9 +2,10 @@ import sharp from "sharp";
 
 import type { GarmentType } from "@/lib/catalog/garment-types";
 import { slugify } from "@/lib/text/slug";
-import type { PlacementArea } from "@/types/template";
+import { MAX_PLACEMENT_AREAS, type PlacementArea } from "@/types/template";
 
 import { alignGarmentPhoto, frameGarmentPhoto, maskPng, PHOTO_HEIGHT, PHOTO_WIDTH, type AlignedPhoto, type PhotoBox } from "./align";
+import { backPicture } from "./back";
 import { pairName, type PartHint } from "./parts";
 import type { Mask } from "./segment";
 import type { StyleChoice } from "./style-files";
@@ -65,7 +66,7 @@ export type OwnRegion = { id: string; label: string; png: Buffer; work: Mask };
 function regionId(label: string, taken: Set<string>): string {
   const base = slugify(label, 30) || "part";
   let id = base;
-  for (let n = 2; taken.has(id) || id === "whole-front" || id.endsWith("-print"); n += 1) id = `${base}-${n}`;
+  for (let n = 2; taken.has(id) || id === "whole-front" || id === "whole-back" || id.endsWith("-print"); n += 1) id = `${base}-${n}`;
   taken.add(id);
   return id;
 }
@@ -73,15 +74,15 @@ function regionId(label: string, taken: Set<string>): string {
 /**
  * A customer's own garment photo (lib/own-dress): the whole garment, cut out onto a studio backdrop and
  * cut into ITS parts (the AI's `hints`: jacket body, inner shirt…), or, without usable hints, into the
- * shape-based parts (sleeves, bodice, skirt for dresses; one body for tops). Print areas cover the whole
- * front and each sizeable part.
+ * shape-based parts (sleeves, bodice, skirt for dresses; one body for tops), with a back made from the
+ * front (back.ts). Print areas cover the whole front, the sizeable parts and the whole back.
  */
 export async function ownPhotoPicture(
   raw: Buffer,
   type: GarmentType,
   within?: PhotoBox,
   hints?: readonly PartHint[],
-): Promise<{ image: Buffer; regions: OwnRegion[]; printAreas: PlacementArea[] }> {
+): Promise<{ image: Buffer; regions: OwnRegion[]; printAreas: PlacementArea[]; back: { image: Buffer; masks: Record<string, Buffer> } }> {
   const framed = await frameGarmentPhoto(raw, type === "dress" ? "torso" : "shoulders", within, hints);
   const taken = new Set<string>();
   let regions: OwnRegion[];
@@ -114,13 +115,25 @@ export async function ownPhotoPicture(
       }),
     );
   }
-  const total = regions.reduce((n, r) => n + r.work.data.reduce((m, v) => m + v, 0), 0);
+  const back = await backPicture(framed.image, framed.alpha, regions);
+  const size = (r: OwnRegion) => r.work.data.reduce((m, v) => m + v, 0);
+  const total = regions.reduce((n, r) => n + size(r), 0);
+  // Each part big enough to print on gets its own area, the biggest first, within a template's 8 areas.
+  const parts = regions
+    .filter((r) => size(r) >= total * 0.1)
+    .sort((a, b) => size(b) - size(a))
+    .slice(0, MAX_PLACEMENT_AREAS - 2);
   const printAreas = [
     ...printArea("whole-front", "Whole front", regions.map((r) => r.work), framed.pictureCm),
-    // Each part big enough to print on gets its own area.
-    ...regions.flatMap((r) => (r.work.data.reduce((m, v) => m + v, 0) >= total * 0.1 ? printArea(`${r.id}-print`, r.label.slice(0, 40), [r.work], framed.pictureCm) : [])),
+    ...parts.flatMap((r) => printArea(`${r.id}-print`, r.label.slice(0, 40), [r.work], framed.pictureCm)),
+    ...printArea("whole-back", "Whole back", back.masks.map((m) => m.work), framed.pictureCm, "back"),
   ];
-  return { image: await sharp(framed.image).webp({ quality: 90 }).toBuffer(), regions, printAreas };
+  return {
+    image: await sharp(framed.image).webp({ quality: 90 }).toBuffer(),
+    regions,
+    printAreas,
+    back: { image: back.image, masks: Object.fromEntries(back.masks.map((m) => [m.id, m.png])) },
+  };
 }
 
 async function pictureFrom(aligned: AlignedPhoto, type: GarmentType, side: "front" | "back", match: StyleChoice): Promise<PhotoPicture> {

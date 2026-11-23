@@ -54,24 +54,29 @@ function styleOption(reading: GarmentReading | null, group: string) {
 
 /**
  * The template of a customer's own dress: their photo's front, cut into ITS parts (each recolourable on
- * its own), nothing to choose but colours and additions.
+ * its own), and a back made from it (lib/garment-photo/back.ts); nothing to choose but colours and
+ * additions.
  */
 function ownDressConfig(
   type: GarmentType,
-  picture: { image: string; regions: { id: string; label: string; mask: string }[] },
+  picture: { image: string; back: string; regions: { id: string; label: string; mask: string; backMask: string | null }[] },
   placementAreas: TemplateConfig["placementAreas"],
   reading: GarmentReading | null,
 ): TemplateConfig {
   const base = defaultTemplateConfig(type);
   const style = Object.fromEntries(templateStyleGroups(base).map((group) => [group, AS_PHOTO]));
   const masks = Object.fromEntries(picture.regions.map((r) => [r.id, r.mask]));
+  const backMasks = Object.fromEntries(picture.regions.flatMap((r) => (r.backMask ? [[r.id, r.backMask]] : [])));
   return templateConfigSchema.parse({
     ...base,
     styleOptions: Object.fromEntries(templateStyleGroups(base).map((group) => [group, [styleOption(reading, group)]])),
     placementAreas,
-    garmentImages: { front: picture.image },
-    regions: picture.regions.map(({ id, label, mask }) => ({ id, label, recolorable: true, masks: { front: mask } })),
-    styleVariants: [{ side: "front", match: style, image: picture.image, masks }],
+    garmentImages: { front: picture.image, back: picture.back },
+    regions: picture.regions.map(({ id, label, mask, backMask }) => ({ id, label, recolorable: true, masks: backMask ? { front: mask, back: backMask } : { front: mask } })),
+    styleVariants: [
+      { side: "front", match: style, image: picture.image, masks },
+      { side: "back", match: style, image: picture.back, masks: backMasks },
+    ],
     recolor: "shade",
     defaultStyle: style,
   });
@@ -120,9 +125,13 @@ export async function buildOwnDress(db: PrismaClient, storage: StorageAdapter, i
   };
   try {
     const image = await upload(picture.image, "webp");
+    const back = await upload(picture.back.image, "webp");
     const regions = [];
-    for (const region of picture.regions) regions.push({ id: region.id, label: region.label, mask: await upload(region.png, "png") });
-    const config = ownDressConfig(type, { image, regions }, picture.printAreas, reading);
+    for (const region of picture.regions) {
+      const backPng = picture.back.masks[region.id];
+      regions.push({ id: region.id, label: region.label, mask: await upload(region.png, "png"), backMask: backPng ? await upload(backPng, "png") : null });
+    }
+    const config = ownDressConfig(type, { image, back, regions }, picture.printAreas, reading);
     const category = await db.category.findFirst({ orderBy: { sortOrder: "asc" }, select: { id: true } });
     if (!category) throw new Error("no category to file the dress under");
     const noun = GARMENT_TYPES[type].noun;
