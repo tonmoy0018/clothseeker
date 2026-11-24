@@ -23,9 +23,19 @@ Status: **all three steps are done**:
 - **RTMPose comes from OpenMMLab itself.** Its ONNX export is published only as a zip on `download.openmmlab.com` (the file the [rtmlib](https://github.com/Tau-J/rtmlib) project uses); the copies on Hugging Face are personal re-uploads that differ from it. `pnpm vision:fetch` downloads the zip, takes `end2end.onnx` out of it (`archive` in `assets.ts`) and checks that file's SHA-256.
 - **Why RTMPose for the mirror** (compared on 2026-11-17, see Measurements): MoveNet Lightning put elbows and hips visibly too high and was unsure of the fake-camera person (mean body score 0.50); RTMPose-s found every joint where the much larger RTMPose-m and RTMO-s did, sure of them (0.95), at about twice Lightning's cost. MoveNet Thunder was slower than RTMPose-s and less accurate; RTMO (no person box needed) is exported only at 640×640, about 650 ms a frame without a GPU; YOLO pose models are AGPL; MediaPipe's BlazePose is only published as TFLite.
 - **The photo checks and the worker keep MoveNet:** their rules (`photo-check.ts`, the try-on mask) were tuned on its scores, and a single photo has no previous frame to find the person from.
-- **The body model reads a crop around the person** (it's a top-down model, `lib/vision/models/rtmpose.ts`). The crop is where the person was in the last frame (`poseBox`: their sure joints, grown by a shoulder width), widened to this frame's outline when the outline model ran (`maskBox`, `unionBox`: legs coming into view as they step back); with no pose yet, the last outline; with neither, the whole frame. It lets go when the shoulders are lost, and starts afresh when the frame size changes.
+- **The body model reads a crop around the person** (it's a top-down model, `lib/vision/models/rtmpose.ts`, `BodyTracker`). The crop is where the person was in the last frame (`poseBox`: their sure joints, grown by a shoulder width), widened to their latest outline (`maskBox`, `unionBox`: legs coming into view as they step back); with no pose yet, the last outline; with neither, the whole frame. It lets go when the shoulders are lost, and starts afresh when the frame size changes.
+  - **The crop is steady** (since 2026-11-24). It is the same box on every frame: it used to be widened to the outline only on the frames the outline model ran, so it changed size every other frame and the joints wobbled with it. And it stays put while the box the person needs moves less than 6% of it (or changes size less than 9%, `CROP_HOLD`); a crop that followed every frame's jitter fed the jitter back into the model.
+  - **Joints are read to a fraction of a bin** (a parabola through the strongest bin and its neighbours), so camera noise no longer flips a joint between neighbouring bins. On its own this halved the raw joints' frame-to-frame movement.
 - **The sharper outline** (MODNet) only loads when the browser has WebGPU: without one it's about 8× slower than the selfie model, which then draws the outline. It takes the frame in its own shape (384 px on the long side, `matteSize`). The try-on's body measurement keeps the selfie model it was tuned on.
-- Jitter is handled by smoothing (`OneEuro` in `lib/vision/mirror/smooth.ts`).
+- **Jitter is smoothed** (`OneEuro` in `lib/vision/mirror/smooth.ts`; the mirror's settings are `bodySmoother`). Speed is measured in shoulder widths, not pixels, so a person far from the camera is smoothed like one close to it. Still, it lets through below 0.4 Hz; moving a shoulder width a second, about 8 Hz.
+- **Steadiness is measured** with `pnpm exec tsx scripts/mirror-steadiness.ts [garment-slug]` (`HARSH=1` for a dim room's webcam: noise σ 7, exposure flicker, JPEG 70). It plays the fake-camera person through the real body and outline models and the mirror's tracking, smoothing and fitting, standing still, stepping 225 px sideways, then still. It reports how far the garment's mesh moves from frame to frame while she stands still (what looks like wiggling), how far the joints lag the step, and how the hem swings after it, as shares of the shoulder width. Measured on 2026-11-24 with the Floral Sundress, `HARSH=1`:
+
+  | | Garment per frame, still (worst 5%) | Lag during the step | Hem swings past, settles in |
+  |---|---|---|---|
+  | Before | 0.49% (1.20%) | 4.3% | 5.2%, 0.7 s |
+  | **Now** | **0.17% (0.48%)** | **2.6%** | **3.2%, 0.5 s** |
+
+  The model itself wasn't the problem: RTMPose's joints are accurate; the wobble came from the changing crop, whole-bin peaks, pixel-based smoothing and a bouncy hem. A different on-device model wouldn't have fixed those.
 
 ## Runtime
 
@@ -42,7 +52,7 @@ Status: **all three steps are done**:
 |---|---|
 | `lib/vision/models/geometry.ts` | Letterboxing frames into the models' square inputs and mapping points back |
 | `lib/vision/models/movenet.ts`, `rtmpose.ts`, `yunet.ts`, `segment.ts`, `parts.ts` | Each model's input layout and output decoding (pure, unit-tested); `rtmpose.ts` also finds the person's crop (`cropFor`, `poseBox`, `maskBox`) |
-| `lib/vision/mirror/smooth.ts` | One Euro filter for keypoints |
+| `lib/vision/mirror/smooth.ts` | One Euro filter for keypoints (`bodySmoother`: the mirror's settings, in shoulder widths) |
 | `lib/vision/runtime/engine.ts` | Loads the models and runs them on a frame (OffscreenCanvas → tensors → decoded results) |
 | `lib/vision/runtime/vision.worker.ts`, `protocol.ts`, `client.ts` | The worker thread and the page's handle on it; frames go in as transferred `ImageBitmap`s |
 | `lib/vision/photo/photo-check.ts` | Try-on photo rules shared by the browser and the worker |
@@ -102,8 +112,8 @@ The scores of different models aren't strictly comparable; the pictures were: Li
     - Above the hips, the body ends where the mask does or where an arm begins. The garment follows it with 6% ease (`EASE`), between 0.85× and 1.4× its own width (`MIN_FIT`, `MAX_WIDEN`). So it wraps a slimmer or fuller figure, and when the person turns, the far side narrows more than the near side.
     - Below the hips it reaches the furthest leg (hands left out) and only ever widens, so a skirt covers legs that step apart.
     - The shoulders keep the garment's own width; the fitted width takes over across the upper chest.
-    - Widths are smoothed between rows and over frames (`WidthSmoother`). Without a mask yet, the garment widens to an arm hanging beside it instead (as before).
-  - **Cloth moves** (`lib/vision/mirror/cloth.ts`, `ClothSway`): the hem behaves like a weight on a damped spring from the hips (1.3 Hz, damping 0.3). When the person moves, it trails behind, swings past and settles. The swing grows from nothing at the hips to its most at the hem, and is capped at 45% of the shoulder width.
+    - Widths are smoothed between rows and over frames (`WidthSmoother`, taking a fifth of each new measurement). Without a mask yet, the garment widens to an arm hanging beside it instead (as before).
+  - **Cloth moves** (`lib/vision/mirror/cloth.ts`, `ClothSway`): the hem behaves like a weight on a damped spring from the hips (1.3 Hz, damping 0.5; 0.3 until 2026-11-24 rang on for several swings and looked like jelly). When the person moves, it trails behind, swings past once and settles. The swing grows from nothing at the hips to its most at the hem, and is capped at 45% of the shoulder width.
   - **Drawing:** an 8×24 mesh of affine triangles (`drawMesh` in `lib/vision/mirror/draw.ts`). The columns meet at the centre line, because each side is fitted on its own. Each triangle is grown by 1.3 px, so their edges overlap and no hairlines show. Facing away hides the garment with a hint.
 - **The person's own clothes where the garment doesn't cover them** (`lib/vision/mirror/uncover.ts`, `FrameCleaner` in `draw.ts`). For example, a T-shirt's sleeves around a sleeveless dress, or its neckline inside a low one. Before the garment is drawn, a smaller copy of the frame is cleaned (the shoulders about 60 px apart, at most 480 px wide; about 5 ms):
   - **Skin colour** is read around the nose (`skinModel`), and settles over frames. The paint itself takes the colour of the person's visible neck and arm skin, which is usually darker than a lit face.

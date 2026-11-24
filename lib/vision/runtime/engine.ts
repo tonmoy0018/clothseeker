@@ -4,7 +4,7 @@ import { modelPath, ORT_PATH, VISION_MODELS, type VisionModelId } from "./assets
 import { fitRect, fitSquare, type FitBox } from "../models/geometry";
 import { decodeMovenet, MOVENET_SIZE, movenetInput, type Pose } from "../models/movenet";
 import { decodeParts, PARTS_INPUT, PARTS_OUTPUT, PARTS_SIZE, partsInput, type BodyParts } from "../models/parts";
-import { cropFor, decodeRtmpose, maskBox, poseBox, RTMPOSE_HEIGHT, RTMPOSE_WIDTH, rtmposeInput, unionBox, type Box } from "../models/rtmpose";
+import { BodyTracker, decodeRtmpose, maskBox, RTMPOSE_HEIGHT, RTMPOSE_WIDTH, rtmposeInput } from "../models/rtmpose";
 import { meanBrightness } from "../photo/photo-check";
 import { matteInput, matteSize, SELFIE_SIZE, selfieInput, type PersonMask } from "../models/segment";
 import { decodeYunet, YUNET_SIZE, yunetInput, type Face } from "../models/yunet";
@@ -74,11 +74,8 @@ export class VisionEngine {
   private readonly letterboxes = { pose: new Letterbox(MOVENET_SIZE), face: new Letterbox(YUNET_SIZE), mask: new Letterbox(SELFIE_SIZE), matte: new Letterbox(SELFIE_SIZE) };
   private stretch: OffscreenCanvasRenderingContext2D | null = null;
   private bodyCrop: OffscreenCanvasRenderingContext2D | null = null;
-  /** Where the body model looks next: around the last pose, else the last outline (null: not found yet). */
-  private tracked: Box | null = null;
-  private lastOutline: Box | null = null;
-  /** The frame size they were found in: another size (a photo after the camera) starts afresh. */
-  private trackedIn = "";
+  /** Where the body model looks next. */
+  private readonly tracker = new BodyTracker();
 
   private constructor(
     private readonly ort: OrtModule,
@@ -157,17 +154,8 @@ export class VisionEngine {
     const pose = this.sessions.pose;
     if (request.pose && body) {
       result.pose = await timed("body", async () => {
-        // Top-down: the person is looked for around their last pose, widened to this frame's outline when
-        // there is one (legs coming into view as they step back), else by the last outline, else in the
-        // whole frame. Once found, the pose itself keeps track of them.
-        if (this.trackedIn !== `${width}x${height}`) {
-          this.trackedIn = `${width}x${height}`;
-          this.tracked = null;
-          this.lastOutline = null;
-        }
-        const outline = result.mask ? maskBox(result.mask) : null;
-        if (outline) this.lastOutline = outline;
-        const crop = cropFor(unionBox(this.tracked, outline) ?? this.lastOutline ?? { x: 0, y: 0, width, height });
+        // Top-down: the person is looked for around their last pose and outline (BodyTracker).
+        const crop = this.tracker.next(width, height, result.mask ? maskBox(result.mask) : null);
         this.bodyCrop ??= new OffscreenCanvas(RTMPOSE_WIDTH, RTMPOSE_HEIGHT).getContext("2d", { willReadFrequently: true });
         const context = this.bodyCrop;
         if (!context) throw new Error("2D canvas unavailable");
@@ -178,7 +166,7 @@ export class VisionEngine {
         const rgba = context.getImageData(0, 0, RTMPOSE_WIDTH, RTMPOSE_HEIGHT).data;
         const out = await body.run({ input: new this.ort.Tensor("float32", rtmposeInput(rgba), [1, 3, RTMPOSE_HEIGHT, RTMPOSE_WIDTH]) });
         const found = decodeRtmpose(await floats(out.simcc_x), await floats(out.simcc_y), crop);
-        this.tracked = poseBox(found);
+        this.tracker.found(found);
         return found;
       });
     } else if (request.pose && pose) {

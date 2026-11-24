@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import { modelPath, ORT_VERSION, VISION_MODELS } from "@/lib/vision/runtime/assets";
 import { fitRect, fitSquare, letterboxRgba, toSource } from "@/lib/vision/models/geometry";
-import { decodeMovenet, MOVENET_SIZE, movenetInput } from "@/lib/vision/models/movenet";
+import { decodeMovenet, KEYPOINT_NAMES, MOVENET_SIZE, movenetInput, type Pose } from "@/lib/vision/models/movenet";
 import { isFromWorker, isToWorker } from "@/lib/vision/runtime/protocol";
 import { maskAt, matteInput, matteSize, SELFIE_SIZE, selfieInput } from "@/lib/vision/models/segment";
-import { OneEuro, PoseSmoother } from "@/lib/vision/mirror/smooth";
+import { bodySmoother, OneEuro, PoseSmoother } from "@/lib/vision/mirror/smooth";
 import { decodeYunet, YUNET_SIZE, yunetInput } from "@/lib/vision/models/yunet";
 
 // The pure parts of on-device vision: letterboxing, model inputs, decoding and smoothing. The models
@@ -143,6 +143,38 @@ describe("smoothing", () => {
     expect(next.a.x).toBeGreaterThan(0);
     expect(next.a.x).toBeLessThan(10);
     expect(next.b.x).toBe(500);
+  });
+
+  it("smooths a body the same however far it is from the camera", () => {
+    // The same pose with the same jitter relative to the shoulders, near (×1) and far (×0.4).
+    const run = (scale: number) => {
+      const smoother = bodySmoother();
+      let seed = 3;
+      const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
+      const steps: number[] = [];
+      let last: number | null = null;
+      for (let i = 0; i < 60; i += 1) {
+        const body: Pose = decodeMovenet(new Float32Array(17 * 3), fitSquare(1, 1, 1));
+        for (const name of KEYPOINT_NAMES) body[name] = { x: (400 + random() * 6) * scale, y: (300 + random() * 6) * scale, score: 0.9 };
+        body.leftShoulder = { x: (500 + random() * 6) * scale, y: (200 + random() * 6) * scale, score: 0.9 };
+        body.rightShoulder = { x: (300 + random() * 6) * scale, y: (200 + random() * 6) * scale, score: 0.9 };
+        const x = smoother.next(body, i * 66).leftShoulder.x / scale;
+        if (last !== null && i > 10) steps.push(Math.abs(x - last));
+        last = x;
+      }
+      return steps.reduce((a, b) => a + b, 0) / steps.length;
+    };
+    const near = run(1);
+    expect(near).toBeLessThan(1); // the raw points jump about 2 px a frame
+    expect(run(0.4)).toBeCloseTo(near, 1);
+  });
+
+  it("measures speed in the given unit: the same move is slower in a bigger unit, so it's smoothed more", () => {
+    const pixels = new OneEuro(0.4, 0.5);
+    const shoulders = new OneEuro(0.4, 0.5);
+    pixels.next(0, 0);
+    shoulders.next(0, 0, 50);
+    expect(pixels.next(30, 66)).toBeGreaterThan(shoulders.next(30, 66, 50) + 5);
   });
 });
 

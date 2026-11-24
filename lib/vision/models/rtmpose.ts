@@ -3,7 +3,7 @@ import type { PersonMask } from "./segment";
 
 // RTMPose-s (OpenMMLab, body7 weights, Apache-2.0): the live mirror's body model. Same 17 COCO keypoints
 // as MoveNet, far more accurate (elbows, hips), at about twice MoveNet Lightning's cost. Top-down: it reads
-// one person in a crop around them, so the crop is tracked from frame to frame (`poseBox`, `maskBox`).
+// one person in a crop around them, so the crop is tracked from frame to frame (`BodyTracker`).
 // Input: float32 [1, 3, 256, 192] RGB, normalised with ImageNet mean/std. Outputs: `simcc_x`
 // [1, 17, 384] and `simcc_y` [1, 17, 512], per-keypoint scores along each axis at half-pixel steps.
 
@@ -39,7 +39,11 @@ export function rtmposeInput(rgba: ArrayLike<number>): Float32Array {
   return out;
 }
 
-/** The strongest bin of keypoint k's row and its score. */
+/**
+ * The strongest bin of keypoint k's row (to a fraction of a bin: a parabola through it and its neighbours)
+ * and its score. Without the fraction, camera noise flips the peak between neighbouring bins and the
+ * joint jumps by a whole bin.
+ */
 function peak(values: ArrayLike<number>, k: number, bins: number): [number, number] {
   let best = 0;
   let score = -Infinity;
@@ -50,7 +54,11 @@ function peak(values: ArrayLike<number>, k: number, bins: number): [number, numb
       best = i;
     }
   }
-  return [best, score];
+  if (best === 0 || best === bins - 1) return [best, score];
+  const left = values[k * bins + best - 1] ?? score;
+  const right = values[k * bins + best + 1] ?? score;
+  const curve = left - 2 * score + right;
+  return [curve < 0 ? best + Math.max(-0.5, Math.min(0.5, (left - right) / (2 * curve))) : best, score];
 }
 
 /** The model's outputs and the crop they were read in → keypoints in source pixels, scores 0–1. */
@@ -113,6 +121,53 @@ export function unionBox(a: Box | null, b: Box | null): Box | null {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
+}
+
+/**
+ * How far (a share of the crop) the crop the person needs may move, or change size (×1.5), before the crop
+ * follows it. A crop that moves with every frame's jitter makes the model's answers jitter too.
+ */
+export const CROP_HOLD = 0.06;
+
+/**
+ * Where the body model looks, frame by frame: around the person's last pose, widened to their outline
+ * (legs coming into view as they step back), else the last outline, else the whole frame. The same
+ * box every frame (the latest outline, not only on the frames the outline model runs), and it stays put
+ * while the person stays inside it. Lets go when the shoulders are lost; another frame size starts afresh.
+ */
+export class BodyTracker {
+  private pose: Box | null = null;
+  private outline: Box | null = null;
+  private crop: Box | null = null;
+  private size = "";
+
+  /** The crop for this frame; `outline` is this frame's outline box when the outline model ran. */
+  next(width: number, height: number, outline: Box | null): Box {
+    if (this.size !== `${width}x${height}`) {
+      this.size = `${width}x${height}`;
+      this.pose = null;
+      this.outline = null;
+      this.crop = null;
+    }
+    if (outline) this.outline = outline;
+    const wanted = cropFor(unionBox(this.pose, this.outline) ?? { x: 0, y: 0, width, height });
+    const held = this.crop;
+    if (
+      held &&
+      Math.abs(wanted.x + wanted.width / 2 - (held.x + held.width / 2)) < held.width * CROP_HOLD &&
+      Math.abs(wanted.y + wanted.height / 2 - (held.y + held.height / 2)) < held.height * CROP_HOLD &&
+      Math.abs(Math.log(wanted.width / held.width)) < CROP_HOLD * 1.5
+    ) {
+      return held;
+    }
+    this.crop = wanted;
+    return wanted;
+  }
+
+  /** The pose found in this frame's crop. */
+  found(pose: Pose): void {
+    this.pose = poseBox(pose);
+  }
 }
 
 /** Where the person is, from the outline: the box around its sure pixels, in source pixels. Null if none. */

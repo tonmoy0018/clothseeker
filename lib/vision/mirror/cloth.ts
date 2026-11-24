@@ -5,7 +5,7 @@ import type { BodyWidths, Point } from "./mirror";
 
 /** How fast a skirt swings back (Hz) and how quickly the swing dies down (damping ratio). */
 export const SWAY_FREQUENCY = 1.3;
-export const SWAY_DAMPING = 0.3;
+export const SWAY_DAMPING = 0.5;
 /** The hem never trails further than this share of the shoulder width. */
 export const MAX_SWAY = 0.45;
 
@@ -19,13 +19,18 @@ export class ClothSway {
   private velocity: Point = { x: 0, y: 0 };
   private lastTime = 0;
 
+  constructor(
+    private readonly frequency = SWAY_FREQUENCY,
+    private readonly damping = SWAY_DAMPING,
+  ) {}
+
   next(anchor: Point, span: number, timeMs: number): Point {
     if (!this.hem) {
       this.hem = { ...anchor };
       this.lastTime = timeMs;
       return { x: 0, y: 0 };
     }
-    const omega = 2 * Math.PI * SWAY_FREQUENCY;
+    const omega = 2 * Math.PI * this.frequency;
     // Small steps keep the spring stable however slow the frames are; a long pause starts afresh.
     let remaining = Math.min(0.5, Math.max(0, (timeMs - this.lastTime) / 1000));
     this.lastTime = timeMs;
@@ -33,7 +38,7 @@ export class ClothSway {
       const dt = Math.min(1 / 120, remaining);
       remaining -= dt;
       for (const k of ["x", "y"] as const) {
-        const accel = omega * omega * (anchor[k] - this.hem[k]) - 2 * SWAY_DAMPING * omega * this.velocity[k];
+        const accel = omega * omega * (anchor[k] - this.hem[k]) - 2 * this.damping * omega * this.velocity[k];
         this.velocity[k] += accel * dt;
         this.hem[k] += this.velocity[k] * dt;
       }
@@ -63,7 +68,7 @@ export class ClothSway {
 export class WidthSmoother {
   private last: BodyWidths | null = null;
 
-  constructor(private readonly strength = 0.35) {}
+  constructor(private readonly strength = 0.2) {}
 
   next(widths: BodyWidths): BodyWidths {
     const last = this.last;
