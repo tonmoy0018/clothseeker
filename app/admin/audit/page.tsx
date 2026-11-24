@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { auditTargetHref, listAuditLog } from "@/lib/admin/audit-log";
 import { requireAdmin } from "@/lib/auth/guards";
 import { getPrisma } from "@/lib/db";
+import { nativeSelectClass } from "@/components/ui/select";
 
 export const metadata: Metadata = { title: "Audit log — ClothSeeker admin" };
 
 const when = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "medium", timeZone: "Asia/Dhaka" });
-const field = "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm";
+const field = nativeSelectClass;
 
 export default async function AdminAuditPage({ searchParams }: PageProps<"/admin/audit">) {
   const admin = await requireAdmin();
@@ -79,9 +80,9 @@ export default async function AdminAuditPage({ searchParams }: PageProps<"/admin
       </form>
 
       {rows.length === 0 ? (
-        <p className="rounded-xl border p-8 text-muted-foreground">No entries.</p>
+        <p className="rounded-2xl border bg-card p-8 text-muted-foreground">No entries.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-2xl border bg-card">
           <table className="w-full text-sm" data-testid="audit-table">
             <thead>
               <tr className="border-b text-left text-muted-foreground">

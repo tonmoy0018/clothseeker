@@ -30,32 +30,98 @@ export const serverEnvSchema = clientEnvSchema.extend({
  * provider on requires its keys (checked by workerEnvSchema). See docs/developers/ai-pipelines.md.
  */
 const aiEnvShape = {
-  PLANNER_PROVIDER: z.enum(["fake", "gemini"]).default("fake"),
+  /** "local": an open model on this machine (run `brew install llama.cpp` and `pnpm llm:setup` first). */
+  PLANNER_PROVIDER: z.enum(["fake", "gemini", "local"]).default("fake"),
+  /**
+   * "local": when the hosted planner (PLANNER_PROVIDER=gemini) can't answer (busy, out of its free
+   * allowance, unreachable), the model on this machine answers instead, more slowly.
+   */
+  PLANNER_FALLBACK: z.enum(["none", "local"]).default("none"),
+  /** Limit for one attempt at a design job when the local planner may answer it (it needs about two minutes). */
+  LOCAL_LLM_TIMEOUT_MS: z.coerce.number().int().min(30_000).max(900_000).default(300_000),
+  /** The local planner (PLANNER_PROVIDER=local or PLANNER_FALLBACK=local): where `pnpm llm:setup` put the model (default ~/.cache/clothseeker/local-llm). */
+  LOCAL_LLM_DIR: z.string().startsWith("/").max(500).optional(),
+  /** The local planner: llama.cpp's `llama-server` program (default: the one on PATH). */
+  LLAMA_SERVER_BIN: z.string().startsWith("/").max(500).optional(),
+  /** The local planner: tokens of request and answer the model can hold. More takes more memory. */
+  LOCAL_LLM_CONTEXT: z.coerce.number().int().min(4096).max(32_768).default(8192),
   IMAGE_PROVIDER: z.enum(["fake", "cloudflare"]).default("fake"),
   GEMINI_API_KEY: z.string().min(20).optional(),
-  GEMINI_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-3.8-flash"),
-  /** Comma-separated models tried in order when GEMINI_MODEL is busy or retired. Empty = none. */
+  /** The strongest Flash model that answers reliably on the free tier (measured 2026-11-11); the lighter ones follow. */
+  GEMINI_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-3.6-flash"),
+  /** Comma-separated models tried in order when GEMINI_MODEL is busy, retired or answers badly. Empty = none. */
   GEMINI_FALLBACK_MODELS: z
     .string()
     .regex(/^([a-z0-9.-]{3,60}(,[a-z0-9.-]{3,60}){0,4})?$/)
-    .default("gemini-3.6-flash,gemini-3.5-flash")
+    .default("gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite")
     .transform((v) => v.split(",").filter(Boolean)),
   CLOUDFLARE_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   CLOUDFLARE_API_TOKEN: z.string().min(20).optional(),
-  CLOUDFLARE_IMAGE_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-1-schnell"),
+  CLOUDFLARE_IMAGE_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-2-klein-4b"),
+  /** Comma-separated models tried in order when CLOUDFLARE_IMAGE_MODEL fails (not when the daily allowance is used up). Empty = none. */
+  CLOUDFLARE_FALLBACK_IMAGE_MODELS: z
+    .string()
+    .regex(/^(@cf\/[a-z0-9./-]{3,100}(,@cf\/[a-z0-9./-]{3,100}){0,3})?$/)
+    .default("@cf/black-forest-labs/flux-1-schnell")
+    .transform((v) => v.split(",").filter(Boolean)),
+  /**
+   * A customer's own garment photo turned into a clean product shot by an image model before it's cut out
+   * (lib/own-dress). "none" (default) skips it. "cloudflare" (FLUX.2 klein, within the free daily allowance)
+   * sends the photo to Cloudflare; "gemini" needs a paid key. A refusal or quota error falls back to the photo.
+   */
+  GARMENT_SHOT_PROVIDER: z.enum(["none", "gemini", "cloudflare"]).default("none"),
+  CLOUDFLARE_SHOT_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-2-klein-4b"),
+  GEMINI_IMAGE_MODEL: z.string().regex(/^[a-z0-9.-]{3,60}$/).default("gemini-2.5-flash-image"),
+  /**
+   * A customer's drawing of a garment turned into a realistic photo of it, to make into their own dress
+   * (lib/ai/sketch.ts). "fake" (default): fills the drawn outline with a colour, for development and tests.
+   * "cloudflare": FLUX.2 klein within the free daily allowance (the drawing is sent to Cloudflare).
+   * "gemini": Gemini's image model (needs a paid key; free keys are refused).
+   */
+  SKETCH_PROVIDER: z.enum(["fake", "cloudflare", "gemini"]).default("fake"),
+  CLOUDFLARE_SKETCH_MODEL: z.string().regex(/^@cf\/[a-z0-9./-]{3,100}$/).default("@cf/black-forest-labs/flux-2-klein-4b"),
   /** Artificial latency of the fake providers, so loading states are visible in development. */
   AI_FAKE_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(1_500),
   /** Hard limit for one attempt at an AI job. */
   AI_JOB_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(180_000),
-  /** Virtual try-on: deterministic fake (default) or free public Hugging Face Spaces. */
-  TRYON_PROVIDER: z.enum(["fake", "huggingface"]).default("fake"),
+  /** Virtual try-on: deterministic fake (default), free public Hugging Face Spaces, or a model on this machine. */
+  TRYON_PROVIDER: z.enum(["fake", "huggingface", "local"]).default("fake"),
+  /** TRYON_PROVIDER=local: where `pnpm tryon:setup` put the model and its Python (default ~/.cache/clothseeker/local-tryon). */
+  LOCAL_TRYON_DIR: z.string().startsWith("/").max(500).optional(),
+  /** TRYON_PROVIDER=local: denoising steps (fewer is faster and rougher). 8 suits "lcm", 20 "unipc"; "ddim" needs about 30. */
+  LOCAL_TRYON_STEPS: z.coerce.number().int().min(4).max(50).default(8),
+  /**
+   * TRYON_PROVIDER=local: how the model works through its steps. "lcm" adds few-step weights and finishes
+   * in 8 steps (about 40 s on the 8 GB Mac); "unipc" (20 steps, about 100 s) and "ddim" (30) are the earlier ones.
+   */
+  LOCAL_TRYON_SAMPLER: z.enum(["lcm", "unipc", "ddim"]).default("lcm"),
+  /**
+   * TRYON_PROVIDER=local: the share of the steps (the first ones) that also run without the garment, to
+   * compare. Those cost double. 1 = every step (what "lcm" was checked with); "unipc" does well with 0.6.
+   */
+  LOCAL_TRYON_GUIDED: z.coerce.number().min(0.1).max(1).default(1),
+  /** TRYON_PROVIDER=local: the model's picture width in pixels (height is 4/3 of it). 384 suits an 8 GB Mac. */
+  LOCAL_TRYON_WIDTH: z.coerce
+    .number()
+    .int()
+    .min(192)
+    .max(768)
+    .refine((w) => w % 24 === 0, "a multiple of 24")
+    .default(384),
+  /**
+   * The 3D view (lib/model3d): "fake" (default) bulges the garment's picture into a card, for development
+   * and tests; "local" is TripoSR on this machine (run `pnpm model3d:setup` first; about 10 s a model).
+   */
+  MODEL3D_PROVIDER: z.enum(["fake", "local"]).default("fake"),
+  /** MODEL3D_PROVIDER=local: where `pnpm model3d:setup` put the model, its code and its Python (default ~/.cache/clothseeker/local-3d). */
+  LOCAL_3D_DIR: z.string().startsWith("/").max(500).optional(),
   /** Optional free Hugging Face account token; raises the shared ZeroGPU allowance. */
   HF_TOKEN: z.string().regex(/^hf_[A-Za-z0-9]{20,}$/).optional(),
-  /** Comma-separated Spaces tried in order (see lib/ai/tryon-hf.ts). */
+  /** Comma-separated Spaces tried in order (see lib/ai/providers/tryon-hf.ts). */
   TRYON_SPACES: z
     .string()
-    .regex(/^(levihsu\/OOTDiffusion|franciszzj\/Leffa)(,(levihsu\/OOTDiffusion|franciszzj\/Leffa))*$/)
-    .default("levihsu/OOTDiffusion,franciszzj/Leffa")
+    .regex(/^(jallenjia\/Change-Clothes-AI|yisol\/IDM-VTON|levihsu\/OOTDiffusion|franciszzj\/Leffa)(,(jallenjia\/Change-Clothes-AI|yisol\/IDM-VTON|levihsu\/OOTDiffusion|franciszzj\/Leffa))*$/)
+    .default("jallenjia/Change-Clothes-AI,yisol/IDM-VTON,levihsu/OOTDiffusion,franciszzj/Leffa")
     .transform((v) => v.split(",")),
   /** Limit for one try-on attempt (free Spaces queue and cold-start). */
   TRYON_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(900_000).default(240_000),
@@ -91,12 +157,14 @@ export const workerEnvSchema = z.object({
 });
 
 /** Keys the chosen providers need but don't have. */
-export function missingAiKeys(env: { PLANNER_PROVIDER: string; IMAGE_PROVIDER: string } & Partial<Record<"GEMINI_API_KEY" | "CLOUDFLARE_ACCOUNT_ID" | "CLOUDFLARE_API_TOKEN", string>>): string[] {
+export function missingAiKeys(
+  env: { PLANNER_PROVIDER: string; IMAGE_PROVIDER: string; GARMENT_SHOT_PROVIDER?: string; SKETCH_PROVIDER?: string } & Partial<Record<"GEMINI_API_KEY" | "CLOUDFLARE_ACCOUNT_ID" | "CLOUDFLARE_API_TOKEN", string>>,
+): string[] {
   const missing: string[] = [];
-  if (env.PLANNER_PROVIDER === "gemini" && !env.GEMINI_API_KEY) {
+  if ((env.PLANNER_PROVIDER === "gemini" || env.GARMENT_SHOT_PROVIDER === "gemini" || env.SKETCH_PROVIDER === "gemini") && !env.GEMINI_API_KEY) {
     missing.push("GEMINI_API_KEY");
   }
-  if (env.IMAGE_PROVIDER === "cloudflare") {
+  if (env.IMAGE_PROVIDER === "cloudflare" || env.GARMENT_SHOT_PROVIDER === "cloudflare" || env.SKETCH_PROVIDER === "cloudflare") {
     if (!env.CLOUDFLARE_ACCOUNT_ID) {
       missing.push("CLOUDFLARE_ACCOUNT_ID");
     }

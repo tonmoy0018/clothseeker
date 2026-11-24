@@ -35,7 +35,10 @@ function failure(error: unknown): Failure {
 
 export type StartResult = { status: "ok"; jobId: string } | Failure;
 
-export async function startFromPhotoAction(formData: FormData): Promise<StartResult> {
+export type UploadResult = { status: "ok"; key: string; url: string | null } | Failure;
+
+/** Stores the customer's dress photo; they then choose what to do with it (startFromPhotoAction). */
+export async function uploadDressPhotoAction(formData: FormData): Promise<UploadResult> {
   const user = await customer();
   if (isFailure(user)) {
     return user;
@@ -48,9 +51,56 @@ export async function startFromPhotoAction(formData: FormData): Promise<StartRes
     return { status: "error", message: "That photo is too large even after resizing. Try a smaller one." };
   }
   try {
-    const storage = getStorage();
-    const photo = await uploadReferencePhoto(storage, user, new Uint8Array(await file.arrayBuffer()));
-    const started = await startDesignFrom(getPrisma(), storage, user, { mode: "photo", referenceKey: photo.key });
+    const photo = await uploadReferencePhoto(getStorage(), user, new Uint8Array(await file.arrayBuffer()));
+    return { status: "ok", key: photo.key, url: photo.url };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * What to make of an uploaded dress photo: our closest dress ("closest"), their own dress to customise
+ * ("customize") or exactly as it is ("exact"). `sketch`: the photo is a drawing, made into a realistic
+ * picture first, with the customer's `note` on its fabric. Everything is re-checked in lib/ai/starts.ts.
+ */
+export async function startFromPhotoAction(
+  referenceKey: unknown,
+  choice: unknown,
+  garmentType: unknown,
+  sketch: unknown = false,
+  note: unknown = undefined,
+  renderKey: unknown = undefined,
+): Promise<StartResult> {
+  const user = await customer();
+  if (isFailure(user)) {
+    return user;
+  }
+  const input =
+    choice === "closest"
+      ? { mode: "photo", referenceKey, sketch }
+      : { mode: "own", referenceKey, garmentType, exact: choice === "exact", sketch, note: note === "" ? undefined : note, renderKey };
+  if (choice !== "closest" && choice !== "customize" && choice !== "exact") {
+    return { status: "error", message: "Choose what to do with your photo." };
+  }
+  try {
+    const started = await startDesignFrom(getPrisma(), getStorage(), user, input);
+    return { status: "ok", jobId: started.jobId };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * A drawing: realistic pictures of the garment first, to pick the closest from (`round` > 0: "show me
+ * more"). The picked one then goes to startFromPhotoAction as `renderKey`.
+ */
+export async function renderSketchAction(referenceKey: unknown, note: unknown, round: unknown): Promise<StartResult> {
+  const user = await customer();
+  if (isFailure(user)) {
+    return user;
+  }
+  try {
+    const started = await startDesignFrom(getPrisma(), getStorage(), user, { mode: "sketch", referenceKey, note: note === "" ? undefined : note, round });
     return { status: "ok", jobId: started.jobId };
   } catch (error) {
     return failure(error);
@@ -78,7 +128,7 @@ export async function getStartStatusAction(jobId: unknown): Promise<StartStatusR
     return user;
   }
   try {
-    return { status: "ok", job: await getStartStatus(getPrisma(), user, jobId) };
+    return { status: "ok", job: await getStartStatus(getPrisma(), getStorage(), user, jobId) };
   } catch (error) {
     return failure(error);
   }

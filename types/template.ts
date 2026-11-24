@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { DECORATION_IDS } from "@/lib/catalog/decorations";
+import { DEFAULT_FINISH_PRICES } from "@/lib/catalog/finishes";
+import { GARMENT_TYPE_IDS, GARMENT_TYPES, STYLE_GROUP_IDS, STYLE_GROUP_LABEL, styleGroupsOf, type StyleGroup } from "@/lib/catalog/garment-types";
 import { FONT_IDS } from "@/lib/catalog/fonts";
 import { PATTERN_IDS } from "@/lib/catalog/patterns";
 import { isSafeObjectKey } from "@/lib/storage/object-key";
@@ -11,7 +13,7 @@ import { isSafeObjectKey } from "@/lib/storage/object-key";
 // `parseTemplateConfig()`, which upgrades older versions to the current one.
 // To change the shape: add a new version schema, an upgrade step, and bump TEMPLATE_CONFIG_VERSION.
 
-export const TEMPLATE_CONFIG_VERSION = 5;
+export const TEMPLATE_CONFIG_VERSION = 7;
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "Use lowercase letters, numbers and hyphens");
 const label = z.string().trim().min(1, "Required").max(40);
@@ -46,13 +48,15 @@ export const templateConfigV1Schema = z.object({
   allowedColors: z.array(z.object({ name: z.string().min(1).max(30), hex: hexColor })).min(1).max(40),
 });
 
-// ─── v5 (current) ─────────────────────────────────────────────────────────────
+// ─── v6 (current) ─────────────────────────────────────────────────────────────
 // v2 → v3: regions gained `masks` (where each region is on the garment image) and the
 // template gained `allowedDecorations`.
 // v3 → v4: optional `styleVariants`, garment pictures (+ masks) for particular style choices, so the
 // preview changes shape when the customer picks a neckline, sleeve or length.
 // v4 → v5: `recolor` (how colours go onto the garment pictures: "multiply" for light drawings,
 // "shade" for photos of any colour; see lib/design/shade.ts) and an optional `defaultStyle`.
+// v5 → v6: `garmentType` (lib/catalog/garment-types.ts). Its style groups decide which style options
+// the template has: a dress has neckline / sleeves / length, a shirt collar / sleeves / fit.
 
 export const templateRegionSchema = z.object({
   id,
@@ -75,6 +79,11 @@ export const placementAreaSchema = z.object({
   /** Real-world printable size in centimetres. */
   widthCm: z.number().positive().max(100),
   heightCm: z.number().positive().max(150),
+  /**
+   * Trim items to the garment's outline (its region masks), so an area can cover a whole part or the
+   * whole front without printing off the fabric. Off for plain rectangular areas.
+   */
+  clipToFabric: z.boolean().optional(),
 });
 
 export const styleOptionSchema = z.object({
@@ -84,8 +93,8 @@ export const styleOptionSchema = z.object({
   referenceImageKey: storageKey.optional(),
 });
 
-export const STYLE_GROUPS = ["neckline", "sleeveLength", "dressLength"] as const;
-export type StyleGroup = (typeof STYLE_GROUPS)[number];
+export type { GarmentType, StyleGroup } from "@/lib/catalog/garment-types";
+const styleGroup = z.enum(STYLE_GROUP_IDS);
 
 const styleOptionList = z.array(styleOptionSchema).min(1, "Add at least one option").max(8);
 
@@ -96,7 +105,7 @@ const styleOptionList = z.array(styleOptionSchema).min(1, "Add at least one opti
  */
 export const styleVariantSchema = z.object({
   side: z.enum(["front", "back"]),
-  match: z.object({ neckline: id.optional(), sleeveLength: id.optional(), dressLength: id.optional() }),
+  match: z.partialRecord(styleGroup, id),
   image: storageKey,
   /** Region masks aligned with `image`, by region id. A region without one isn't on this picture. */
   masks: z.record(id, storageKey),
@@ -106,15 +115,13 @@ export const MAX_STYLE_VARIANTS = 256;
 
 export const templateConfigSchema = z
   .object({
-    schemaVersion: z.literal(5),
+    schemaVersion: z.literal(7),
+    garmentType: z.enum(GARMENT_TYPE_IDS),
     garmentImages: z.object({ front: storageKey.optional(), back: storageKey.optional() }),
     regions: z.array(templateRegionSchema).min(1, "Add at least one region").max(12),
     placementAreas: z.array(placementAreaSchema).max(8),
-    styleOptions: z.object({
-      neckline: styleOptionList,
-      sleeveLength: styleOptionList,
-      dressLength: styleOptionList,
-    }),
+    /** Options for each of the garment type's style groups (exactly those groups). */
+    styleOptions: z.partialRecord(styleGroup, styleOptionList),
     allowedColors: z
       .array(z.object({ name: z.string().trim().min(1).max(30), hex: hexColor }))
       .min(1, "Allow at least one color")
@@ -128,10 +135,15 @@ export const templateConfigSchema = z
       patternMinor: priceMinor,
       decorationMinor: priceMinor,
     }),
+    /**
+     * Price per item (per motif in a border) of each finish besides print, or null when this garment
+     * doesn't offer it. A finished item costs this instead of its print price.
+     */
+    finishes: z.object({ embroidery: priceMinor.nullable(), sequins: priceMinor.nullable() }),
     styleVariants: z.array(styleVariantSchema).max(MAX_STYLE_VARIANTS),
     recolor: z.enum(["multiply", "shade"]),
     /** Style a new design starts with (e.g. the one the dress's photo shows). Defaults to each group's first option. */
-    defaultStyle: z.object({ neckline: id, sleeveLength: id, dressLength: id }).optional(),
+    defaultStyle: z.partialRecord(styleGroup, id).optional(),
   })
   .superRefine((config, ctx) => {
     const reportDuplicates = (values: string[], path: (string | number)[], what: string) => {
@@ -145,8 +157,19 @@ export const templateConfigSchema = z
       ["regions"],
       "region/area ids",
     );
-    for (const group of STYLE_GROUPS) {
-      reportDuplicates(config.styleOptions[group].map((o) => o.id), ["styleOptions", group], "option ids");
+    const groups = styleGroupsOf(config.garmentType);
+    for (const group of groups) {
+      const options = config.styleOptions[group];
+      if (!options) {
+        ctx.addIssue({ code: "custom", path: ["styleOptions", group], message: `Add the ${STYLE_GROUP_LABEL[group].toLowerCase()} options` });
+      } else {
+        reportDuplicates(options.map((o) => o.id), ["styleOptions", group], "option ids");
+      }
+    }
+    for (const group of Object.keys(config.styleOptions)) {
+      if (!groups.some((g) => g === group)) {
+        ctx.addIssue({ code: "custom", path: ["styleOptions", group], message: `A ${GARMENT_TYPES[config.garmentType].noun} has no ${group} options` });
+      }
     }
     reportDuplicates(config.allowedColors.map((c) => c.name.toLowerCase()), ["allowedColors"], "color names");
     reportDuplicates(config.allowedPatterns, ["allowedPatterns"], "patterns");
@@ -217,6 +240,20 @@ function upgradeV3(v3: z.infer<typeof templateConfigV3Shape>): unknown {
   return { ...v3, schemaVersion: 4, styleVariants: [] };
 }
 
+/** v5 → v6: every template so far is a dress. */
+const templateConfigV5Shape = z.looseObject({ schemaVersion: z.literal(5) });
+
+function upgradeV5(v5: z.infer<typeof templateConfigV5Shape>): unknown {
+  return { ...v5, schemaVersion: 6, garmentType: "dress" };
+}
+
+/** v6 → v7: every template offers embroidery and sequins at the default prices. */
+const templateConfigV6Shape = z.looseObject({ schemaVersion: z.literal(6) });
+
+function upgradeV6(v6: z.infer<typeof templateConfigV6Shape>): unknown {
+  return { ...v6, schemaVersion: 7, finishes: { ...DEFAULT_FINISH_PRICES } };
+}
+
 /** v4 → v5: existing templates recolour by multiplying. */
 const templateConfigV4Shape = z.looseObject({ schemaVersion: z.literal(4) });
 
@@ -251,6 +288,12 @@ export function parseTemplateConfig(raw: unknown): TemplateConfig {
   if (v <= 4) {
     candidate = upgradeV4(templateConfigV4Shape.parse(candidate));
   }
+  if (v <= 5) {
+    candidate = upgradeV5(templateConfigV5Shape.parse(candidate));
+  }
+  if (v <= 6) {
+    candidate = upgradeV6(templateConfigV6Shape.parse(candidate));
+  }
   return templateConfigSchema.parse(candidate);
 }
 
@@ -260,8 +303,8 @@ export function templateImageKeys(config: TemplateConfig): string[] {
   for (const region of config.regions) {
     keys.push(region.masks.front, region.masks.back);
   }
-  for (const group of STYLE_GROUPS) {
-    for (const option of config.styleOptions[group]) {
+  for (const group of templateStyleGroups(config)) {
+    for (const option of styleOptionsFor(config, group)) {
       keys.push(option.referenceImageKey);
     }
   }
@@ -270,4 +313,14 @@ export function templateImageKeys(config: TemplateConfig): string[] {
   }
   // Variants share pictures (e.g. one skirt mask for every neckline), so list each key once.
   return [...new Set(keys.filter((k): k is string => typeof k === "string"))];
+}
+
+/** The style groups a template offers (its garment type's), in display order. */
+export function templateStyleGroups(config: Pick<TemplateConfig, "garmentType">): readonly StyleGroup[] {
+  return styleGroupsOf(config.garmentType);
+}
+
+/** A template's options for one style group (empty if it has none). */
+export function styleOptionsFor(config: Pick<TemplateConfig, "styleOptions">, group: StyleGroup): StyleOption[] {
+  return config.styleOptions[group] ?? [];
 }

@@ -1,8 +1,9 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
-import { alignPhoto, analysePhoto, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, TORSO } from "@/lib/garment-photo/align";
-import { maskArea, skirtRatio, sleeveStyle } from "@/lib/garment-photo/segment";
+import { alignPhoto, analysePhoto, BACKDROP, cutOutGarment, frameGarmentPhoto, PHOTO_HEIGHT, PHOTO_WIDTH, SHOULDER_Y, SHOULDERS, TORSO } from "@/lib/garment-photo/align";
+import { lengthRatio, maskArea, skirtRatio, sleeveReach, sleeveStyle } from "@/lib/garment-photo/segment";
+import { ownPhotoPicture } from "@/lib/garment-photo/template";
 import { luminance, shadeFactor, shadeRange } from "@/lib/design/shade";
 
 // Synthetic catalogue photos: a dress (with soft vertical folds) on a cream mannequin and stand, on a
@@ -80,18 +81,133 @@ describe("finding and splitting the dress in a photo", () => {
   });
 });
 
+/** A synthetic shirt or panjabi: straight body, sleeves out to the sides, no waist. */
+async function topPhoto({ hem, sleeveEnd }: { hem: number; sleeveEnd: number }): Promise<Buffer> {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="#dcdcda"/>
+    <path d="M160 90 L185 84 L215 84 L240 90 L240 ${hem} L160 ${hem} Z" fill="#2e3a59"/>
+    <path d="M160 92 L135 ${sleeveEnd - 30} L128 ${sleeveEnd} L146 ${sleeveEnd + 2} L162 140 Z" fill="#2e3a59"/>
+    <path d="M240 92 L265 ${sleeveEnd - 30} L272 ${sleeveEnd} L254 ${sleeveEnd + 2} L238 140 Z" fill="#2e3a59"/></svg>`;
+  return sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toBuffer();
+}
+
+describe("shirts and panjabis", () => {
+  it("reads sleeve reach and length in shoulder widths, and lines up by the shoulders", async () => {
+    const short = (await analysePhoto(await topPhoto({ hem: 250, sleeveEnd: 150 }))).parts;
+    const long = (await analysePhoto(await topPhoto({ hem: 330, sleeveEnd: 260 }))).parts;
+    expect(sleeveReach(short)).toBeLessThan(sleeveReach(long));
+    expect(lengthRatio(short)).toBeLessThan(lengthRatio(long));
+
+    const { parts, scale } = await analysePhoto(await alignPhoto(await topPhoto({ hem: 300, sleeveEnd: 200 }), "shoulders"));
+    expect(Math.abs((parts.shoulderWidth * scale) / PHOTO_WIDTH - SHOULDERS)).toBeLessThan(0.03);
+    expect(Math.abs((parts.shoulderY * scale) / PHOTO_HEIGHT - SHOULDER_Y)).toBeLessThan(0.02);
+  });
+});
+
+describe("cutting the dress out for try-on", () => {
+  it("keeps the dress and drops the mannequin, stand and backdrop", async () => {
+    const cut = await cutOutGarment(await photo({ colour: "#1f2a44", sleeves: "short", hem: 320 }));
+    const { data, info } = await sharp(cut).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alpha = (x: number, y: number) => data[(Math.round(y * (info.height - 1)) * info.width + Math.round(x * (info.width - 1))) * 4 + 3] ?? 0;
+    // Trimmed to the dress: its middle is solid, the corners (backdrop) are clear.
+    expect(alpha(0.5, 0.6)).toBe(255);
+    expect(alpha(0, 0)).toBe(0);
+    expect(alpha(1, 1)).toBe(0);
+    // The mannequin head (above the shoulders) and stand (below the hem) were left behind.
+    expect(info.height).toBeLessThan(250);
+  });
+});
+
 describe("recolouring photos (shade)", () => {
-  it("stretches the fabric's own light and shade over the new colour", () => {
+  it("frames a customer's own photo whole: nothing cut off, on a plain backdrop, sized by the shoulders", async () => {
+    // A long dress drawn near the bottom-right of a wide photo.
+    const input = await sharp(await photo({ colour: "#1f6f50", sleeves: "short", hem: 380 }))
+      .extend({ left: 300, right: 40, top: 0, bottom: 0, background: "#dcdcda" })
+      .jpeg()
+      .toBuffer();
+    const framed = await frameGarmentPhoto(input);
+    const { data, info } = await sharp(framed.image).raw().toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height]).toEqual([PHOTO_WIDTH, PHOTO_HEIGHT]);
+    const at = (x: number, y: number): [number, number, number] => [data[(y * info.width + x) * 3] ?? 0, data[(y * info.width + x) * 3 + 1] ?? 0, data[(y * info.width + x) * 3 + 2] ?? 0];
+    // The corners are the backdrop (the photo's own grey, mannequin and stand are gone).
+    for (const [x, y] of [[5, 5], [PHOTO_WIDTH - 5, 5], [5, PHOTO_HEIGHT - 5], [PHOTO_WIDTH - 5, PHOTO_HEIGHT - 5]] as const) {
+      const [r, g, b] = at(x, y);
+      // JPEG: within a few levels.
+      expect(Math.max(Math.abs(r - BACKDROP.r), Math.abs(g - BACKDROP.g), Math.abs(b - BACKDROP.b))).toBeLessThanOrEqual(3);
+    }
+    // The whole dress fits: green from near the top down to near the bottom, centred.
+    const green = (x: number, y: number) => {
+      const [r, g, b] = at(x, y);
+      return g > r + 20 && g > b + 10;
+    };
+    expect(green(PHOTO_WIDTH / 2, Math.round(PHOTO_HEIGHT * 0.12))).toBe(true);
+    expect(green(PHOTO_WIDTH / 2, Math.round(PHOTO_HEIGHT * 0.9))).toBe(true);
+    expect(framed.pictureCm.w).toBeGreaterThan(60);
+    expect(framed.pictureCm.w).toBeLessThan(250);
+  });
+
+  it("finds a garment of several colours in a customer's photo (a jacket open over a shirt)", async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+      <rect width="400" height="400" fill="#e2e2e0"/>
+      <path d="M150 90 L250 90 L262 330 L138 330 Z" fill="#161616"/>
+      <path d="M186 92 L214 92 L210 300 L190 300 Z" fill="#f4f1ea"/></svg>`;
+    const input = await sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toBuffer();
+    const one = (await analysePhoto(input, 400)).parts.garment;
+    const several = (await analysePhoto(input, 400, "several")).parts.garment;
+    const on = (mask: typeof one, x: number, y: number) => mask.data[y * mask.width + x] === 1;
+    // The jacket's side and the shirt in the middle are both garment.
+    expect(on(several, 165, 200)).toBe(true);
+    expect(on(several, 200, 200)).toBe(true);
+    expect(maskArea(several)).toBeGreaterThan(maskArea(one));
+  });
+
+  it("makes one part of a pair the AI boxed side by side (left and right sleeve → Sleeves)", async () => {
+    const input = await photo({ colour: "#1f6f50", sleeves: "long", hem: 330 });
+    const f = (left: number, top: number, right: number, bottom: number) => ({ left: left / 400, top: top / 400, right: right / 400, bottom: bottom / 400 });
+    const hints = [
+      { label: "Dress body", box: f(145, 86, 255, 332), hex: "#1f6f50" },
+      { label: "Left sleeve", box: f(124, 90, 162, 254), hex: "#1f6f50" },
+      { label: "Right sleeve", box: f(238, 90, 276, 254), hex: "#1f6f50" },
+    ];
+    const { regions } = await ownPhotoPicture(input, "dress", undefined, hints);
+    expect(regions.map((r) => [r.id, r.label])).toEqual([["dress-body", "Dress body"], ["sleeves", "Sleeves"]]);
+    const sleeves = regions[1];
+    if (!sleeves) throw new Error("no sleeves");
+    // Both sides are in it: the working mask and the PNG the design screen recolours by.
+    const half = sleeves.work.width / 2;
+    const side = (from: number, to: number) => sleeves.work.data.reduce((n, v, i) => n + (v === 1 && i % sleeves.work.width >= from && i % sleeves.work.width < to ? 1 : 0), 0);
+    expect(side(0, half)).toBeGreaterThan(20);
+    expect(side(half, sleeves.work.width)).toBeGreaterThan(20);
+    expect((await sharp(sleeves.png).metadata()).channels).toBe(1);
+    const png = await sharp(sleeves.png).extractChannel(0).raw().toBuffer({ resolveWithObject: true });
+    expect([png.info.width, png.info.height, png.info.channels]).toEqual([PHOTO_WIDTH, PHOTO_HEIGHT, 1]);
+    const lit = (from: number, to: number) => png.data.reduce((n, v, i) => n + (v >= 128 && i % PHOTO_WIDTH >= from && i % PHOTO_WIDTH < to ? 1 : 0), 0);
+    expect(lit(0, PHOTO_WIDTH / 2)).toBeGreaterThan(200);
+    expect(lit(PHOTO_WIDTH / 2, PHOTO_WIDTH)).toBeGreaterThan(200);
+  });
+
+  it("keeps a new colour true on dark fabric, with its folds", () => {
     // A dark navy region: brightness 0.10–0.30, with a mask.
     const rgb = [20, 25, 50, 60, 70, 110, 40, 45, 80, 200, 200, 200];
     const mask = [255, 255, 255, 0];
     const range = shadeRange(rgb, 3, mask, 1);
     expect(range.low).toBeCloseTo(luminance(20, 25, 50), 1);
     expect(range.high).toBeCloseTo(luminance(60, 70, 110), 1);
-    // Darkest fabric → deep shadow, brightest → full colour; a pale pink stays pale.
+    // Dark fabric: its typical brightness shows the new colour nearly true (a white stripe stays white),
+    // its darkest folds darker and its highlights brighter.
+    expect(range.mid).toBeDefined();
+    expect(shadeFactor(range.mid ?? 0, range)).toBeCloseTo(0.95);
+    expect(shadeFactor(range.low, range)).toBeLessThan(0.95);
+    expect(shadeFactor(range.high, range)).toBeGreaterThan(0.95);
+    expect(shadeFactor(1, range)).toBeCloseTo(1.05);
+  });
+
+  it("stretches light fabric's light and shade over the new colour", () => {
+    // A pale region: brightness 0.6–0.9.
+    const rgb = [150, 155, 160, 230, 230, 232, 190, 192, 195];
+    const range = shadeRange(rgb, 3, [255, 255, 255], 1);
+    expect(range.mid).toBeUndefined();
     expect(shadeFactor(range.low, range)).toBeCloseTo(0.45);
     expect(shadeFactor(range.high, range)).toBeCloseTo(1.05);
-    expect(shadeFactor(1, range)).toBeCloseTo(1.05);
   });
 
   it("copes with flat fabric (black) without dividing by zero", () => {

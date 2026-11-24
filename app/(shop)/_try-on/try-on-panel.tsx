@@ -1,0 +1,488 @@
+"use client";
+
+import Image from "next/image";
+import { useEffect, useRef, useState, useTransition } from "react";
+
+import { Button, buttonVariants } from "@/components/ui/button";
+import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
+import { fitReport, garmentLengthCm, type TryOnFit } from "@/lib/fit/fit";
+import { girthsFromPhoto, MEASURE_PROBLEM_TEXT, type PhotoMeasure } from "@/lib/fit/measure";
+import { downscalePhoto } from "@/lib/media/client-resize";
+import { isTryOnStale, TRYON_CONSENT_POINTS } from "@/lib/tryon/rules";
+import type { TryOnPhotoView, TryOnResultView } from "@/lib/tryon/service";
+import { cn } from "@/lib/utils";
+import type { DesignSpec } from "@/types/design-spec";
+
+import { FitSection, fitInputOf, type FitDraft, type FitGarment, type FitMeasure } from "./fit-section";
+import {
+  deleteBodyProfileAction,
+  deletePhotoAction,
+  getTryOnOverviewAction,
+  getTryOnStatusAction,
+  savePhotoAction,
+  saveBodyProfileAction,
+  saveResultAction,
+  startTryOnAction,
+  uploadTryOnPhotoAction,
+  type TryOnQuotaView,
+} from "./actions";
+
+// Virtual try-on: consent → photo → queued try-on → before/after. A design edit marks the result as
+// out of date, but only "Update try-on" reruns it — never automatically.
+
+const POLL_MS = 2000;
+const POLL_GIVE_UP_MS = 12 * 60 * 1000;
+
+export type TryOnSource = { kind: "design"; spec: DesignSpec; designId: string | null } | { kind: "product"; productId: string };
+
+type Phase = { kind: "idle" } | { kind: "waiting"; jobId: string; running: boolean } | { kind: "error"; message: string };
+
+/** The garment's kind, the sizes on sale and its listed length (ready-made items), for the fit report. */
+export type TryOnGarmentFacts = { type: FitGarment["type"]; sizes: FitGarment["sizes"]; productLengthCm: number | null };
+
+const sameFit = (a: TryOnFit | null, b: TryOnFit | null) =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.heightCm === b.heightCm &&
+    a.size === b.size &&
+    JSON.stringify(a.girthsCm) === JSON.stringify(b.girthsCm));
+
+/** A photo's measurement, or null when it can't be done on this device. */
+type MeasureState = PhotoMeasure | null;
+
+/**
+ * `noun` names the garment in messages: "Putting the shirt on you…". `offeredPhoto` is a photo taken in
+ * the live mirror, offered for upload (still only after consent).
+ */
+export function TryOnPanel({
+  source,
+  signedIn,
+  onSignIn,
+  noun,
+  garment,
+  offeredPhoto = null,
+}: {
+  source: TryOnSource;
+  signedIn: boolean;
+  onSignIn: () => void;
+  noun: string;
+  garment: TryOnGarmentFacts;
+  offeredPhoto?: Blob | null;
+}) {
+  const [fitDraft, setFitDraft] = useState<FitDraft>({ height: "", size: source.kind === "design" ? source.spec.size : null, remember: false });
+  const [measures, setMeasures] = useState<Record<string, MeasureState>>({});
+  const measuring = useRef(new Set<string>());
+  const [savedProfile, setSavedProfile] = useState(false);
+  const [usedOffer, setUsedOffer] = useState<Blob | null>(null);
+  const [photos, setPhotos] = useState<TryOnPhotoView[]>([]);
+  const [photoId, setPhotoId] = useState<string | null>(null);
+  const [quota, setQuota] = useState<TryOnQuotaView | null>(null);
+  const [agreed, setAgreed] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [result, setResult] = useState<TryOnResultView | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const loaded = useRef(false);
+
+  useEffect(() => {
+    if (!signedIn || loaded.current) {
+      return;
+    }
+    loaded.current = true;
+    void getTryOnOverviewAction().then((overview) => {
+      setPhotos(overview.photos);
+      setQuota(overview.quota);
+      setPhotoId((current) => current ?? overview.photos[0]?.id ?? null);
+      const profile = overview.profile;
+      if (profile) {
+        setSavedProfile(true);
+        setFitDraft((d) => ({ ...d, height: String(profile.heightCm), remember: true }));
+      }
+    });
+  }, [signedIn]);
+
+  // Each photo is measured once, on this device, when it's first chosen.
+  const audience = GARMENT_TYPES[garment.type].audience;
+  const measureUrl = photos.find((p) => p.id === photoId)?.url ?? null;
+  const measured = photoId !== null && photoId in measures;
+  useEffect(() => {
+    if (!photoId || !measureUrl || measured || measuring.current.has(photoId)) return;
+    measuring.current.add(photoId);
+    void import("@/lib/vision/photo/measure-photo")
+      .then(({ measurePhotoOnDevice }) => measurePhotoOnDevice(measureUrl, audience))
+      .catch(() => null)
+      .then((result) => setMeasures((m) => ({ ...m, [photoId]: result })));
+  }, [photoId, measureUrl, measured, audience]);
+
+  const waitingJob = phase.kind === "waiting" ? phase.jobId : null;
+  useEffect(() => {
+    if (!waitingJob) {
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    const tick = async () => {
+      if (cancelled) return;
+      const response = await getTryOnStatusAction(waitingJob).catch(() => null);
+      if (cancelled) return;
+      if (!response || response.status !== "ok") {
+        setPhase({ kind: "error", message: response?.status === "error" ? response.message : "We lost track of that try-on. Please try again." });
+        return;
+      }
+      const job = response.job;
+      if (job.state === "done") {
+        setResult(job.result);
+        setPhase({ kind: "idle" });
+        return;
+      }
+      if (job.state === "failed") {
+        setPhase({ kind: "error", message: job.message });
+        return;
+      }
+      if (Date.now() - startedAt > POLL_GIVE_UP_MS) {
+        setPhase({ kind: "error", message: "The try-on service is very busy right now. Please try again later." });
+        return;
+      }
+      setPhase((p) => (p.kind === "waiting" && p.jobId === waitingJob ? { ...p, running: job.position === "running" } : p));
+      timer = setTimeout(() => void tick(), POLL_MS);
+    };
+    timer = setTimeout(() => void tick(), 800);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [waitingJob]);
+
+  async function upload(file: File | Blob) {
+    if (!signedIn) {
+      onSignIn();
+      return;
+    }
+    setUploading(true);
+    setPhase({ kind: "idle" });
+    try {
+      const photo = await downscalePhoto(file);
+      // Checked on this device first (nothing is uploaded for this), so an unusable photo is caught
+      // instantly with the exact reason. The worker checks it again after upload.
+      setChecking(true);
+      const { photoProblemOnDevice } = await import("@/lib/vision/photo/check-photo");
+      const problem = await photoProblemOnDevice(photo);
+      setChecking(false);
+      if (problem) {
+        setPhase({ kind: "error", message: problem });
+        return;
+      }
+      const form = new FormData();
+      form.set("photo", photo, "photo.jpg");
+      form.set("consent", agreed ? "yes" : "no");
+      const response = await uploadTryOnPhotoAction(form);
+      if (response.status === "signin") {
+        onSignIn();
+        return;
+      }
+      if (response.status === "error") {
+        setPhase({ kind: "error", message: response.message });
+        return;
+      }
+      setPhotos((list) => [response.photo, ...list]);
+      setPhotoId(response.photo.id);
+    } catch (error) {
+      setPhase({ kind: "error", message: error instanceof Error ? error.message : "That photo couldn't be added." });
+    } finally {
+      setChecking(false);
+      setUploading(false);
+    }
+  }
+
+  function start() {
+    if (!photoId) return;
+    setNotice(null);
+    const fit = currentFit ?? undefined;
+    const input =
+      source.kind === "design"
+        ? { photoId, source: { kind: "design", spec: source.spec, designId: source.designId }, fit }
+        : { photoId, source: { kind: "product", productId: source.productId }, fit };
+    const remember = fitDraft.remember ? fitInputOf(fitDraft) : null;
+    startTransition(async () => {
+      if (remember) {
+        const saved = await saveBodyProfileAction(remember);
+        if (saved.status === "ok") setSavedProfile(true);
+      }
+      const response = await startTryOnAction(input);
+      if (response.status === "signin") {
+        onSignIn();
+        return;
+      }
+      if (response.status === "error") {
+        setPhase({ kind: "error", message: response.message });
+        return;
+      }
+      setQuota(response.quota);
+      if (response.cached) {
+        setNotice("You already tried this on with this photo, so here it is again (this didn't use a try-on).");
+      }
+      setPhase({ kind: "waiting", jobId: response.jobId, running: false });
+    });
+  }
+
+  function applySaved(kind: "photo" | "result", id: string, saved: boolean) {
+    if (kind === "photo") {
+      setPhotos((list) => list.map((p) => (p.id === id ? { ...p, saved } : p)));
+      setResult((r) => (r && r.photoId === id ? { ...r, photoSaved: saved } : r));
+    } else {
+      setResult((r) => (r && r.id === id ? { ...r, saved } : r));
+    }
+  }
+
+  /** Optimistic: the checkbox flips at once and flips back if the server refuses. */
+  function toggleSaved(kind: "photo" | "result", id: string, saved: boolean) {
+    applySaved(kind, id, saved);
+    startTransition(async () => {
+      const response = kind === "photo" ? await savePhotoAction(id, saved) : await saveResultAction(id, saved);
+      if (response.status !== "ok") {
+        applySaved(kind, id, !saved);
+        setPhase({ kind: "error", message: response.status === "error" ? response.message : "Please sign in again." });
+      }
+    });
+  }
+
+  function deletePhoto(id: string) {
+    startTransition(async () => {
+      const response = await deletePhotoAction(id);
+      if (response.status !== "ok") {
+        setPhase({ kind: "error", message: response.status === "error" ? response.message : "Please sign in again." });
+        return;
+      }
+      setPhotos((list) => list.filter((p) => p.id !== id));
+      setPhotoId((current) => (current === id ? null : current));
+      setResult((r) => (r && r.photoId === id ? null : r));
+      setNotice("Photo and its try-ons deleted.");
+    });
+  }
+
+  function forgetProfile() {
+    startTransition(async () => {
+      const response = await deleteBodyProfileAction();
+      if (response.status === "ok") {
+        setSavedProfile(false);
+        setFitDraft((d) => ({ ...d, remember: false }));
+        setNotice("Your height was removed from your account.");
+      }
+    });
+  }
+
+  const fitGarment: FitGarment = {
+    type: garment.type,
+    sizes: garment.sizes,
+    lengthCm: garmentLengthCm(garment.type, source.kind === "design" ? source.spec.styleOptions : null, garment.productLengthCm),
+  };
+  const state = photoId ? measures[photoId] : undefined;
+  const fitMeasure: FitMeasure = !photoId
+    ? { kind: "no_photo" }
+    : state === undefined
+      ? measureUrl
+        ? { kind: "measuring" }
+        : { kind: "failed", message: "This photo can't be measured right now." }
+      : state === null
+        ? { kind: "failed", message: "Measuring doesn't work on this device." }
+        : state.ok
+          ? { kind: "measured", fullLength: state.fullLength, girths: (heightCm) => girthsFromPhoto(audience, state.breadths, heightCm) }
+          : { kind: "failed", message: MEASURE_PROBLEM_TEXT[state.problem] };
+  // The fit the next try-on shows: the chosen size, else the recommended one.
+  const fitInput = fitInputOf(fitDraft);
+  const fitGirths = fitInput && fitMeasure.kind === "measured" ? fitMeasure.girths(fitInput.heightCm) : null;
+  const fitSize = fitInput ? (fitDraft.size ?? fitReport(fitGarment.type, fitInput, fitGirths, fitGarment.sizes, null, null).recommended) : null;
+  const currentFit: TryOnFit | null = fitInput && fitSize ? { ...fitInput, size: fitSize, girthsCm: fitGirths?.map((g) => g.cm) ?? null } : null;
+
+  const busy = pending || uploading || phase.kind === "waiting";
+  const stale = result !== null && source.kind === "design" && isTryOnStale(result.garmentHash, source.spec);
+  const fitStale = result !== null && !stale && !sameFit(result.fit, currentFit);
+  const selected = photos.find((p) => p.id === photoId) ?? null;
+
+  if (!signedIn) {
+    return (
+      <section className="flex flex-col gap-2 rounded-2xl border bg-card p-4" data-testid="try-on-panel">
+        <h2 className="font-medium">See it on me</h2>
+        <p className="text-sm text-muted-foreground">Sign in to try clothes on with your own photo.</p>
+        <Button variant="outline" className="self-start" onClick={onSignIn}>
+          Sign in to try on
+        </Button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border bg-card p-4" data-testid="try-on-panel" aria-labelledby="try-on-title">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="try-on-title" className="font-medium">
+          See it on me
+        </h2>
+        {quota && (
+          <span className="text-xs text-muted-foreground" data-testid="try-on-quota">
+            {quota.remaining} of {quota.limit} try-ons left today
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">Rough AI preview: the real {noun} will fit and look different.</p>
+
+      {/* Consent comes before any upload. */}
+      <div className="flex flex-col gap-2 rounded-xl bg-secondary p-3 text-sm" data-testid="try-on-consent">
+        <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+          {TRYON_CONSENT_POINTS.map((point) => (
+            <li key={point}>{point}</li>
+          ))}
+        </ul>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" className="size-4" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />I agree to use my photo for try-on
+        </label>
+        <label className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-fit cursor-pointer", (!agreed || busy) && "pointer-events-none opacity-50")}>
+          {checking ? "Checking your photo on this device…" : uploading ? "Uploading…" : "Upload a photo of me"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            aria-label="Upload a photo of me"
+            disabled={!agreed || busy}
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              if (file) void upload(file);
+            }}
+          />
+        </label>
+        {offeredPhoto && usedOffer !== offeredPhoto && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-fit"
+            disabled={!agreed || busy}
+            onClick={() => {
+              setUsedOffer(offeredPhoto);
+              void upload(offeredPhoto);
+            }}
+          >
+            Use my photo from the live mirror
+          </Button>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Any photo of you works, from a selfie to a full-length photo, upright or sideways. The more of you it shows, the more of the {noun}
+          you&apos;ll see.
+        </p>
+      </div>
+
+      {photos.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-sm">Your photos</span>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Your photos">
+            {photos.map((p, i) => (
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={p.id === photoId}
+                aria-label={`Photo ${i + 1}${p.saved ? " (saved)" : ""}`}
+                onClick={() => setPhotoId(p.id)}
+                className={cn("relative h-20 w-14 overflow-hidden rounded-lg border bg-muted", p.id === photoId && "ring-2 ring-brand")}
+              >
+                {p.url && <Image src={p.url} alt="" fill unoptimized className="object-cover" />}
+              </button>
+            ))}
+          </div>
+          {selected && (
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" className="size-4" checked={selected.saved} disabled={uploading || phase.kind === "waiting"} onChange={(e) => toggleSaved("photo", selected.id, e.target.checked)} />
+                Keep this photo
+              </label>
+              {!selected.saved && <span className="text-muted-foreground">Deleted automatically after 24 hours</span>}
+              <button type="button" className="text-destructive underline" disabled={busy} onClick={() => deletePhoto(selected.id)}>
+                Delete photo now
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <FitSection
+        garment={fitGarment}
+        noun={noun}
+        draft={fitDraft}
+        measure={fitMeasure}
+        onChange={setFitDraft}
+        savedProfile={savedProfile}
+        onForget={forgetProfile}
+        disabled={busy}
+      />
+
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={start} disabled={!photoId || busy || quota?.remaining === 0}>
+          {phase.kind === "waiting" ? "Trying on…" : result ? "Try on again" : "Try it on"}
+        </Button>
+      </div>
+
+      {phase.kind === "error" && (
+        <p role="alert" className="text-sm text-destructive">
+          {phase.message}
+        </p>
+      )}
+      {notice && phase.kind !== "error" && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {notice}
+        </p>
+      )}
+      {phase.kind === "waiting" && (
+        <div className="flex aspect-[3/4] max-w-60 animate-pulse items-center justify-center rounded-lg bg-muted p-4 text-center text-xs text-muted-foreground" data-testid="try-on-loading" aria-live="polite">
+          {phase.running ? `Putting the ${noun} on you… this can take a couple of minutes.` : "Waiting for the try-on service…"}
+        </div>
+      )}
+
+      {result && phase.kind !== "waiting" && (
+        <div className="flex flex-col gap-2" data-testid="try-on-result">
+          {stale && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm dark:bg-amber-950/30" data-testid="try-on-stale">
+              Your design changed since this try-on.
+              <Button size="sm" variant="outline" onClick={start} disabled={busy || !photoId}>
+                Update try-on
+              </Button>
+            </div>
+          )}
+          {fitStale && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm dark:bg-amber-950/30" data-testid="try-on-fit-stale">
+              {result.fit ? `This try-on shows size ${result.fit.size} at ${result.fit.heightCm} cm${result.fit.girthsCm ? "" : " (length only)"}.` : "This try-on doesn't show your fit yet."}
+              <Button size="sm" variant="outline" onClick={start} disabled={busy || !photoId}>
+                Update try-on
+              </Button>
+            </div>
+          )}
+          {result.fit && !fitStale && (
+            <p className="text-xs text-muted-foreground" data-testid="try-on-fit-shown">
+              Showing size {result.fit.size} at {result.fit.heightCm} cm{result.fit.girthsCm ? "" : " (length only)"}.
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <figure className="flex flex-col gap-1">
+              <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-muted">
+                {result.photoUrl && <Image src={result.photoUrl} alt="Your photo" fill unoptimized className="object-cover" />}
+              </div>
+              <figcaption className="text-xs text-muted-foreground">Before</figcaption>
+            </figure>
+            <figure className="flex flex-col gap-1">
+              <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-muted">
+                {result.imageUrl && <Image src={result.imageUrl} alt={`You wearing this ${noun} (AI preview)`} fill unoptimized className="object-cover" />}
+              </div>
+              <figcaption className="text-xs text-muted-foreground">After (AI preview)</figcaption>
+            </figure>
+          </div>
+          <label className="flex items-center gap-1.5 text-xs">
+            <input type="checkbox" className="size-4" checked={result.saved} onChange={(e) => toggleSaved("result", result.id, e.target.checked)} />
+            Keep this try-on {result.saved ? "" : "(otherwise deleted after 24 hours)"}
+          </label>
+        </div>
+      )}
+    </section>
+  );
+}

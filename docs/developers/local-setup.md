@@ -18,7 +18,7 @@ Node 26 works, but Prisma 7 prints an "unsupported Node.js version" warning on i
 pnpm install
 ```
 
-`postinstall` runs `prisma generate`, which writes the client to `lib/generated/prisma/` (gitignored). `pnpm-workspace.yaml` allows build scripts only for `esbuild`, `prisma`, `@prisma/engines` and `supabase`.
+`postinstall` runs `prisma generate`, which writes the client to `lib/generated/prisma/` (gitignored). `pnpm dev` and `pnpm build` first run `pnpm vision:fetch`, which downloads the on-device vision models from Hugging Face (about 10 MB, checked by SHA-256) into `public/vision/` (gitignored); see [live-try-on.md](live-try-on.md). For try-ons on this machine (`TRYON_PROVIDER=local`), run `pnpm tryon:setup` once: it installs a Python with PyTorch (with `uv`, `brew install uv`) and downloads about 2.3 GB of models, checked by SHA-256, into `~/.cache/clothseeker/local-tryon`, outside the iCloud-synced project ([try-on.md](try-on.md#local-try-on)). `pnpm-workspace.yaml` allows build scripts only for `esbuild`, `prisma`, `@prisma/engines` and `supabase`.
 
 ## 3. Start local Supabase
 
@@ -58,17 +58,24 @@ This reads `supabase status` and writes `.env.local` (mode 600, gitignored). For
 | `SEED_DEMO_PASSWORD` | You (default `clothseeker-demo`) | Local only | `pnpm db:seed`, E2E |
 | `PAYMENT_PROVIDER` | `mock` (only option so far) | **Server-only** | Checkout |
 | `MOCK_COURIER_WEBHOOK_SECRET` | Random, ≥ 32 chars (`pnpm env:local` generates one) | **Server-only** | Signing/verifying courier webhooks |
-| `PLANNER_PROVIDER` | Optional: `fake` (default) or `gemini` | Worker-only | AI design planner ([ai-pipelines.md](ai-pipelines.md)) |
+| `PLANNER_PROVIDER` | Optional: `fake` (default), `gemini` or `local` (an open model on this machine: `brew install llama.cpp`, then `pnpm llm:setup`) | Worker-only | AI design planner ([ai-pipelines.md](ai-pipelines.md)) |
+| `PLANNER_FALLBACK` | Optional: `none` (default) or `local`. With `PLANNER_PROVIDER=gemini`, the model on this machine answers when Gemini can't (busy, out of its allowance, offline). Needs the same setup as `local` | Worker-only | Keeps the AI design box working ([ai-pipelines.md](ai-pipelines.md#the-planner-on-our-own-machine)) |
+| `LOCAL_LLM_DIR`, `LLAMA_SERVER_BIN`, `LOCAL_LLM_CONTEXT`, `LOCAL_LLM_TIMEOUT_MS` | Optional; default `~/.cache/clothseeker/local-llm`, the `llama-server` on PATH, 8192 tokens and 300000 ms | Worker-only | Local planner: where the model lives, the program that runs it, how much it can hold, and the limit for a design job it may answer |
 | `IMAGE_PROVIDER` | Optional: `fake` (default) or `cloudflare` | Worker-only | AI motif images |
-| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | Key required when `PLANNER_PROVIDER=gemini`. Model defaults to `gemini-3.8-flash`; fallbacks (comma-separated) default to `gemini-3.6-flash,gemini-3.5-flash` | **Worker-only secret** | Gemini planner |
-| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_IMAGE_MODEL` | Required when `IMAGE_PROVIDER=cloudflare`; model defaults to FLUX.1 schnell | **Worker-only secret** | Workers AI images |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | Key required when `PLANNER_PROVIDER=gemini`. Model defaults to `gemini-3.6-flash`; fallbacks (comma-separated) default to `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite` | **Worker-only secret** | Gemini planner |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_IMAGE_MODEL`, `CLOUDFLARE_FALLBACK_IMAGE_MODELS` | Required when `IMAGE_PROVIDER=cloudflare`, `GARMENT_SHOT_PROVIDER=cloudflare` or `SKETCH_PROVIDER=cloudflare`. Model defaults to FLUX.2 klein 4B (`@cf/black-forest-labs/flux-2-klein-4b`); the fallback (comma-separated, tried when the model fails) defaults to FLUX.1 schnell | **Worker-only secret** | Workers AI images |
+| `GARMENT_SHOT_PROVIDER`, `CLOUDFLARE_SHOT_MODEL`, `GEMINI_IMAGE_MODEL` | Optional: `none` (default), `cloudflare` or `gemini`. Turns a customer's own garment photo into a clean product shot before it's cut out. `cloudflare` uses FLUX.2 klein 4B within the free daily allowance (about 125 neurons a shot) and **sends the photo to Cloudflare**; it needs the Cloudflare keys. `gemini` needs `GEMINI_API_KEY` with billing: free keys have no image allowance (Google answers 429 and the photo is used as it is). Models default to `@cf/black-forest-labs/flux-2-klein-4b` and `gemini-2.5-flash-image` | Worker-only | Own-garment product shots ([ai-pipelines.md](ai-pipelines.md)) |
+| `SKETCH_PROVIDER`, `CLOUDFLARE_SKETCH_MODEL` | Optional: `fake` (default), `cloudflare` or `gemini`. Turns a customer's drawing of a garment into a realistic photo of it before it's made into their own dress. `fake` fills the drawn outline with a colour (development and tests). `cloudflare` uses FLUX.2 klein 4B within the free daily allowance and **sends the drawing to Cloudflare**; it needs the Cloudflare keys. `gemini` uses `GEMINI_IMAGE_MODEL` and needs a paid key | Worker-only | Own dress from a drawing ([ai-pipelines.md](ai-pipelines.md)) |
 | `AI_FAKE_DELAY_MS` | Optional, default 1500 | Worker-only | Latency of the fake providers |
 | `AI_JOB_TIMEOUT_MS` | Optional, default 180000 | Worker-only | Limit for one AI job attempt |
 | `WORKER_HEALTH_PORT` | Optional | Worker-only | `GET /health` on 127.0.0.1 (local E2E) |
-| `TRYON_PROVIDER` | Optional: `fake` (default) or `huggingface` | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
+| `TRYON_PROVIDER` | Optional: `fake` (default), `huggingface` or `local` (run `pnpm tryon:setup` first) | Worker-only | Virtual try-on ([try-on.md](try-on.md)) |
+| `LOCAL_TRYON_DIR`, `LOCAL_TRYON_STEPS`, `LOCAL_TRYON_WIDTH` | Optional; default `~/.cache/clothseeker/local-tryon`, 8 and 384 | Worker-only | Local try-on: where the model lives, steps, picture width ([try-on.md](try-on.md#local-try-on)) |
+| `LOCAL_TRYON_SAMPLER`, `LOCAL_TRYON_GUIDED` | Optional; default `lcm` and `1` (8 steps, about 50 s). The earlier, slower settings: `unipc` with 20 steps and `0.6`, or `ddim` with 30 steps and `1` | Worker-only | Local try-on: how the model works through its steps, and the share of them that run twice ([try-on.md](try-on.md#local-try-on)) |
+| `MODEL3D_PROVIDER`, `LOCAL_3D_DIR` | Optional: `fake` (default) or `local` (TripoSR on this machine, about 15–30 s a model; run `pnpm model3d:setup` first). Folder defaults to `~/.cache/clothseeker/local-3d` | Worker-only | The 3D view ([3d-view.md](3d-view.md)) |
 | `HF_TOKEN` | Optional free Hugging Face token (`hf_…`) | **Worker-only secret** | Raises the shared ZeroGPU allowance |
 | `EMAIL_PROVIDER`, `SMTP_URL`, `EMAIL_FROM` | Optional: `log` (default) or `smtp`; `pnpm env:local` sets smtp → Mailpit (`smtp://127.0.0.1:55425`) | Worker-only (`SMTP_URL` may hold a password in production) | Customer emails ([notifications.md](notifications.md)); inbox at http://127.0.0.1:55424 |
-| `TRYON_SPACES`, `TRYON_TIMEOUT_MS` | Optional; default `levihsu/OOTDiffusion,franciszzj/Leffa` and 240000 | Worker-only | Try-on Spaces (in order) and per-attempt limit |
+| `TRYON_SPACES`, `TRYON_TIMEOUT_MS` | Optional; default `jallenjia/Change-Clothes-AI,yisol/IDM-VTON,levihsu/OOTDiffusion,franciszzj/Leffa` and 240000 | Worker-only | Try-on Spaces (in order) and per-attempt limit |
 | `MOCK_PAYMENT_WEBHOOK_SECRET` | Random, ≥ 32 chars (`openssl rand -hex 32`; `pnpm env:local` generates one) | **Server-only** | Signing/verifying payment webhooks |
 
 All variables are validated with Zod in `lib/env/schema.ts`. A missing or invalid variable fails fast, and the error names the variable without printing its value. Only `NEXT_PUBLIC_*` variables can reach the browser. `lib/env/server.ts` imports `server-only`, so importing it from a Client Component breaks the build.
@@ -130,3 +137,5 @@ pnpm build
 | Integration tests: `TEST_DATABASE_URL is missing` | `pnpm env:local --force`, or add it from `.env.example` |
 | Demo sign-in fails | `pnpm db:seed` (resets demo passwords) |
 | Playwright: browser not found | `pnpm exec playwright install chromium` |
+| Port 3000 is used by another project | Run on another port with a matching app URL, e.g. `NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm build && NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm start --port 3002` (and the same `NEXT_PUBLIC_APP_URL` for `pnpm worker`). For E2E: `E2E_PORT=3002 NEXT_PUBLIC_APP_URL=http://localhost:3002 pnpm test:e2e` |
+| `vision.fetch` fails: SHA-256 mismatch | A model changed on Hugging Face. Check it, then update its hash in `lib/vision/runtime/assets.ts` |

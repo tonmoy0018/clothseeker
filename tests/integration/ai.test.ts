@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { ForbiddenError, type Actor } from "@/lib/auth/policy";
 import { AiError, AiProviderError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
 import { createDesignRoundJob, getAiQuota, getJobStatus, listRounds, pickOption, uploadAiAttachment, type DesignRoundRequest } from "@/lib/ai/jobs";
 import { QUOTA_MESSAGE } from "@/lib/ai/quota";
 import { storedOptionsSchema } from "@/lib/ai/rounds";
@@ -52,8 +52,8 @@ class SpyPlanner implements PlannerProvider {
   constructor(private readonly behaviour: (attempt: number, signal: AbortSignal) => Promise<void> = async () => undefined) {}
 
   detectBrandLogos: PlannerProvider["detectBrandLogos"] = (images, signal) => this.inner.detectBrandLogos(images, signal);
-  checkTryOnPhoto: PlannerProvider["checkTryOnPhoto"] = (image, signal) => this.inner.checkTryOnPhoto(image, signal);
   matchDress: PlannerProvider["matchDress"] = (request, signal) => this.inner.matchDress(request, signal);
+  readGarment: PlannerProvider["readGarment"] = (image, signal) => this.inner.readGarment(image, signal);
 
   async planDesign(request: PlanRequest, signal: AbortSignal): Promise<unknown> {
     this.requests.push(request);
@@ -66,7 +66,7 @@ function deps(providers: Partial<AiProviders> = {}, overrides: Partial<AiWorkerD
   return {
     db,
     storage,
-    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), ...providers },
+    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker(), ...providers },
     workerId: "worker-a",
     timeoutMs: 10_000,
     backoffMs: () => 0,
@@ -212,6 +212,10 @@ describe("running AI jobs", () => {
         expect(storage.has(BUCKETS.designAssets, option.motifKey)).toBe(true);
       }
     }
+    // Built-in decorations where one fits (no picture needed), drawn motifs otherwise.
+    const layerIds = options.map((o) => parseDesignSpec(o.spec).layers.map((l) => l.id));
+    expect(layerIds.some((ids) => ids.includes("ai-decoration"))).toBe(true);
+    expect(options.some((o) => o.motifKey !== null)).toBe(true);
     const job = await db.aIJob.findUniqueOrThrow({ where: { id: queued.jobId } });
     expect(job).toMatchObject({ status: "SUCCEEDED", attempts: 1, lockedBy: null, result: { roundId: round.id } });
     expect(await processNextJob(deps())).toBe(false);

@@ -17,13 +17,13 @@ test.describe("@supabase buy now journey", () => {
   test("customer filters, buys now and sees the paid order", async ({ page }) => {
     // A fresh customer, so test orders never pile up on the demo accounts.
     await signUpFreshCustomer(page);
-    await page.goto("/products");
+    await page.goto("/products?for=women");
 
-    // Filter: casual dresses in size M.
+    // Filter: casual dresses in size M (in the women's section).
     await page.getByLabel("Category").selectOption("casual");
     await page.getByLabel("Size").selectOption("M");
     await page.getByRole("button", { name: "Apply filters" }).click();
-    await expect(page).toHaveURL(/category=casual/);
+    await expect(page).toHaveURL(/for=women.*category=casual|category=casual.*for=women/);
     await expect(page.getByRole("heading", { name: "Casual dresses" })).toBeVisible();
 
     await page.getByTestId("product-card").first().click();

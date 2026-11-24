@@ -8,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import type { FormState } from "../../form-state";
 
 import { resolveDisputeAction } from "./actions";
+import { textareaClass } from "@/components/ui/textarea";
 
 const initial: FormState = {};
 
 export function ResolveForm({ disputeId, amount }: { disputeId: string; amount: string }) {
   const [state, action, pending] = useActionState(resolveDisputeAction, initial);
   return (
-    <form action={action} className="flex flex-col gap-3 rounded-xl border p-4" aria-label="Resolve dispute">
+    <form action={action} className="flex flex-col gap-3 rounded-2xl border bg-card p-4" aria-label="Resolve dispute">
       <input type="hidden" name="disputeId" value={disputeId} />
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="note">Note for the customer</Label>
@@ -23,7 +24,7 @@ export function ResolveForm({ disputeId, amount }: { disputeId: string; amount: 
           name="note"
           rows={3}
           maxLength={1000}
-          className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className={textareaClass}
         />
       </div>
       <div className="flex flex-wrap gap-2">

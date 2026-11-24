@@ -11,13 +11,14 @@ import { formatBDT } from "@/lib/money";
 import { DELIVERY_FEES_MINOR, DELIVERY_ZONE_LABEL, DELIVERY_ZONES } from "@/lib/orders/delivery";
 
 import { placeOrderAction, type CheckoutState } from "./actions";
+import { textareaClass } from "@/components/ui/textarea";
 
 type Defaults = { name: string; phone: string; line1: string; line2: string; city: string; postalCode: string; zone: DeliveryZone };
 
 function PlaceOrderButton({ total }: { total: string }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="lg" disabled={pending} className="w-full">
+    <Button type="submit" size="lg" variant="brand" disabled={pending} className="w-full">
       {pending ? "Placing your order…" : `Place order · ${total}`}
     </Button>
   );
@@ -55,7 +56,7 @@ export function CheckoutForm({ idempotencyKey, subtotalMinor, defaults }: { idem
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-lg font-semibold">Delivery</legend>
         {DELIVERY_ZONES.map((z) => (
-          <label key={z} className="flex items-center justify-between rounded-lg border p-3 text-sm has-[:checked]:border-foreground">
+          <label key={z} className="flex items-center justify-between rounded-xl border bg-card p-3 text-sm has-[:checked]:border-primary has-[:checked]:ring-1 has-[:checked]:ring-primary">
             <span className="flex items-center gap-2">
               <input type="radio" name="zone" value={z} checked={zone === z} onChange={() => setZone(z)} className="size-4" />
               {DELIVERY_ZONE_LABEL[z]}
@@ -73,12 +74,12 @@ export function CheckoutForm({ idempotencyKey, subtotalMinor, defaults }: { idem
           maxLength={300}
           rows={3}
           placeholder="e.g. Please make the hem 2 cm shorter"
-          className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className={textareaClass}
         />
         <p className="text-xs text-muted-foreground">Don&apos;t include personal details; the note is printed on the workshop sheet.</p>
       </div>
 
-      <div className="flex flex-col gap-1 rounded-xl border p-4 text-sm">
+      <div className="flex flex-col gap-1 rounded-2xl border bg-card p-4 text-sm">
         <div className="flex justify-between">
           <span>Subtotal</span>
           <span>{formatBDT(subtotalMinor)}</span>

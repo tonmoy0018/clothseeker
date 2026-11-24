@@ -6,7 +6,9 @@ import { failureMessage } from "@/lib/ai/errors";
 import { recordLimitHit } from "@/lib/ai/limit-hits";
 import { startOfDhakaDay, DAILY_SUBMISSION_LIMIT, SUBMISSION_LIMIT_MESSAGE } from "@/lib/ai/quota";
 import { assertCustomer, type Actor } from "@/lib/auth/policy";
+import { tryOnFitSchema, type TryOnFit } from "@/lib/fit/fit";
 import type { PrismaClient } from "@/lib/db/client";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { checkDesign, DesignError } from "@/lib/design/service";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
 import type { StorageAdapter } from "@/lib/storage/adapter";
@@ -140,7 +142,8 @@ export async function deleteTryOnPhoto(db: PrismaClient, storage: StorageAdapter
   await storage.remove(BUCKETS.tryonPrivate, [photo.storageKey, ...results.map((r) => r.resultKey)]);
   await db.$transaction(async (tx) => {
     await tx.tryOnPhoto.update({ where: { id: photo.id }, data: { deletedAt: now } });
-    await tx.tryOnResult.updateMany({ where: { photoId: photo.id, deletedAt: null }, data: { deletedAt: now } });
+    // The fit (height, measurements) goes with the picture.
+    await tx.tryOnResult.updateMany({ where: { photoId: photo.id, deletedAt: null }, data: { deletedAt: now, fit: Prisma.DbNull } });
     await tx.auditLog.create({
       data: { actorId: actor.id, actorRole: actor.role, action: "tryon.photo_deleted", targetType: "try_on_photo", targetId: photo.id, metadata: { results: results.length } },
     });
@@ -155,6 +158,7 @@ const startSchema = z.object({
     z.object({ kind: z.literal("design"), designId: z.uuid().nullish(), spec: z.unknown() }),
     z.object({ kind: z.literal("product"), productId: z.uuid() }),
   ]),
+  fit: tryOnFitSchema.optional(),
 });
 
 export type QueuedTryOn = { jobId: string; cached: boolean };
@@ -212,7 +216,11 @@ export async function createTryOnJob(db: PrismaClient, storage: StorageAdapter, 
     garmentHash = productSignature(input.source.productId, imageKey);
   }
 
-  const inputHash = aiInputHash({ v: 1, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash });
+  // v2: ready-made dresses are cut out of their photo before try-on; v3: IDM-VTON Spaces first; v4: the
+  // garment is described to the model (lib/tryon/describe.ts); v5: the local try-on model
+  // (TRYON_PROVIDER=local). Earlier results are redone. A different fit (size, height…) is a new try-on.
+  const fit: TryOnFit | undefined = input.fit;
+  const inputHash = aiInputHash({ v: 5, type: "TRY_ON", customerId: actor.id, photoId: photo.id, garmentHash, ...(fit ? { fit } : {}) });
   const cached = await db.tryOnResult.findFirst({ where: { customerId: actor.id, inputHash, deletedAt: null }, orderBy: { createdAt: "desc" }, select: { jobId: true } });
   if (cached) {
     return { jobId: cached.jobId, cached: true };
@@ -240,7 +248,7 @@ export async function createTryOnJob(db: PrismaClient, storage: StorageAdapter, 
       if ((await tx.aIJob.count({ where: { customerId: actor.id, createdAt: { gte: startOfDhakaDay(now) } } })) >= DAILY_SUBMISSION_LIMIT) {
         throw new TryOnError("QUOTA", SUBMISSION_LIMIT_MESSAGE);
       }
-      const payload = { kind: "try_on", photoId: photo.id, source, garmentHash } satisfies TryOnPayload;
+      const payload = { kind: "try_on", photoId: photo.id, source, garmentHash, ...(fit ? { fit } : {}) } satisfies TryOnPayload;
       tryOnPayloadSchema.parse(payload);
       const job = await tx.aIJob.create({
         data: { type: "TRY_ON", customerId: actor.id, payload, inputHash, runAfter: now },
@@ -260,6 +268,8 @@ export type TryOnResultView = {
   photoSaved: boolean;
   saved: boolean;
   garmentHash: string;
+  /** The fit it shows (height, size, measured girths), or null when made without one. */
+  fit: TryOnFit | null;
   expiresAt: string | null;
 };
 
@@ -286,7 +296,7 @@ export async function getTryOnStatus(db: PrismaClient, storage: StorageAdapter, 
   const row = result.success
     ? await db.tryOnResult.findFirst({
         where: { id: result.data.resultId, customerId: actor.id, deletedAt: null },
-        select: { id: true, resultKey: true, saved: true, garmentHash: true, createdAt: true, photo: { select: { id: true, storageKey: true, saved: true, deletedAt: true } } },
+        select: { id: true, resultKey: true, saved: true, garmentHash: true, fit: true, createdAt: true, photo: { select: { id: true, storageKey: true, saved: true, deletedAt: true } } },
       })
     : null;
   if (!row) {
@@ -304,6 +314,7 @@ export async function getTryOnStatus(db: PrismaClient, storage: StorageAdapter, 
       photoSaved: row.photo.saved,
       saved: row.saved,
       garmentHash: row.garmentHash,
+      fit: tryOnFitSchema.safeParse(row.fit).data ?? null,
       expiresAt: row.saved ? null : new Date(row.createdAt.getTime() + TRYON_RETENTION_MS).toISOString(),
     },
   };
@@ -336,7 +347,7 @@ export async function cleanupTryOnMedia(db: PrismaClient, storage: StorageAdapte
   await storage.remove(BUCKETS.tryonPrivate, [...photos.map((p) => p.storageKey), ...results.map((r) => r.resultKey)]);
   await db.$transaction(async (tx) => {
     const p = await tx.tryOnPhoto.updateMany({ where: { id: { in: photos.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now } });
-    const r = await tx.tryOnResult.updateMany({ where: { id: { in: results.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now } });
+    const r = await tx.tryOnResult.updateMany({ where: { id: { in: results.map((x) => x.id) }, deletedAt: null }, data: { deletedAt: now, fit: Prisma.DbNull } });
     await tx.auditLog.create({
       data: { actorId: null, actorRole: "SYSTEM", action: "tryon.cleanup", targetType: "try_on_media", targetId: null, metadata: { photos: p.count, results: r.count, olderThan: cutoff.toISOString() } },
     });

@@ -23,13 +23,13 @@ export function QuoteDecision({ quoteId, status, inCart }: { quoteId: string; st
       <div className="flex flex-wrap gap-2">
         {status === "QUOTED" &&
           (inCart ? (
-            <Link href="/cart" className={buttonVariants()}>
+            <Link href="/cart" className={buttonVariants({ variant: "brand" })}>
               In your cart — check out
             </Link>
           ) : (
             <form action={accept}>
               <input type="hidden" name="quoteId" value={quoteId} />
-              <Button type="submit" disabled={accepting}>
+              <Button type="submit" variant="brand" disabled={accepting}>
                 Accept and add to cart
               </Button>
             </form>

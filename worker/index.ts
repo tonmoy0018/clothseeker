@@ -6,7 +6,7 @@ import { loadEnvConfig } from "@next/env";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { getAiProviders } from "@/lib/ai";
+import { getAiProviders, usesLocalPlanner } from "@/lib/ai";
 import { recordHeartbeat } from "@/lib/ai/worker/heartbeat";
 import { runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import { createPrismaClient } from "@/lib/db/client";
@@ -48,6 +48,7 @@ async function main(): Promise<number> {
 
   const prisma = createPrismaClient(env.DATABASE_URL);
   let health: Server | null = null;
+  let closeModels: (() => void) | undefined;
   const shutdown = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
@@ -69,14 +70,23 @@ async function main(): Promise<number> {
     });
     const storage = new SupabaseStorageAdapter(() => supabase);
     const payments = new MockPaymentProvider(env.MOCK_PAYMENT_WEBHOOK_SECRET);
-    const providers = getAiProviders(env);
+    const providers = getAiProviders(env, (task) => log.info("ai.planner_fallback", { task }));
+    closeModels = () => {
+      providers.planner.close?.();
+      providers.tryOn.close?.();
+      providers.garmentModel?.close?.();
+    };
     const ai: AiWorkerDeps = {
       db: prisma,
       storage,
       providers,
       workerId: `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`,
       timeoutMs: env.AI_JOB_TIMEOUT_MS,
-      timeoutsMs: { TRY_ON: env.TRYON_TIMEOUT_MS },
+      // The planner on this machine needs about two minutes for a plan.
+      timeoutsMs: {
+        TRY_ON: env.TRYON_TIMEOUT_MS,
+        ...(usesLocalPlanner(env) ? { DESIGN_ROUND: Math.max(env.AI_JOB_TIMEOUT_MS, env.LOCAL_LLM_TIMEOUT_MS), DRESS_MATCH: Math.max(env.AI_JOB_TIMEOUT_MS, env.LOCAL_LLM_TIMEOUT_MS) } : {}),
+      },
       log: (msg, fields) => log.info(msg, fields),
     };
     const email = env.EMAIL_PROVIDER === "smtp" && env.SMTP_URL ? new SmtpEmailProvider(env.SMTP_URL) : new LogEmailProvider();
@@ -130,6 +140,7 @@ async function main(): Promise<number> {
     return 1;
   } finally {
     health?.close();
+    closeModels?.();
     await prisma.$disconnect();
     log.info("worker.stopped");
   }

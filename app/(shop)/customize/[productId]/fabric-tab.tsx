@@ -1,14 +1,18 @@
 "use client";
 
+import { ImagePlus } from "lucide-react";
+import Image from "next/image";
 import { useMemo, useState } from "react";
 
+import { DECORATIONS, decorationSvg } from "@/lib/catalog/decorations";
 import { PATTERNS, patternSvg, type PatternId } from "@/lib/catalog/patterns";
 import { formatBDT } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { DesignSpec } from "@/types/design-spec";
+import { PRINT_TILE_CM, type DesignSpec } from "@/types/design-spec";
 import type { TemplateConfig } from "@/types/template";
 
 import { Swatch, Tile } from "./editor-ui";
+import { decorationDataUrl } from "./recolor";
 
 // Fabric tab: pick which part of the dress to colour (or the whole dress), then a fabric from a grid
 // of plain colours and patterned fabrics made from the template's colours and patterns.
@@ -65,6 +69,13 @@ export function FabricTab(props: {
   spec: DesignSpec;
   /** Recolorable regions shown on this dress. */
   regions: readonly { id: string; label: string }[];
+  /** What the garment is called ("Whole dress"). */
+  noun: string;
+  /** Signed URLs of the customer's uploads (for image prints). */
+  uploadUrls: Readonly<Record<string, string>>;
+  /** Upload progress text, or null when idle. */
+  uploadState: string | null;
+  onUpload: (file: File) => Promise<{ key: string; url: string } | null>;
   onChangeParts: (change: (parts: DesignSpec["parts"]) => DesignSpec["parts"]) => void;
 }) {
   const { config, spec, regions } = props;
@@ -76,15 +87,37 @@ export function FabricTab(props: {
   const hasPatterns = config.allowedPatterns.length > 0;
   const patternPrice = `+${formatBDT(config.addOns.patternMinor)}`;
 
+  // A plain fabric keeps the part's all-over print (it becomes the print's background); a patterned
+  // fabric replaces it.
   const apply = (part: Part | null) =>
     props.onChangeParts((parts) => {
       const next = { ...parts };
       for (const id of targets) {
-        if (part) next[id] = part;
+        const print = parts[id]?.print;
+        if (part) next[id] = part.pattern || !print ? part : { ...part, print };
         else delete next[id];
       }
       return next;
     });
+
+  // ── all-over print ──
+  const lightest = [...config.allowedColors].sort((a, b) => luminance(b.hex) - luminance(a.hex))[0]?.hex.toLowerCase() ?? "#f5f5f0";
+  const setPrint = (print: Part["print"] | null) =>
+    props.onChangeParts((parts) => {
+      const next = { ...parts };
+      for (const id of targets) {
+        const current = parts[id];
+        // A print needs a background colour: keep the part's, or start on the lightest one.
+        next[id] = print ? { color: current?.color ?? lightest, print } : { color: current?.color ?? lightest };
+        if (!print && !current) delete next[id];
+      }
+      return next;
+    });
+  const prints = targets.map((id) => spec.parts[id]?.print ?? null);
+  const firstPrint = prints[0] ?? null;
+  const samePrint = prints.every((p) => JSON.stringify(p) === JSON.stringify(firstPrint)) ? firstPrint : null;
+  const decorations = DECORATIONS.filter((d) => config.allowedDecorations.includes(d.id));
+  const tileCm = samePrint?.tileCm ?? 8;
 
   // Fine-tune the print colour once every chosen part has the same pattern.
   const patternIds = new Set(targets.map((id) => spec.parts[id]?.pattern?.id ?? null));
@@ -92,14 +125,15 @@ export function FabricTab(props: {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Part to color">
-        {[{ id: ALL, label: "Whole dress" }, ...regions].map((r) => (
+      {/* With a single part there's nothing to choose between. */}
+      <div className={cn("flex flex-wrap gap-2", regions.length < 2 && "hidden")} role="group" aria-label="Part to color">
+        {[{ id: ALL, label: `Whole ${props.noun}` }, ...regions].map((r) => (
           <button
             key={r.id}
             type="button"
             aria-pressed={target === r.id}
             onClick={() => setTarget(r.id)}
-            className={cn("h-8 rounded-full border px-3 text-sm", target === r.id ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+            className={cn("h-8 rounded-full border border-input bg-card px-3 text-sm font-medium transition-colors", target === r.id ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40")}
           >
             {r.label}
           </button>
@@ -108,9 +142,9 @@ export function FabricTab(props: {
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {hasPatterns && (
-          <div className="flex rounded-lg border p-0.5" role="group" aria-label="Show fabrics">
+          <div className="flex rounded-full bg-secondary p-0.5" role="group" aria-label="Show fabrics">
             {(["all", "plain", "patterned"] as const).map((f) => (
-              <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={cn("h-7 rounded-md px-3 capitalize", filter === f ? "bg-muted font-medium" : "text-muted-foreground hover:text-foreground")}>
+              <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={cn("h-7 rounded-full px-3 capitalize", filter === f ? "bg-card font-medium shadow-xs" : "text-muted-foreground hover:text-foreground")}>
                 {f}
               </button>
             ))}
@@ -140,6 +174,87 @@ export function FabricTab(props: {
           </Tile>
         ))}
       </div>
+
+      <section className="flex flex-col gap-3 border-t pt-4" aria-labelledby="print-heading">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 id="print-heading" className="text-sm font-medium">
+            All-over print
+          </h3>
+          <span className="text-xs text-muted-foreground">+{formatBDT(config.addOns.patternMinor)} per part</span>
+        </div>
+        <p className="text-xs text-muted-foreground">Repeat a motif or your own image across {target === ALL ? `the whole ${props.noun}` : "this part"}, like printed fabric.</p>
+        <div className="grid grid-cols-5 gap-2" data-testid="print-grid">
+          <Tile label="None" ariaLabel="No print" selected={prints.every((p) => p === null)} onClick={() => setPrint(null)}>
+            <span className="text-xs text-muted-foreground">—</span>
+          </Tile>
+          {decorations.map((d) => {
+            const color = samePrint?.kind === "decoration" ? samePrint.color : (config.allowedColors[0]?.hex.toLowerCase() ?? "#1b1b1b");
+            return (
+              <Tile
+                key={d.id}
+                label={d.label}
+                ariaLabel={`${d.label} print`}
+                selected={samePrint?.kind === "decoration" && samePrint.id === d.id}
+                onClick={() => setPrint({ kind: "decoration", id: d.id, color, tileCm })}
+              >
+                <Image src={decorationDataUrl(decorationSvg(d.id, "#444444", 64))} alt="" width={28} height={28} unoptimized />
+              </Tile>
+            );
+          })}
+          <label
+            className={cn(
+              "flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-card p-1 text-center text-[0.7rem] hover:border-foreground/40",
+              samePrint?.kind === "image" && "border-primary ring-1 ring-primary",
+              props.uploadState && "pointer-events-none opacity-60",
+            )}
+          >
+            {samePrint?.kind === "image" && props.uploadUrls[samePrint.assetKey] ? (
+              <Image src={props.uploadUrls[samePrint.assetKey] ?? ""} alt="Your print image" width={36} height={36} unoptimized className="size-9 object-contain" />
+            ) : (
+              <ImagePlus className="size-5 text-muted-foreground" />
+            )}
+            {props.uploadState ?? "Your image"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              aria-label="Upload an image to print all over"
+              className="sr-only"
+              onChange={async (e) => {
+                const file = e.currentTarget.files?.[0];
+                e.currentTarget.value = "";
+                const asset = file ? await props.onUpload(file) : null;
+                if (asset) setPrint({ kind: "image", assetKey: asset.key, tileCm });
+              }}
+            />
+          </label>
+        </div>
+        {samePrint && (
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span>
+                Size: repeats every <span className="tabular-nums">{samePrint.tileCm} cm</span>
+              </span>
+              <input
+                type="range"
+                min={PRINT_TILE_CM.min}
+                max={30}
+                step={1}
+                value={samePrint.tileCm}
+                onChange={(e) => setPrint({ ...samePrint, tileCm: Number(e.target.value) })}
+                aria-label="Print size in centimetres"
+              />
+            </label>
+            {samePrint.kind === "decoration" && (
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Print colour">
+                {config.allowedColors.map((c) => (
+                  <Swatch key={c.name} small label={`Print ${c.name}`} color={c.hex} selected={samePrint.color === c.hex.toLowerCase()} onClick={() => setPrint({ ...samePrint, color: c.hex.toLowerCase() })} />
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">Clothing brand logos can&apos;t be used.</p>
+          </div>
+        )}
+      </section>
 
       {patternColor && (
         <div className="flex flex-col gap-2">

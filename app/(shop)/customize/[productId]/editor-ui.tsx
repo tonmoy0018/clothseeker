@@ -67,8 +67,8 @@ export function Tile(props: {
       onClick={props.onClick}
       data-testid={props.testId}
       className={cn(
-        "group relative flex min-w-0 flex-col overflow-hidden rounded-lg border bg-background text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        props.selected ? "border-foreground ring-1 ring-foreground" : "hover:border-foreground/40",
+        "group relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/40",
+        props.selected ? "border-primary ring-1 ring-primary" : "hover:border-foreground/40",
       )}
     >
       <span className={cn("relative flex w-full items-center justify-center overflow-hidden", props.shape === "swatch" ? "aspect-[4/3]" : "aspect-square bg-muted/40")}>{props.children}</span>
@@ -80,7 +80,7 @@ export function Tile(props: {
         {props.price && <span className="shrink-0 text-[0.7rem] text-muted-foreground tabular-nums">{props.price}</span>}
       </span>
       {props.selected && (
-        <span className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background">
+        <span className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <Check className="size-3" />
         </span>
       )}
@@ -102,7 +102,7 @@ export function Swatch({ label, color, selected, onClick, small }: { label: stri
       title={label}
       onClick={onClick}
       className={cn(
-        "rounded-full ring-1 ring-black/15 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "rounded-full ring-1 ring-black/15 ring-offset-background transition outline-none focus-visible:ring-2 focus-visible:ring-ring",
         small ? "size-6" : "size-8",
         selected && "ring-2 ring-foreground ring-offset-2",
         !color && "bg-[repeating-linear-gradient(45deg,#e5e5e5_0_4px,#ffffff_4px_8px)]",
@@ -123,8 +123,8 @@ export function RailButton({ label, onClick, disabled, pressed, children }: { la
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex size-10 items-center justify-center rounded-full border bg-white text-neutral-800 shadow-sm transition-colors outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
-        pressed && "border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800",
+        "flex size-10 items-center justify-center rounded-full border bg-card text-foreground shadow-sm transition-colors outline-none hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-40",
+        pressed && "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
       )}
     >
       {children}
@@ -149,7 +149,7 @@ export function SideThumb({ label, garment, selected, onClick }: { label: string
       aria-pressed={selected}
       title={label}
       onClick={onClick}
-      className={cn("overflow-hidden rounded-lg border-2 bg-white outline-none focus-visible:ring-2 focus-visible:ring-ring", selected ? "border-neutral-900" : "border-transparent opacity-70 hover:opacity-100")}
+      className={cn("overflow-hidden rounded-lg border-2 bg-white outline-none focus-visible:ring-2 focus-visible:ring-ring", selected ? "border-primary" : "border-transparent opacity-70 hover:opacity-100")}
     >
       <canvas ref={ref} width={60} height={78} className="block h-[78px] w-[60px]" />
     </button>

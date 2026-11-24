@@ -14,7 +14,7 @@ Hiding a button in the UI is never the access control. The role is read from the
 |---|---|---|---|---|
 | Browse home, listing, product pages (active products only) | ✅ | ✅ | ✅ | `lib/shop/catalog.ts` (filters `status = ACTIVE`) |
 | See draft or archived products | ❌ | ❌ | ❌ (admin catalog in Phase 2) | `catalog.ts` |
-| Sign up (always creates a customer) | ✅ | n/a | n/a | `app/(shop)/auth-actions.ts` |
+| Sign up (always creates a customer) | ✅ | n/a | n/a | `app/(shop)/_auth/actions.ts` |
 | Buy now / add to cart | ➡️ sign in | ✅ own cart | ❌ "admin accounts can't shop" | `addToCart` → `assertCustomer` |
 | View, update or remove cart lines | ➡️ sign in | ✅ **own lines only** | ❌ | `findOwnedItem` (scoped by `cart.customerId`) |
 | Mock pay / create order | ➡️ sign in | ✅ own cart | ❌ | `payWithMock` → `assertCustomer`; key owner check |
@@ -96,6 +96,7 @@ Storage buckets are private with no policies, so the publishable key can't list,
 | Action | Anonymous | Customer | Admin | Enforced in |
 |---|---|---|---|---|
 | Request a quote | ➡️ sign in | ✅ own saved, photo-started designs; ≤ 5 open | ❌ | `requestQuote` → `assertCustomer`, `quoteIneligibility` |
+| Make, design on or load their own dress (from their photo) | ➡️ sign in | ✅ **own only** (anyone else gets "not found"); ordered only through a quote | ❌ in the catalogue screens; ✅ through its quote | `startDesignFrom` (mode `own`) → `assertCustomer`; `getCustomizationTemplate`/`loadDesignContext` (`viewerId`); `addDesignToCart`/checkout refuse (`QUOTE_ONLY`); admin queries `IN_CATALOG` |
 | See quotes | ❌ | ✅ **own only** ("not found" otherwise) | ✅ all, in `/admin/quotes` (no contact details) | `listMyQuotes`/`getMyQuote` (scoped by `customerId`); `lib/admin/quotes.ts` → `assertAdmin` |
 | Price or decline a quote | ❌ | ❌ | ✅ once, while open (audited) | `respondToQuote` |
 | Accept (add to cart) / withdraw | ❌ | ✅ own, while open; the price comes from the quote | ❌ | `acceptQuote`, `withdrawQuote`; checkout re-checks |
@@ -121,6 +122,7 @@ Every `app/admin/**` page, action and route checks the role on the server. `test
 | Try on a design or dress, poll, keep, delete | ➡️ sign in | ✅ **own photos, jobs and results only** (others look like "not found"); 5 per day | ❌ | `lib/tryon/service.ts` (scoped by `customerId`) |
 | See try-on photos/results | ❌ | ✅ own, via short-lived signed URLs | ❌ | private `tryon-private` bucket |
 | Delete unsaved try-on media after 24 h | ❌ | ❌ | ❌ | **Worker sweep only** (`cleanupTryOnMedia`, audited) |
+| Remember, read or forget height | ❌ | ✅ **own profile only**, only when they tick "Remember" | ❌ | `lib/fit/profile.ts` → `assertCustomer`, scoped by `userId` |
 
 ## Planned
 

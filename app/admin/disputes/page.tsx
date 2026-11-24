@@ -32,9 +32,9 @@ export default async function AdminDisputesPage({ searchParams }: PageProps<"/ad
         ))}
       </nav>
       {disputes.length === 0 ? (
-        <p className="rounded-xl border p-8 text-muted-foreground">Nothing here.</p>
+        <p className="rounded-2xl border bg-card p-8 text-muted-foreground">Nothing here.</p>
       ) : (
-        <ul className="flex flex-col divide-y rounded-xl border" data-testid="dispute-list">
+        <ul className="flex flex-col divide-y rounded-2xl border bg-card" data-testid="dispute-list">
           {disputes.map((d) => (
             <li key={d.id}>
               <Link href={`/admin/disputes/${d.id}`} className="flex flex-wrap items-center justify-between gap-3 p-4 hover:bg-muted/40">

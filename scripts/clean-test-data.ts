@@ -73,8 +73,15 @@ async function cleanTestAccounts(db: PrismaClient, supabase: SupabaseClient, dry
   });
   const ids = users.map((u) => u.id);
   const orders = await db.order.findMany({ where: { customerId: { in: ids } }, select: { id: true } });
-  if (dryRun || ids.length === 0) {
-    return { accounts: ids.length, orders: orders.length };
+  // Their own dresses (made from their photos), and any left over without an owner or a design.
+  const ownDresses = (
+    await db.product.findMany({
+      where: { status: "PRIVATE", OR: [{ ownerId: { in: ids } }, { ownerId: null, designs: { none: {} } }] },
+      select: { id: true },
+    })
+  ).map((p) => p.id);
+  if (dryRun || (ids.length === 0 && ownDresses.length === 0)) {
+    return { accounts: ids.length, orders: orders.length, ownDresses: ownDresses.length };
   }
   const files: [BucketName, string[]][] = [];
   for (const id of ids) {
@@ -84,11 +91,18 @@ async function cleanTestAccounts(db: PrismaClient, supabase: SupabaseClient, dry
   for (const order of orders) {
     files.push([BUCKETS.qcPhotos, await listKeys(supabase, BUCKETS.qcPhotos, order.id, null)]);
   }
+  for (const id of ownDresses) {
+    files.push([BUCKETS.productMedia, await listKeys(supabase, BUCKETS.productMedia, id, null)]);
+  }
   // Orders don't cascade from customers (they're kept for accounting), so they go first; a dispute
   // blocks deleting its order item, so disputes go before them.
   await db.dispute.deleteMany({ where: { orderItem: { orderId: { in: orders.map((o) => o.id) } } } });
   await db.order.deleteMany({ where: { id: { in: orders.map((o) => o.id) } } });
   await db.flaggedItem.deleteMany({ where: { customerId: { in: ids } } });
+  // Designs block deleting their dress; quotes block deleting their design.
+  await db.quoteRequest.deleteMany({ where: { design: { productId: { in: ownDresses } } } });
+  await db.design.deleteMany({ where: { productId: { in: ownDresses } } });
+  await db.product.deleteMany({ where: { id: { in: ownDresses } } });
   await db.user.deleteMany({ where: { id: { in: ids } } });
   for (const [bucket, keys] of files) {
     await removeKeys(supabase, bucket, keys);
@@ -97,7 +111,7 @@ async function cleanTestAccounts(db: PrismaClient, supabase: SupabaseClient, dry
     const { error } = await supabase.auth.admin.deleteUser(id);
     if (error && !/not found/i.test(error.message)) throw new Error(`Deleting a test sign-in failed: ${error.message}`);
   }
-  return { accounts: ids.length, orders: orders.length };
+  return { accounts: ids.length, orders: orders.length, ownDresses: ownDresses.length };
 }
 
 async function cleanTestProducts(db: PrismaClient, supabase: SupabaseClient, dryRun: boolean) {

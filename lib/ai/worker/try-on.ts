@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
+import { GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
 import { garmentPicture } from "@/lib/design/garment-variant";
+import { garmentLengthCm, gradedLength, hemPlace, widthFactor } from "@/lib/fit/fit";
+import { cutOutGarment } from "@/lib/garment-photo/align";
+import { SegmentationError } from "@/lib/garment-photo/segment";
 import { normalizeForRender } from "@/lib/design/normalize";
 import { checkDesign, DesignError } from "@/lib/design/service";
 import { ImageValidationError, processImage } from "@/lib/media/process-image";
@@ -9,31 +13,34 @@ import { BUCKETS } from "@/lib/storage/buckets";
 import { buildObjectKey } from "@/lib/storage/object-key";
 import { productTryOnImageKey } from "@/lib/tryon/garment";
 import { tryOnPayloadSchema, type TryOnPayload } from "@/lib/tryon/payload";
+import { garmentDescription, stylePhrase } from "@/lib/tryon/describe";
 import { designSignature, productSignature } from "@/lib/tryon/rules";
+import { styleOptionsFor, templateStyleGroups } from "@/types/template";
 
-import { AiJobRejected, AiProviderError, type AiFailureCode } from "../errors";
+import { isUsable, photoProblem } from "@/lib/vision/photo/photo-check";
+
+import { AiJobRejected, AiProviderError } from "../errors";
 import { prepareGarment } from "../image-utils";
-import type { TryOnPhotoCheck } from "../types";
 
 import { leaseWhere, LostLease, type ClaimedJob } from "./claim";
 import type { AiWorkerDeps } from "./run";
 
 // One virtual try-on, run by the worker:
-//   photo check (once per photo) → flat garment on a white 3:4 canvas → TryOnProvider
+//   photo check (once per photo) → flat garment (cut out of its picture) on a white 3:4 canvas → TryOnProvider
 //   → re-encode → one transaction: TryOnResult + job SUCCEEDED (only while holding the lease).
 
 const GARMENT_RENDER_WIDTH = 900;
 
-/** The first check a photo failed, so the customer is told exactly what to change. */
-export function photoProblem(check: TryOnPhotoCheck): AiFailureCode {
-  if (!check.onePerson) return "PHOTO_NOT_ONE_PERSON";
-  if (!check.facingForward) return "PHOTO_NOT_FACING";
-  if (!check.goodLight) return "PHOTO_TOO_DARK";
-  if (!check.bodyVisible) return "PHOTO_BODY_NOT_VISIBLE";
-  return "PHOTO_REJECTED";
-}
-
-async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPayload["source"], expectedHash: string): Promise<Buffer> {
+/**
+ * The garment image for the try-on model (on a white 3:4 canvas), the garment alone on a transparent
+ * backdrop (`cutout`, for the 3D view), what kind of garment it is, and its length (cm, size M) if known.
+ */
+export async function garmentImage(
+  deps: Pick<AiWorkerDeps, "db" | "storage">,
+  job: Pick<ClaimedJob, "customerId">,
+  source: TryOnPayload["source"],
+  expectedHash: string,
+): Promise<{ image: Buffer; cutout: Buffer; type: GarmentType; description: string; lengthCm: number | null }> {
   const { db, storage } = deps;
   if (source.kind === "design") {
     let checked;
@@ -52,17 +59,40 @@ async function garmentImage(deps: AiWorkerDeps, job: ClaimedJob, source: TryOnPa
     const picture = garmentPicture(config, "front", checked.spec.styleOptions);
     const maskKeys = config.regions.flatMap((r) => picture.maskFor(r.id) ?? []);
     const flat = await renderFlatGarment(normalizeForRender(checked.spec, config), storageAssets(storage), maskKeys, GARMENT_RENDER_WIDTH);
-    return prepareGarment(flat);
+    // The main colour: the first recoloured part's, by its catalogue name.
+    const firstPart = config.regions.map((r) => checked.spec.parts[r.id]).find((p) => p !== undefined);
+    const colour = firstPart ? (config.allowedColors.find((c) => c.hex.toLowerCase() === firstPart.color.toLowerCase())?.name ?? null) : null;
+    const styles = templateStyleGroups(config).flatMap((group) => {
+      const option = styleOptionsFor(config, group).find((o) => o.id === checked.spec.styleOptions[group]);
+      return option ? [stylePhrase(group, option.label)] : [];
+    });
+    const description = garmentDescription({ name: checked.context.template.productName, noun: GARMENT_TYPES[config.garmentType].noun, colour, styles });
+    const lengthCm = garmentLengthCm(config.garmentType, checked.spec.styleOptions, null);
+    return { image: await prepareGarment(flat), cutout: flat, type: config.garmentType, description, lengthCm };
   }
   const imageKey = await productTryOnImageKey(db, source.productId);
   if (!imageKey || productSignature(source.productId, imageKey) !== expectedHash) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
-  const image = await storage.get(BUCKETS.productMedia, imageKey);
-  if (!image) {
+  const [image, product] = await Promise.all([
+    storage.get(BUCKETS.productMedia, imageKey),
+    db.product.findUnique({ where: { id: source.productId }, select: { garmentType: true, name: true, description: true, lengthCm: true } }),
+  ]);
+  if (!image || !product) {
     throw new AiJobRejected("NOT_AVAILABLE");
   }
-  return prepareGarment(image);
+  const type = product.garmentType;
+  const description = garmentDescription({ name: product.name, noun: GARMENT_TYPES[type].noun, details: product.description });
+  const lengthCm = garmentLengthCm(type, null, product.lengthCm);
+  // Try-on models want the garment alone: cut the dress out of the catalogue photo (mannequin and
+  // backdrop removed). If it can't be found, the whole photo is still better than nothing.
+  try {
+    const cutout = await cutOutGarment(image);
+    return { image: await prepareGarment(cutout), cutout, type, description, lengthCm };
+  } catch (error) {
+    if (!(error instanceof SegmentationError)) throw error;
+    return { image: await prepareGarment(image), cutout: image, type, description, lengthCm };
+  }
 }
 
 export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: AbortSignal): Promise<void> {
@@ -86,8 +116,8 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
 
   // 1. Photo check, once per photo: one person, facing forward, good light, body visible.
   if (!photo.checkedAt) {
-    const check = await providers.planner.checkTryOnPhoto(person, signal);
-    if (!check.onePerson || !check.facingForward || !check.goodLight || !check.bodyVisible) {
+    const check = await providers.photoCheck.checkTryOnPhoto(person, signal);
+    if (!isUsable(check)) {
       deps.log?.("ai.tryon_photo_rejected", {
         jobId: job.id,
         onePerson: check.onePerson,
@@ -102,12 +132,20 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
 
   // 2. The garment as try-on models expect it.
   const garment = await garmentImage(deps, job, input.source, input.garmentHash);
+  const { tryOnCategory: category, tryOnReach: reach } = GARMENT_TYPES[garment.type];
+  // The chosen size on this person: how much wider or narrower it sits, and where its hem lands.
+  const fit = input.fit
+    ? {
+        width: widthFactor(garment.type, input.fit),
+        hemLevel: garment.lengthCm ? hemPlace(input.fit.heightCm, gradedLength(garment.lengthCm, input.fit.size)).level : null,
+      }
+    : undefined;
   if (signal.aborted) {
     throw new AiProviderError("job aborted", true, "TIMEOUT");
   }
 
   // 3. Try-on, then treat the returned bytes like any upload.
-  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment, mimeType: "image/png" } }, signal);
+  const raw = await providers.tryOn.tryOn({ person, garment: { data: garment.image, mimeType: "image/png" }, category, reach, fit, description: garment.description }, signal);
   let image;
   try {
     image = await processImage(raw, "tryOnResult");
@@ -135,6 +173,7 @@ export async function runTryOn(deps: AiWorkerDeps, job: ClaimedJob, signal: Abor
           designId: input.source.kind === "design" ? input.source.designId : null,
           productId: input.source.kind === "product" ? input.source.productId : null,
           garmentHash: input.garmentHash,
+          ...(input.fit ? { fit: input.fit } : {}),
           inputHash: job.inputHash,
           resultKey,
           jobId: job.id,

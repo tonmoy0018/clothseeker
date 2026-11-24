@@ -82,8 +82,100 @@ test.describe("@supabase design screen", () => {
     await expect(page.getByText("Unsaved changes").or(page.getByRole("button", { name: "Save design" }))).toBeVisible();
   });
 
+  test("a decoration gets a second colour, an outline and becomes a priced border that saves", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signUpFreshCustomer(page);
+    await openLinenDesigner(page);
+    await openDesignTab(page, "Personalise");
+    await page.getByRole("button", { name: "Decorations" }).click();
+    await page.getByRole("button", { name: "Add Flower" }).click();
+    const controls = page.getByTestId("decoration-controls");
+    await expect(controls).toBeVisible();
+    await controls.getByRole("group", { name: "Second color" }).getByRole("button").nth(2).click();
+    await controls.getByRole("button", { name: "Outline" }).click();
+    await controls.getByRole("button", { name: "Mirror" }).click();
+    await controls.getByLabel("Repeat as a border").check();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 6");
+    await controls.getByLabel("How many").fill("9");
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 9");
+    await page.getByRole("button", { name: "Save design" }).click();
+    await expect(page.getByRole("status")).toContainText("Design saved");
+    // Saved and re-checked by the server: reloading the saved design keeps the border.
+    await expect(page).toHaveURL(/[?&]design=[0-9a-f-]{36}/);
+    await page.reload();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 9");
+  });
+
+  test("a decoration taken from another dress is cut out, recoloured and used as a priced border", async ({ page }) => {
+    test.setTimeout(120_000);
+    await signUpFreshCustomer(page);
+    await openLinenDesigner(page);
+    await openDesignTab(page, "Personalise");
+    await page.getByRole("button", { name: "From another dress" }).click();
+    await page.getByRole("button", { name: "Take a decoration from a dress" }).click();
+    const dialog = page.getByTestId("cutout-dialog");
+    await dialog.getByRole("button", { name: "Embroidered Eid Panjabi" }).click();
+    // Draw a box around the embroidered placket.
+    const picture = dialog.getByTestId("cutout-photo");
+    await expect(picture.getByRole("img")).toBeVisible();
+    const area = await picture.boundingBox();
+    if (!area) throw new Error("no photo");
+    await page.mouse.move(area.x + area.width * 0.43, area.y + area.height * 0.23);
+    await page.mouse.down();
+    await page.mouse.move(area.x + area.width * 0.57, area.y + area.height * 0.52, { steps: 8 });
+    await page.mouse.up();
+    await dialog.getByRole("button", { name: "Cut out", exact: true }).click();
+    const result = dialog.getByTestId("cutout-result");
+    await expect(result.getByRole("img", { name: "Decoration cut out of Embroidered Eid Panjabi" })).toBeVisible({ timeout: 30_000 });
+    await expect(dialog).toContainText("29 cut-outs left today");
+    // Swap its first colour for one of this dress's colours.
+    await result.getByLabel("New colour for colour 1").selectOption({ index: 1 });
+    await result.getByRole("button", { name: "Apply colours" }).click();
+    await expect(dialog).toContainText("28 cut-outs left today");
+    await result.getByRole("button", { name: "Use on my design" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const selected = page.getByTestId("selected-layer");
+    await expect(selected).toContainText("Selected decoration (from a dress)");
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration");
+    await selected.getByTestId("image-controls").getByRole("button", { name: "Mirror" }).click();
+    await selected.getByLabel("Repeat as a border").check();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 6");
+    await page.getByRole("button", { name: "Save design" }).click();
+    await expect(page.getByRole("status")).toContainText("Design saved");
+    await expect(page).toHaveURL(/[?&]design=[0-9a-f-]{36}/);
+    await page.reload();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Decoration × 6");
+  });
+
+  test("text can be embroidered and a decoration sequinned, each priced by its finish", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signUpFreshCustomer(page);
+    await openLinenDesigner(page);
+    await openDesignTab(page, "Personalise");
+    await page.getByLabel("New text").fill("Ava");
+    await page.getByRole("button", { name: /^Add text/ }).click();
+    const selected = page.getByTestId("selected-layer");
+    const finish = selected.getByRole("group", { name: "Finish" });
+    // Text can't be sequinned.
+    await expect(finish.getByRole("button", { name: /^Sequins/ })).toHaveCount(0);
+    await finish.getByRole("button", { name: /^Embroidery/ }).click();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Embroidery");
+
+    await page.getByRole("button", { name: "Decorations" }).click();
+    await page.getByRole("button", { name: "Add Star" }).click();
+    await selected.getByRole("group", { name: "Finish" }).getByRole("button", { name: /^Sequins/ }).click();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Sequins");
+    await page.getByRole("button", { name: "Save design" }).click();
+    await expect(page.getByRole("status")).toContainText("Design saved");
+    await expect(page).toHaveURL(/[?&]design=[0-9a-f-]{36}/);
+    await page.reload();
+    await expect(page.getByTestId("price-breakdown")).toContainText("Embroidery");
+    await expect(page.getByTestId("price-breakdown")).toContainText("Sequins");
+  });
+
   test("dresses without a live template show a friendly page", async ({ page }) => {
     await page.goto("/customize/11111111-1111-4111-8111-111111111111");
-    await expect(page.getByTestId("not-customizable")).toContainText("This dress can't be customized");
+    await expect(page.getByTestId("not-customizable")).toContainText("This item can't be customized");
   });
 });

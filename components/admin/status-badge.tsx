@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import type { ProductStatus } from "@/lib/generated/prisma/enums";
 
-const LABEL: Record<ProductStatus, string> = { DRAFT: "Draft", ACTIVE: "Live", ARCHIVED: "Archived" };
+const LABEL: Record<ProductStatus, string> = { DRAFT: "Draft", ACTIVE: "Live", ARCHIVED: "Archived", PRIVATE: "Customer's own" };
 
 export function StatusBadge({ status }: { status: ProductStatus }) {
   return (

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+
+import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
@@ -50,14 +52,23 @@ export default async function AdminQuotePage({ params }: PageProps<"/admin/quote
           {quote.referencePhotoUrl && (
             <figure className="flex w-36 flex-col gap-1">
               <span className="relative block aspect-[3/4] overflow-hidden rounded-xl bg-muted">
-                <Image src={quote.referencePhotoUrl} alt="Customer's reference photo" fill unoptimized className="object-cover" />
+                <Image src={quote.referencePhotoUrl} alt={quote.referenceIsDrawing ? "Customer's drawing" : "Customer's reference photo"} fill unoptimized className="object-cover" />
               </span>
-              <figcaption className="text-xs text-muted-foreground">Reference photo</figcaption>
+              <figcaption className="text-xs text-muted-foreground">{quote.referenceIsDrawing ? "Customer's drawing" : "Reference photo"}</figcaption>
             </figure>
           )}
         </div>
 
         <div className="flex flex-col gap-5">
+          {quote.garmentDescription && (
+            <section className="flex flex-col gap-1">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase">What the photo shows</h2>
+              <p className="text-sm" data-testid="admin-quote-garment">
+                {quote.garmentDescription}
+              </p>
+              <p className="text-xs text-muted-foreground">Read by AI from the customer&apos;s photo: check it against the photo.</p>
+            </section>
+          )}
           <section className="flex flex-col gap-1">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase">Customer&apos;s notes</h2>
             <p className="whitespace-pre-line" data-testid="admin-quote-notes">
@@ -68,7 +79,10 @@ export default async function AdminQuotePage({ params }: PageProps<"/admin/quote
             <section className="flex flex-col gap-1 text-sm">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase">Design</h2>
               <p>
-                Neckline {spec.styleOptions.neckline} · sleeves {spec.styleOptions.sleeveLength} · length {spec.styleOptions.dressLength}
+                {STYLE_GROUP_IDS.flatMap((group) => {
+                  const option = spec.styleOptions[group];
+                  return option ? [`${STYLE_GROUP_LABEL[group]} ${option}`] : [];
+                }).join(" · ")}
               </p>
               <p>
                 {Object.entries(spec.parts)
@@ -84,7 +98,7 @@ export default async function AdminQuotePage({ params }: PageProps<"/admin/quote
           {quote.status === "REQUESTED" ? (
             <RespondForm quoteId={quote.id} />
           ) : (
-            <section className="flex flex-col gap-1 rounded-xl border p-4 text-sm">
+            <section className="flex flex-col gap-1 rounded-2xl border bg-card p-4 text-sm">
               {quote.priceMinor !== null && <span className="text-lg font-semibold">{formatBDT(quote.priceMinor)}</span>}
               {quote.responseNote && <p className="whitespace-pre-line">{quote.responseNote}</p>}
               {quote.expiresAt && quote.status === "QUOTED" && <span className="text-muted-foreground">Valid until {when.format(new Date(quote.expiresAt))}</span>}

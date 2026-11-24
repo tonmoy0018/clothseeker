@@ -1,24 +1,32 @@
 "use client";
 
-import { Redo2, Shirt, Undo2 } from "lucide-react";
+import { Box, Redo2, ScanFace, Shirt, Undo2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FONTS, fontUrl } from "@/lib/catalog/fonts";
+import { GARMENT_TYPES } from "@/lib/catalog/garment-types";
+import { decorationSvg } from "@/lib/catalog/decorations";
+import type { FabricField } from "@/lib/design/fabric-warp";
 import { garmentPicture } from "@/lib/design/garment-variant";
+import { pictureWidthCm } from "@/lib/design/normalize";
+import { luminance } from "@/lib/design/shade";
 import { priceDesign, type DesignPrice } from "@/lib/design/pricing";
 import { validateDesignAgainstTemplate, type DesignIssue } from "@/lib/design/validate";
 import type { Size } from "@/lib/generated/prisma/enums";
 import { formatBDT } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { designSpecSchema, type DesignLayer, type DesignSpec } from "@/types/design-spec";
-import type { PlacementArea, TemplateConfig } from "@/types/template";
+import { styleOptionsFor, templateStyleGroups, type PlacementArea, type TemplateConfig } from "@/types/template";
 
 import { addDesignToCartAction, saveDesignAction, uploadDesignImageAction, type DesignActionResult } from "./actions";
-import { TryOnPanel } from "../../try-on-panel";
+import { CutoutDialog } from "./cutout-dialog";
+import { Garment3dView } from "@/app/(shop)/_model-3d/garment-3d-view";
+import { LiveMirror } from "@/app/(shop)/_try-on/live-mirror";
+import { TryOnPanel } from "@/app/(shop)/_try-on/try-on-panel";
 
 import { AiBox } from "./ai-box";
 import { QuoteRequest } from "./quote-request";
@@ -26,7 +34,7 @@ import { DesignCanvas, type LayerBox } from "./design-canvas";
 import { RailButton, SideThumb } from "./editor-ui";
 import { FabricTab } from "./fabric-tab";
 import { PersonaliseTab } from "./personalise-tab";
-import { composeGarment, loadImage, type ClientFill } from "./recolor";
+import { composeGarment, decorationDataUrl, fabricFieldFor, loadImage, offFabricOverlay, type ClientFill, type ClientPrint } from "./recolor";
 import { StyleTab } from "./style-tab";
 
 const HISTORY_LIMIT = 50;
@@ -45,13 +53,15 @@ export type DesignEditorProps = {
   templateId: string;
   templateVersion: number;
   aiEnabled: boolean;
+  /** The customer's own dress, from their photo (lib/own-dress): priced by the team through a quote. */
+  ownDress: boolean;
   config: TemplateConfig;
   imageUrls: Record<string, string>;
   availableSizes: Size[];
   basePrices: Partial<Record<Size, number>>;
   /** Signed-in customer's id (for image ownership checks), or null. */
   customerId: string | null;
-  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean; referencePhotoUrl: string | null } | null;
+  initialDesign: { designId: string; spec: DesignSpec; uploadUrls: Record<string, string>; saved: boolean; referencePhotoUrl: string | null; referenceIsDrawing: boolean } | null;
   /** An AI round already queued for this design (after "start from a description"). */
   initialAiJobId?: string | null;
   /** Other good matches from a photo/description start. */
@@ -86,11 +96,7 @@ function defaultSpec(p: DesignEditorProps): DesignSpec {
     templateVersion: p.templateVersion,
     size: p.availableSizes[0] ?? "M",
     // The template's starting style (e.g. what the dress's photo shows), else each group's first option.
-    styleOptions: p.config.defaultStyle ?? {
-      neckline: p.config.styleOptions.neckline[0]?.id ?? "",
-      sleeveLength: p.config.styleOptions.sleeveLength[0]?.id ?? "",
-      dressLength: p.config.styleOptions.dressLength[0]?.id ?? "",
-    },
+    styleOptions: p.config.defaultStyle ?? Object.fromEntries(templateStyleGroups(p.config).map((g) => [g, styleOptionsFor(p.config, g)[0]?.id ?? ""])),
     parts: {},
     layers: [],
     startedFrom: "shop",
@@ -98,11 +104,12 @@ function defaultSpec(p: DesignEditorProps): DesignSpec {
 }
 
 /**
- * A box of the given aspect (width/height, in cm) sized to `fraction` of the area's shorter side,
- * centred horizontally; `anchorY` places its centre vertically (0 = top, 1 = bottom).
+ * A box of the given aspect (width/height, in cm) sized to `fraction` of the area's shorter side but at
+ * most `maxCm` (so items on a whole-front area start at a sensible size), centred horizontally;
+ * `anchorY` places its centre vertically (0 = top, 1 = bottom).
  */
-function centredBox(area: { widthCm: number; heightCm: number }, fraction: number, aspect = 1, anchorY = 0.5): LayerBox {
-  const side = fraction * Math.min(area.widthCm, area.heightCm);
+function centredBox(area: { widthCm: number; heightCm: number }, fraction: number, maxCm: number, aspect = 1, anchorY = 0.5): LayerBox {
+  const side = Math.min(fraction * Math.min(area.widthCm, area.heightCm), maxCm);
   const wCm = aspect >= 1 ? side : side * aspect;
   const hCm = aspect >= 1 ? side / aspect : side;
   const w = Math.min(wCm / area.widthCm, 1);
@@ -133,6 +140,14 @@ export function DesignEditor(props: DesignEditorProps) {
   const [fontsReady, setFontsReady] = useState(false);
   const [pending, startTransition] = useTransition();
   const [showTryOn, setShowTryOn] = useState(false);
+  const tryOnPanel = useRef<HTMLDivElement>(null);
+  const [showMirror, setShowMirror] = useState(false);
+  const [show3d, setShow3d] = useState(false);
+  /** What the design was started from, in the customer's words: their photo or their drawing. */
+  const reference = props.initialDesign?.referenceIsDrawing ? "drawing" : "photo";
+  const [mirrorPhoto, setMirrorPhoto] = useState<Blob | null>(null);
+  /** The front garment with its items printed on it, as last drawn by the canvas. */
+  const printedRef = useRef<{ garment: HTMLCanvasElement; printed: HTMLCanvasElement } | null>(null);
 
   // ── fonts ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -161,12 +176,24 @@ export function DesignEditor(props: DesignEditorProps) {
   }, [dirty]);
 
   // ── recolored garment per side ─────────────────────────────────────────────
-  // The garment picture for the chosen neckline/sleeve/length (same choice as the server renderer).
-  const { neckline, sleeveLength, dressLength } = spec.styleOptions;
-  const pictures = useMemo(() => {
-    const choice = { neckline, sleeveLength, dressLength };
-    return { front: garmentPicture(config, "front", choice), back: garmentPicture(config, "back", choice) };
-  }, [config, neckline, sleeveLength, dressLength]);
+  // The garment picture for the chosen style (same choice as the server renderer). Edits other than
+  // style changes keep the same styleOptions object, so the pictures aren't recomposed for them.
+  const styleOptions = spec.styleOptions;
+  const pictures = useMemo(
+    () => ({ front: garmentPicture(config, "front", styleOptions), back: garmentPicture(config, "back", styleOptions) }),
+    [config, styleOptions],
+  );
+
+  const widthCm = pictureWidthCm(config);
+  /** An all-over print for the browser: a decoration drawn as SVG, or the customer's uploaded image. */
+  const clientPrint = useCallback(
+    (print: DesignSpec["parts"][string]["print"]): ClientPrint | null => {
+      if (!print) return null;
+      const url = print.kind === "decoration" ? decorationDataUrl(decorationSvg(print.id, print.color, 256)) : uploadUrls[print.assetKey];
+      return url ? { url, tile: print.tileCm / widthCm } : null;
+    },
+    [uploadUrls, widthCm],
+  );
 
   const fillsBySide = useMemo(() => {
     const fills = (s: "front" | "back"): ClientFill[] =>
@@ -174,10 +201,68 @@ export function DesignEditor(props: DesignEditorProps) {
         const part = spec.parts[region.id];
         const maskKey = pictures[s].maskFor(region.id);
         const maskUrl = maskKey ? props.imageUrls[maskKey] : undefined;
-        return part && maskUrl && region.recolorable ? [{ maskUrl, color: part.color, pattern: part.pattern ?? null }] : [];
+        if (!part || !maskUrl || !region.recolorable) return [];
+        return [{ maskUrl, color: part.color, pattern: part.pattern ?? null, print: clientPrint(part.print) }];
       });
     return { front: fills("front"), back: fills("back") };
-  }, [config.regions, pictures, spec.parts, props.imageUrls]);
+  }, [config.regions, pictures, spec.parts, props.imageUrls, clientPrint]);
+
+  // Over each side: the garment off the fabric, to trim items in areas that keep to the fabric. Each
+  // overlay remembers the garment picture it was made from and is only used while that one is shown.
+  type Trim = { garment: HTMLCanvasElement; overlay: HTMLCanvasElement };
+  const [trims, setTrims] = useState<{ front: Trim | null; back: Trim | null }>({ front: null, back: null });
+  useEffect(() => {
+    let cancelled = false;
+    for (const s of ["front", "back"] as const) {
+      const garment = garments[s];
+      const maskUrls = config.regions.flatMap((r) => {
+        const key = pictures[s].maskFor(r.id);
+        const url = key ? props.imageUrls[key] : undefined;
+        return url ? [url] : [];
+      });
+      if (!garment || maskUrls.length === 0 || !config.placementAreas.some((a) => a.side === s && a.clipToFabric)) continue;
+      void offFabricOverlay(garment, maskUrls)
+        .then((overlay) => {
+          if (!cancelled) setTrims((t) => ({ ...t, [s]: { garment, overlay } }));
+        })
+        .catch(() => undefined); // without it, items just aren't trimmed in the preview
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [garments, pictures, config.regions, config.placementAreas, props.imageUrls]);
+  // The fabric's shape for each side, so items look printed on it (bent along folds, shaded, wrapped).
+  type Shape = { garment: HTMLCanvasElement; field: FabricField };
+  const [shapes, setShapes] = useState<{ front: Shape | null; back: Shape | null }>({ front: null, back: null });
+  useEffect(() => {
+    let cancelled = false;
+    for (const s of ["front", "back"] as const) {
+      const garment = garments[s];
+      const maskUrls = config.regions.flatMap((r) => {
+        const key = pictures[s].maskFor(r.id);
+        const url = key ? props.imageUrls[key] : undefined;
+        return url ? [url] : [];
+      });
+      if (!garment || maskUrls.length === 0) continue;
+      void fabricFieldFor(garment, maskUrls)
+        .then((field) => {
+          if (!cancelled) setShapes((t) => ({ ...t, [s]: { garment, field } }));
+        })
+        .catch(() => undefined); // without it, items are drawn flat
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [garments, pictures, config.regions, props.imageUrls]);
+  const fieldFor = (s: "front" | "back") => {
+    const shape = shapes[s];
+    return shape && shape.garment === garments[s] ? shape.field : null;
+  };
+
+  const offFabric = (s: "front" | "back") => {
+    const trim = trims[s];
+    return trim && trim.garment === garments[s] ? trim.overlay : null;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -193,7 +278,7 @@ export function DesignEditor(props: DesignEditorProps) {
             setGarments((g) => ({ ...g, [s]: canvas }));
           }
         })
-        .catch(() => setMessage({ kind: "error", text: "The dress image couldn't load. Refresh the page to try again." }));
+        .catch(() => setMessage({ kind: "error", text: "The garment image couldn't load. Refresh the page to try again." }));
     }
     return () => {
       cancelled = true;
@@ -237,6 +322,28 @@ export function DesignEditor(props: DesignEditorProps) {
   const selectedLayer = spec.layers.find((l) => l.id === selectedLayerId) ?? null;
   const allowedColors = config.allowedColors;
   const defaultColor = allowedColors[0]?.hex.toLowerCase() ?? "#1b1b1b";
+
+  /** The allowed colour that stands out most from the garment where a new item goes (its box in the area). */
+  function contrastingColor(area: PlacementArea, box: LayerBox): string {
+    const garment = garments[area.side];
+    const ctx = garment?.getContext("2d");
+    if (!garment || !ctx) return defaultColor;
+    const x = Math.round((area.rect.x + box.x * area.rect.w) * garment.width);
+    const y = Math.round((area.rect.y + box.y * area.rect.h) * garment.height);
+    const w = Math.max(1, Math.round(box.w * area.rect.w * garment.width));
+    const h = Math.max(1, Math.round(box.h * area.rect.h * garment.height));
+    const data = ctx.getImageData(x, y, w, h).data;
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4 * 7) {
+      total += luminance(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0);
+      count += 1;
+    }
+    const under = count > 0 ? total / count : 0.5;
+    const lumOf = (hex: string) => luminance(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+    const best = [...allowedColors].sort((a, b) => Math.abs(lumOf(b.hex) - under) - Math.abs(lumOf(a.hex) - under))[0];
+    return best?.hex.toLowerCase() ?? defaultColor;
+  }
 
   function addLayer(layer: DesignLayer) {
     commit((s) => ({ ...s, layers: [...s.layers, layer] }));
@@ -322,15 +429,15 @@ export function DesignEditor(props: DesignEditorProps) {
   const [removeBg, setRemoveBg] = useState(false);
   const [uploadState, setUploadState] = useState<string | null>(null);
 
-  async function uploadImage(file: File) {
-    if (!activeArea) return;
+  /** Uploads one of the customer's images (optionally without its background); returns its key and URL. */
+  async function uploadAsset(file: File): Promise<{ key: string; url: string } | null> {
     if (file.size > 4 * 1024 * 1024) {
       setMessage({ kind: "error", text: "Images must be 4 MB or smaller." });
-      return;
+      return null;
     }
     if (!props.customerId) {
       handleResult({ status: "signin" }, () => undefined);
-      return;
+      return null;
     }
     try {
       let blob: Blob = file;
@@ -347,29 +454,46 @@ export function DesignEditor(props: DesignEditorProps) {
       const result = await uploadDesignImageAction(form);
       if (result.status === "signin") {
         handleResult(result, () => undefined);
-        return;
+        return null;
       }
       if (result.status === "error") {
         setMessage({ kind: "error", text: result.message });
-        return;
+        return null;
       }
       const url = result.url ?? "";
-      const img = await loadImage(url);
-      const aspectCm = img.naturalWidth / img.naturalHeight;
       setUploadUrls((u) => ({ ...u, [result.key]: url }));
-      addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "image", ...centredBox(activeArea, 0.6, aspectCm), image: { assetKey: result.key } });
+      return { key: result.key, url };
     } catch {
       setMessage({ kind: "error", text: "That image couldn't be added. Try a different file." });
+      return null;
     } finally {
       setUploadState(null);
     }
   }
+
+  /** Uploads an image and places it in the active print area. */
+  async function uploadImage(file: File) {
+    if (!activeArea) return;
+    const area = activeArea;
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+    try {
+      const img = await loadImage(asset.url);
+      addLayer({ id: newLayerId(), areaId: area.id, kind: "image", ...centredBox(area, 0.6, 25, img.naturalWidth / img.naturalHeight), image: { assetKey: asset.key } });
+    } catch {
+      setMessage({ kind: "error", text: "That image couldn't be added. Try a different file." });
+    }
+  }
+
+  // ── decorations taken from other dresses ──────────────────────────────────
+  const [cutoutsOpen, setCutoutsOpen] = useState(false);
 
   // ── layout state ───────────────────────────────────────────────────────────
   // A design started from a description opens on its AI round.
   const [tab, setTab] = useState<TabId>(props.initialAiJobId ? "ai" : "fabric");
   const [showPrice, setShowPrice] = useState(false);
   const firstFont = config.allowedFonts[0] ?? null;
+  const garment = GARMENT_TYPES[config.garmentType];
 
   /** Regions the customer can colour on this dress (with a mask on some picture). */
   const colorableRegions = useMemo(
@@ -396,6 +520,36 @@ export function DesignEditor(props: DesignEditorProps) {
 
   const fontFaces = FONTS.map((f) => `@font-face{font-family:"${f.family}";src:url("${fontUrl(f.id)}") format("truetype");font-display:swap;}`).join("");
 
+  // Always in the pinned bar, so trying on and the live mirror are never more than a click away (the rail icons are easy to miss).
+  const tryOnButton = (
+    <>
+      <Button
+        variant="outline"
+        data-testid="open-try-on"
+        aria-pressed={showTryOn}
+        onClick={() => {
+          setShowTryOn(true);
+          requestAnimationFrame(() => tryOnPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }}
+      >
+        <Shirt className="size-4" />
+        Try on
+      </Button>
+      {pictures.front.garmentKey !== null && (
+        <Button variant="outline" data-testid="open-live-mirror" onClick={() => setShowMirror(true)}>
+          <ScanFace className="size-4" />
+          Live mirror
+        </Button>
+      )}
+      {pictures.front.garmentKey !== null && (
+        <Button variant="outline" data-testid="open-3d-view" onClick={() => setShow3d(true)}>
+          <Box className="size-4" />
+          3D view
+        </Button>
+      )}
+    </>
+  );
+
   return (
     // Desktop: preview on the left (stays in view), configurator tabs on the right.
     // Phone: preview, then the tabs, with the size/price/cart bar pinned to the bottom.
@@ -404,11 +558,13 @@ export function DesignEditor(props: DesignEditorProps) {
 
       {/* ── preview ── */}
       <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-4">
-        <h1 className="text-2xl font-semibold lg:hidden">Design your {props.productName}</h1>
+        <h1 className="text-2xl font-semibold lg:hidden">{props.ownDress ? props.productName : `Design your ${props.productName}`}</h1>
         <div className="relative flex justify-center rounded-2xl bg-[#f3f2ef] py-4 pr-16 pl-4 sm:px-16" data-testid="preview">
           {fontsReady ? (
             <DesignCanvas
               garment={garments[side]}
+              offFabric={offFabric(side)}
+              field={fieldFor(side)}
               areas={areasOnSide}
               layers={layersOnSide}
               uploadUrls={uploadUrls}
@@ -426,6 +582,9 @@ export function DesignEditor(props: DesignEditorProps) {
               }}
               onLayerChange={(id, box) => updateLayer(id, (l) => ({ ...l, ...box }))}
               onRejected={(text) => setMessage({ kind: "error", text })}
+              onPrinted={(drawn, printed) => {
+                if (drawn === garments.front) printedRef.current = { garment: drawn, printed };
+              }}
             />
           ) : (
             <div className="flex aspect-[1200/1560] w-full max-w-[560px] items-center justify-center text-sm text-muted-foreground">Loading fonts…</div>
@@ -442,6 +601,16 @@ export function DesignEditor(props: DesignEditorProps) {
             <RailButton label="See it on me" pressed={showTryOn} onClick={() => setShowTryOn((v) => !v)}>
               <Shirt className="size-4" />
             </RailButton>
+            {pictures.front.garmentKey !== null && (
+              <RailButton label="Live mirror" pressed={showMirror} onClick={() => setShowMirror(true)}>
+                <ScanFace className="size-4" />
+              </RailButton>
+            )}
+            {pictures.front.garmentKey !== null && (
+              <RailButton label="3D view" pressed={show3d} onClick={() => setShow3d(true)}>
+                <Box className="size-4" />
+              </RailButton>
+            )}
           </div>
           <div className="absolute right-3 bottom-3 flex flex-col gap-2" role="group" aria-label="Garment side">
             {(["front", "back"] as const).filter((s) => pictures[s].garmentKey !== null).map((s) => (
@@ -454,24 +623,73 @@ export function DesignEditor(props: DesignEditorProps) {
             We don&apos;t have a picture of this exact style yet, so the preview shows the closest one. Your dress is made in the style you chose.
           </p>
         )}
-        <p className="text-xs text-muted-foreground">Drag items to move them. Use the corner handles to resize or rotate. Items stay inside the dashed areas.</p>
+        <p className="text-xs text-muted-foreground">
+          Drag items to move them. Use the corner handles to resize or rotate.{" "}
+          {activeArea?.clipToFabric ? `Place them anywhere on the ${garment.noun}: anything off the fabric isn't printed.` : "Items stay inside the dashed area."}
+        </p>
 
+        <div ref={tryOnPanel} />
         {showTryOn && (
-          <TryOnPanel source={{ kind: "design", spec, designId }} signedIn={props.customerId !== null} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+          <TryOnPanel
+            source={{ kind: "design", spec, designId }}
+            signedIn={props.customerId !== null}
+            noun={garment.noun}
+            garment={{ type: config.garmentType, sizes: props.availableSizes, productLengthCm: null }}
+            offeredPhoto={mirrorPhoto}
+            onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+          />
+        )}
+        {show3d && (
+          <Garment3dView
+            source={{ kind: "design", spec, designId }}
+            signedIn={props.customerId !== null}
+            noun={garment.noun}
+            onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+            onClose={() => setShow3d(false)}
+          />
+        )}
+        {showMirror && (
+          <LiveMirror
+            noun={garment.noun}
+            loadGarment={async (readParts) => {
+              const front = garments.front;
+              if (!front) throw new Error("The garment picture isn't ready yet");
+              // The design as drawn on the front, with its printed items when the canvas has made them.
+              const drawn = printedRef.current?.garment === front ? printedRef.current.printed : front;
+              const maskUrls = config.regions.flatMap((r) => {
+                const key = pictures.front.maskFor(r.id);
+                const url = key ? props.imageUrls[key] : undefined;
+                return url ? [url] : [];
+              });
+              return (await import("@/lib/vision/mirror/garment-source")).garmentFromDesign(drawn, maskUrls, readParts);
+            }}
+            onClose={() => setShowMirror(false)}
+            realistic={{ source: { kind: "design", spec, designId }, signedIn: props.customerId !== null, onSignIn: () => handleResult({ status: "signin" }, () => undefined) }}
+            onUsePhoto={(photo) => {
+              setMirrorPhoto(photo);
+              setShowTryOn(true);
+            }}
+          />
         )}
 
         {(props.initialDesign?.referencePhotoUrl || (props.alternatives && props.alternatives.length > 0)) && (
-          <div className="flex flex-wrap items-start gap-3 rounded-xl border p-3 text-sm" data-testid="start-info">
+          <div className="flex flex-wrap items-start gap-3 rounded-2xl border bg-card p-3 text-sm" data-testid="start-info">
             {props.initialDesign?.referencePhotoUrl && (
               <figure className="flex flex-col gap-1">
                 <span className="relative block h-28 w-20 overflow-hidden rounded-lg bg-muted">
-                  <Image src={props.initialDesign.referencePhotoUrl} alt="Your reference photo" fill unoptimized className="object-cover" />
+                  <Image src={props.initialDesign.referencePhotoUrl} alt={`Your reference ${reference}`} fill unoptimized className="object-cover" />
                 </span>
-                <figcaption className="text-xs text-muted-foreground">Your photo</figcaption>
+                <figcaption className="text-xs text-muted-foreground">Your {reference}</figcaption>
               </figure>
             )}
             <div className="flex flex-col gap-1">
-              <p>{spec.startedFrom === "photo" ? "We matched your photo to this dress and copied its main colors." : "We matched your description to this dress."}</p>
+              <p>
+                {props.ownDress
+                  ? `This is the ${garment.noun} from your ${reference}. Change its colours or add text, decorations and embroidery, or keep it exactly as it is. Try it on, then ask us for a price.`
+                  : spec.startedFrom === "photo"
+                    ? `We matched your ${reference} to this ${garment.noun} and copied its main colors.`
+                    : `We matched your description to this ${garment.noun}.`}
+              </p>
               {props.alternatives && props.alternatives.length > 0 && (
                 <p className="text-muted-foreground">
                   Other good matches:{" "}
@@ -493,37 +711,40 @@ export function DesignEditor(props: DesignEditorProps) {
       {/* ── configurator ── */}
       <div className="flex min-w-0 flex-col">
         <div className="mb-4">
-          <h1 className="hidden text-2xl font-semibold lg:block">Design your {props.productName}</h1>
+          <h1 className="hidden text-2xl font-semibold lg:block">{props.ownDress ? props.productName : `Design your ${props.productName}`}</h1>
           <p className="text-sm text-muted-foreground">Clothing brand logos can&apos;t be used.</p>
         </div>
 
-        <div role="tablist" aria-label="Design options" className="sticky top-0 z-10 grid grid-cols-4 border-b bg-background">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls={`panel-${t.id}`}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "h-12 px-1 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                tab === t.id ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* The page-coloured strip keeps scrolling options from showing around the pinned tabs. */}
+        <div className="sticky top-0 z-10 bg-background py-2">
+          <div role="tablist" aria-label="Design options" className="grid grid-cols-4 gap-1 rounded-full bg-secondary p-1">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls={`panel-${t.id}`}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "h-10 rounded-full px-1 text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/40",
+                  tab === t.id ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Panels stay mounted (hidden when inactive), so the AI box keeps polling and nothing resets. */}
-        <div className="min-h-[24rem] pt-4">
+        <div className="min-h-[24rem] pt-2">
           <div role="tabpanel" id="panel-fabric" aria-labelledby="tab-fabric" hidden={tab !== "fabric"}>
             {colorableRegions.length > 0 ? (
-              <FabricTab config={config} spec={spec} regions={colorableRegions} onChangeParts={(change) => commit((s) => ({ ...s, parts: change(s.parts) }))} />
+              <FabricTab config={config} spec={spec} regions={colorableRegions} noun={garment.noun} uploadUrls={uploadUrls} uploadState={uploadState} onUpload={uploadAsset} onChangeParts={(change) => commit((s) => ({ ...s, parts: change(s.parts) }))} />
             ) : (
-              <p className="text-sm text-muted-foreground">This dress comes in one fabric.</p>
+              <p className="text-sm text-muted-foreground">This {garment.noun} comes in one fabric.</p>
             )}
           </div>
           <div role="tabpanel" id="panel-style" aria-labelledby="tab-style" hidden={tab !== "style"}>
@@ -538,6 +759,7 @@ export function DesignEditor(props: DesignEditorProps) {
           <div role="tabpanel" id="panel-personalise" aria-labelledby="tab-personalise" hidden={tab !== "personalise"}>
             <PersonaliseTab
               config={config}
+              noun={garment.noun}
               activeArea={activeArea}
               onArea={chooseArea}
               selectedLayer={selectedLayer}
@@ -549,14 +771,36 @@ export function DesignEditor(props: DesignEditorProps) {
               }}
               onAddText={(content) => {
                 if (!activeArea || !firstFont) return;
-                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "text", ...centredBox(activeArea, 0.9, 3, 0.3), text: { content, fontId: firstFont, color: defaultColor } });
+                // On a whole-garment area, start at chest height; on a small area, near its top.
+                const box = centredBox(activeArea, 0.9, 30, 3, activeArea.clipToFabric ? 0.13 : 0.3);
+                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "text", ...box, text: { content, fontId: firstFont, color: contrastingColor(activeArea, box) } });
               }}
               onAddDecoration={(id) => {
                 if (!activeArea) return;
-                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "decoration", ...centredBox(activeArea, 0.35, 1, 0.72), decoration: { id, color: defaultColor } });
+                // On a whole-garment area, start just below the waist (above any hem); on a small area, low in it.
+                const box = centredBox(activeArea, 0.35, 12, 1, activeArea.clipToFabric ? 0.38 : 0.72);
+                addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "decoration", ...box, decoration: { id, color: contrastingColor(activeArea, box) } });
               }}
+              onOpenCutouts={() => (props.customerId ? setCutoutsOpen(true) : handleResult({ status: "signin" }, () => undefined))}
               upload={{ state: uploadState, removeBackground: removeBg, setRemoveBackground: setRemoveBg, onFile: (file) => void uploadImage(file) }}
             />
+            {cutoutsOpen && (
+              <CutoutDialog
+                config={config}
+                designProductId={props.productId}
+                onClose={() => setCutoutsOpen(false)}
+                onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
+                onUse={(cutout) => {
+                  setCutoutsOpen(false);
+                  if (!activeArea || !cutout.url) return;
+                  const url = cutout.url;
+                  setUploadUrls((u) => ({ ...u, [cutout.key]: url }));
+                  // Like a decoration: below the waist on a whole-garment area, low in a small one.
+                  const box = centredBox(activeArea, 0.35, 12, cutout.width / Math.max(1, cutout.height), activeArea.clipToFabric ? 0.38 : 0.72);
+                  addLayer({ id: newLayerId(), areaId: activeArea.id, kind: "image", ...box, image: { assetKey: cutout.key } });
+                }}
+              />
+            )}
           </div>
           <div role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" hidden={tab !== "ai"}>
             {props.aiEnabled ? (
@@ -582,13 +826,20 @@ export function DesignEditor(props: DesignEditorProps) {
                 onSignIn={() => handleResult({ status: "signin" }, () => undefined)}
               />
             ) : (
-              <div className="rounded-xl border border-dashed p-4" data-testid="ai-box">
+              <div className="rounded-2xl border border-dashed p-4" data-testid="ai-box">
                 <p className="font-medium">AI design box</p>
-                <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this dress.</p>
+                <p className="text-sm text-muted-foreground">AI design isn&apos;t available for this {garment.noun}.</p>
               </div>
             )}
           </div>
         </div>
+
+        {/* Your own dress: the price request, in the page (not the pinned bar, which it would make too tall). */}
+        {props.ownDress && (
+          <div className="mt-6 flex flex-col gap-3">
+            <QuoteRequest ownDress reference={reference} designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+          </div>
+        )}
 
         {/* ── size, price and cart: pinned to the bottom while scrolling ── */}
         <div className="sticky bottom-0 z-10 -mx-4 mt-6 flex flex-col gap-3 border-t bg-background/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur lg:mx-0 lg:px-0">
@@ -607,20 +858,20 @@ export function DesignEditor(props: DesignEditorProps) {
             </div>
           )}
 
-          {spec.startedFrom === "photo" && (
-            <QuoteRequest designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
+          {spec.startedFrom === "photo" && !props.ownDress && (
+            <QuoteRequest reference={reference} designId={designId} saved={designId !== null && !dirty && !isDraft} onSignIn={() => handleResult({ status: "signin" }, () => undefined)} />
           )}
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">Size</span>
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Dress size">
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${garment.label} size`}>
               {props.availableSizes.map((size) => (
                 <button
                   key={size}
                   type="button"
                   aria-pressed={spec.size === size}
                   onClick={() => commit((s) => ({ ...s, size }))}
-                  className={cn("h-8 min-w-10 rounded-lg border px-2.5 text-sm", spec.size === size ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+                  className={cn("h-8 min-w-10 rounded-full border border-input bg-card px-3 text-sm font-medium transition-colors", spec.size === size ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40")}
                 >
                   {size}
                 </button>
@@ -628,36 +879,51 @@ export function DesignEditor(props: DesignEditorProps) {
             </div>
           </div>
 
-          <div id="price-details" hidden={!showPrice}>
-            {price && (
-              <ul className="flex flex-col gap-1 rounded-lg bg-muted/40 p-3 text-sm" data-testid="price-breakdown">
-                {price.lines.map((line) => (
-                  <li key={line.label} className="flex justify-between gap-4">
-                    <span>{line.label}</span>
-                    <span className="tabular-nums">{formatBDT(line.amountMinor)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="mt-1 text-xs text-muted-foreground">Final price is confirmed when you save. Custom dresses are made to order.</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="mr-auto flex flex-col">
-              <span className="text-xl font-semibold tabular-nums" data-testid="design-total">
-                {price ? formatBDT(price.totalMinor) : "—"}
-              </span>
-              <button type="button" aria-expanded={showPrice} aria-controls="price-details" onClick={() => setShowPrice((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2">
-                {showPrice ? "Hide price details" : "Price details"}
-              </button>
+          {props.ownDress ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="mr-auto text-sm text-muted-foreground" data-testid="own-dress-price">
+                Made to order from your {reference}: the ClothSeeker team prices it.
+              </p>
+              {tryOnButton}
+              <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
+                {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
+              </Button>
             </div>
-            <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
-              {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
-            </Button>
-            <Button onClick={addToCart} disabled={pending || issues.length > 0 || !price}>
-              Add to cart
-            </Button>
-          </div>
+          ) : (
+            <>
+              <div id="price-details" hidden={!showPrice}>
+                {price && (
+                  <ul className="flex flex-col gap-1 rounded-xl bg-secondary p-3 text-sm" data-testid="price-breakdown">
+                    {price.lines.map((line) => (
+                      <li key={line.label} className="flex justify-between gap-4">
+                        <span>{line.label}</span>
+                        <span className="tabular-nums">{formatBDT(line.amountMinor)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-1 text-xs text-muted-foreground">Final price is confirmed when you save. Custom clothes are made to order.</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="mr-auto flex flex-col">
+                  <span className="text-xl font-semibold tabular-nums" data-testid="design-total">
+                    {price ? formatBDT(price.totalMinor) : "—"}
+                  </span>
+                  <button type="button" aria-expanded={showPrice} aria-controls="price-details" onClick={() => setShowPrice((v) => !v)} className="self-start text-xs text-muted-foreground underline underline-offset-2">
+                    {showPrice ? "Hide price details" : "Price details"}
+                  </button>
+                </div>
+                {tryOnButton}
+                <Button variant="outline" onClick={save} disabled={pending || issues.length > 0}>
+                  {pending ? "Saving…" : designId && !dirty && !isDraft ? "Saved" : "Save design"}
+                </Button>
+                <Button variant="brand" onClick={addToCart} disabled={pending || issues.length > 0 || !price}>
+                  Add to cart
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

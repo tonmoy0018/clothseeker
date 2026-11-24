@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { assertAdmin, type Actor } from "@/lib/auth/policy";
+import { IN_CATALOG } from "@/lib/catalog/product-status";
 import type { PrismaClient } from "@/lib/db/client";
 import { ImageValidationError, processImage, type ImagePurpose } from "@/lib/media/process-image";
 import type { StorageAdapter } from "@/lib/storage/adapter";
@@ -46,7 +47,7 @@ export async function uploadProductPhoto(
 ): Promise<{ key: string }> {
   assertAdmin(actor);
   const productId = productIdSchema.parse(rawProductId);
-  const product = await db.product.findUnique({ where: { id: productId }, select: { imageKeys: true } });
+  const product = await db.product.findFirst({ where: { id: productId, ...IN_CATALOG }, select: { imageKeys: true } });
   if (!product) {
     throw new AdminError("NOT_FOUND", "That dress no longer exists.");
   }
@@ -76,7 +77,7 @@ export async function removeProductPhoto(
 ): Promise<void> {
   assertAdmin(actor);
   const input = photoRefSchema.parse(rawInput);
-  const product = await db.product.findUnique({ where: { id: input.productId }, select: { imageKeys: true } });
+  const product = await db.product.findFirst({ where: { id: input.productId, ...IN_CATALOG }, select: { imageKeys: true } });
   // Only keys that belong to this product can be removed — never an arbitrary object.
   if (!product || !product.imageKeys.includes(input.key)) {
     throw new AdminError("NOT_FOUND", "That photo is no longer attached to this dress.");
@@ -95,7 +96,7 @@ export async function removeProductPhoto(
 export async function setCoverPhoto(db: PrismaClient, actor: Actor, rawInput: unknown): Promise<void> {
   assertAdmin(actor);
   const input = photoRefSchema.parse(rawInput);
-  const product = await db.product.findUnique({ where: { id: input.productId }, select: { imageKeys: true } });
+  const product = await db.product.findFirst({ where: { id: input.productId, ...IN_CATALOG }, select: { imageKeys: true } });
   if (!product || !product.imageKeys.includes(input.key)) {
     throw new AdminError("NOT_FOUND", "That photo is no longer attached to this dress.");
   }

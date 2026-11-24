@@ -29,10 +29,11 @@ import {
   updateVariantAction,
   uploadPhotoAction,
 } from "../actions";
+import { nativeSelectClass } from "@/components/ui/select";
 
-export const metadata: Metadata = { title: "Edit dress — ClothSeeker admin" };
+export const metadata: Metadata = { title: "Edit item — ClothSeeker admin" };
 
-const selectClass = "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm";
+const selectClass = nativeSelectClass;
 
 export default async function AdminProductPage({ params }: PageProps<"/admin/products/[id]">) {
   const admin = await requireAdmin();
@@ -95,9 +96,12 @@ export default async function AdminProductPage({ params }: PageProps<"/admin/pro
               defaults={{
                 name: product.name,
                 slug: product.slug,
+                garmentType: product.garmentType,
                 categoryId: product.categoryId,
                 description: product.description,
+                lengthCm: product.lengthCm,
               }}
+              garmentTypeLocked={product.template !== null}
             />
             <SubmitButton className="self-start">Save details</SubmitButton>
           </ActionForm>
@@ -246,7 +250,7 @@ export default async function AdminProductPage({ params }: PageProps<"/admin/pro
         <CardHeader>
           <CardTitle>Customization</CardTitle>
           <CardDescription>
-            Let customers design their own version of this dress: colors per part, text, images and style options.
+            Let customers design their own version of this item: colors per part, text, images and style options.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3">

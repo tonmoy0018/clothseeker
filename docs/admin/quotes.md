@@ -1,6 +1,14 @@
 # Answering tailoring quotes (ClothSeeker team)
 
-Customers can start a design from a **photo of a dress** they like. When it needs changes our templates can't make (a slit, pleats, a different cut), they ask us for a price. Open **Admin → Quotes**. The dashboard tile "Quotes to answer" shows how many are waiting.
+Customers can start a design from a **photo of a dress** they like. There are three kinds of request:
+
+- **"Your dress", exactly as it is.** They want the garment in their photo made as it is.
+- **"Your dress", with their changes.** Colours, prints, text, decorations or embroidery on the garment from their photo.
+- **One of our dresses,** with changes our templates can't make, such as a slit, pleats or a different cut.
+
+"Your dress" requests are always priced by you, and their notes are optional. The quote shows the customer's design on their own photo, plus their original photo, so you can see what to make. These dresses never appear in **Products**: you only reach them through the quote.
+
+Open **Admin → Quotes**. The dashboard tile "Quotes to answer" shows how many are waiting.
 
 | Tab | What's in it |
 |---|---|

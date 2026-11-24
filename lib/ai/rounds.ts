@@ -28,7 +28,7 @@ export type DesignRoundPayload = z.infer<typeof designRoundPayloadSchema>;
 /** ai_rounds.options: one entry per option, aligned with ai_rounds.option_keys (the previews). */
 export const storedOptionSchema = z.object({
   title: z.string().max(60),
-  summary: z.string().max(200),
+  summary: z.string().max(400),
   /** A DesignSpec that was template-valid when the round was made; revalidated again on pick. */
   spec: z.unknown(),
   motifKey: key.nullable(),

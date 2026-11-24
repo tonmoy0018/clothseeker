@@ -4,8 +4,9 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiProviderError, AI_FAILURE_MESSAGES } from "@/lib/ai/errors";
-import { FakeImage, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
-import type { AiProviders, TryOnProvider } from "@/lib/ai/types";
+import { FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
+import type { AiProviders, TryOnProvider, TryOnRequest } from "@/lib/ai/types";
+import { hemPlace, type TryOnFit } from "@/lib/fit/fit";
 import { processNextJob, runAiJobs, type AiWorkerDeps } from "@/lib/ai/worker/run";
 import { ForbiddenError, type Actor } from "@/lib/auth/policy";
 import { BUCKETS } from "@/lib/storage/buckets";
@@ -46,7 +47,7 @@ async function customizableProduct() {
   return { product, spec };
 }
 
-/** A portrait "photo" of the given grey level (the fake check rejects mean brightness < 60). */
+/** A "photo" of the given grey level (the fake check finds nobody below mean brightness 20). */
 function photo(grey = 140, width = 600, height = 900) {
   return sharp({ create: { width, height, channels: 3, background: { r: grey, g: grey, b: grey } } }).jpeg().toBuffer();
 }
@@ -55,7 +56,7 @@ function deps(providers: Partial<AiProviders> = {}, overrides: Partial<AiWorkerD
   return {
     db,
     storage,
-    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), ...providers },
+    providers: { planner: new FakePlanner(), image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker(), ...providers },
     workerId: "worker-a",
     timeoutMs: 10_000,
     backoffMs: () => 0,
@@ -97,12 +98,14 @@ describe("consent and photos", () => {
     expect((await listTryOnPhotos(db, storage, customer, now)).map((p) => p.id)).toEqual([view.id]);
   });
 
-  it("rejects landscape, dark and non-image uploads", async () => {
+  it("accepts landscape and dim photos, rejects all-black and non-image uploads", async () => {
     const customer = await createUser();
-    await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: await photo(140, 900, 600), consent: "yes" }), "UPLOAD_INVALID");
-    await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: await photo(20), consent: "yes" }), "UPLOAD_INVALID");
+    await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: await photo(2), consent: "yes" }), "UPLOAD_INVALID");
     await expectTryOnError(uploadTryOnPhoto(db, storage, customer, { bytes: Buffer.from("<svg/>"), consent: "yes" }), "UPLOAD_INVALID");
     expect(await db.tryOnPhoto.count()).toBe(0);
+    await uploadTryOnPhoto(db, storage, customer, { bytes: await photo(140, 900, 600), consent: "yes" });
+    await uploadTryOnPhoto(db, storage, customer, { bytes: await photo(30), consent: "yes" });
+    expect(await db.tryOnPhoto.count()).toBe(2);
   });
 
   it("admins can't upload try-on photos", async () => {
@@ -142,6 +145,49 @@ describe("try-on jobs", () => {
     expect((await db.tryOnResult.findFirstOrThrow()).productId).toBe(product.id);
   });
 
+  it("shows the chosen size on the person: the provider gets the fit, the result records it, a new fit is a new try-on", async () => {
+    const customer = await createUser();
+    const { product } = await customizableProduct();
+    await db.product.update({ where: { id: product.id }, data: { lengthCm: 115 } });
+    const pic = await uploaded(customer);
+    const seen: TryOnRequest[] = [];
+    const recording: TryOnProvider = { name: "recording", tryOn: async (request, signal) => (seen.push(request), new FakeTryOn().tryOn(request, signal)) };
+    // Girths measured from the photo in the browser: the middle of size M.
+    const fit: TryOnFit = { heightCm: 160, size: "M", girthsCm: [89, 71, 95] };
+    const start = (f: unknown) => createTryOnJob(db, storage, customer, { photoId: pic.id, source: { kind: "product", productId: product.id }, fit: f });
+
+    const first = await start(fit);
+    await processNextJob(deps({ tryOn: recording }));
+    expect(seen[0]?.fit).toEqual({ width: 1, hemLevel: hemPlace(160, 115).level });
+    const status = await getTryOnStatus(db, storage, customer, first.jobId);
+    if (status.state !== "done") throw new Error(`expected done, got ${status.state}`);
+    expect(status.result.fit).toEqual(fit);
+
+    expect(await start(fit)).toEqual({ jobId: first.jobId, cached: true });
+    expect((await start({ ...fit, size: "L" })).cached).toBe(false);
+    expect((await start({ ...fit, heightCm: 175 })).cached).toBe(false);
+    expect((await start({ ...fit, girthsCm: [100, 82, 106] })).cached).toBe(false);
+    // A photo that couldn't be measured: only the length follows the fit.
+    const unmeasured = await start({ heightCm: 160, size: "XL" });
+    expect(unmeasured.cached).toBe(false);
+    await expectTryOnError(start({ ...fit, heightCm: 300 }), "INVALID");
+    await expectTryOnError(start({ ...fit, girthsCm: [89, 71] }), "INVALID");
+    await expectTryOnError(start({ ...fit, girthsCm: [89, 71, 900] }), "INVALID");
+  });
+
+  it("deleting a photo also clears the fit (height and measurements) its try-ons showed", async () => {
+    const customer = await createUser();
+    const { product } = await customizableProduct();
+    const pic = await uploaded(customer);
+    await createTryOnJob(db, storage, customer, { photoId: pic.id, source: { kind: "product", productId: product.id }, fit: { heightCm: 160, size: "M", girthsCm: [89, 71, 95] } });
+    await processNextJob(deps());
+    expect((await db.tryOnResult.findFirstOrThrow()).fit).not.toBeNull();
+    await deleteTryOnPhoto(db, storage, customer, pic.id);
+    const row = await db.tryOnResult.findFirstOrThrow();
+    expect(row.deletedAt).not.toBeNull();
+    expect(row.fit).toBeNull();
+  });
+
   it("the same photo and design give the cached result; a changed design needs a new try-on", async () => {
     const customer = await createUser();
     const { spec } = await customizableProduct();
@@ -170,10 +216,11 @@ describe("try-on jobs", () => {
   it("a photo that fails the check gets a friendly message and uses no try-on", async () => {
     const customer = await createUser();
     const { spec } = await customizableProduct();
-    const dim = await uploaded(customer, 50);
+    // Nearly black: the (fake) check finds nobody in it.
+    const dim = await uploaded(customer, 12);
     const queued = await tryOnDesign(customer, dim.id, spec);
     await runAiJobs(deps());
-    expect(await getTryOnStatus(db, storage, customer, queued.jobId)).toEqual({ state: "failed", message: AI_FAILURE_MESSAGES.PHOTO_TOO_DARK, code: "PHOTO_TOO_DARK" });
+    expect(await getTryOnStatus(db, storage, customer, queued.jobId)).toEqual({ state: "failed", message: AI_FAILURE_MESSAGES.PHOTO_BODY_NOT_VISIBLE, code: "PHOTO_BODY_NOT_VISIBLE" });
     expect(await db.aIJob.findUniqueOrThrow({ where: { id: queued.jobId } })).toMatchObject({ status: "FAILED", attempts: 1 });
     expect((await getTryOnQuota(db, customer)).used).toBe(0);
   });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { AUDIENCE_IDS, garmentTypesFor, type Audience, type GarmentType } from "@/lib/catalog/garment-types";
 import { compareSizes, SIZE_ORDER } from "@/lib/catalog/size-chart";
 import type { PrismaClient } from "@/lib/db/client";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -19,6 +20,8 @@ const blankToUndefined = (value: unknown) => {
 
 /** Each filter is parsed independently; an invalid value is dropped instead of failing the page. */
 export const productFiltersSchema = z.object({
+  /** Shop section: women's or men's clothing (lib/catalog/garment-types.ts). */
+  for: z.preprocess(blankToUndefined, z.enum(AUDIENCE_IDS).optional()).catch(undefined),
   category: z.preprocess(blankToUndefined, z.string().regex(/^[a-z0-9-]{1,40}$/).optional()).catch(undefined),
   size: z.preprocess(blankToUndefined, z.enum(Size).optional()).catch(undefined),
   color: z.preprocess(blankToUndefined, z.string().trim().min(1).max(30).optional()).catch(undefined),
@@ -39,6 +42,7 @@ export type ProductCard = {
   slug: string;
   name: string;
   categoryName: string;
+  garmentType: GarmentType;
   fromPriceMinor: number;
   colors: ColorSwatch[];
   customizable: boolean;
@@ -93,6 +97,7 @@ export async function listProducts(db: PrismaClient, filters: ProductFilters, li
   const products = await db.product.findMany({
     where: {
       status: "ACTIVE",
+      ...(filters.for ? { garmentType: { in: garmentTypesFor(filters.for) } } : {}),
       ...(filters.category ? { category: { slug: filters.category } } : {}),
       variants: { some: matching },
     },
@@ -102,6 +107,7 @@ export async function listProducts(db: PrismaClient, filters: ProductFilters, li
       id: true,
       slug: true,
       name: true,
+      garmentType: true,
       imageKeys: true,
       category: { select: { name: true } },
       template: { select: { isActive: true } },
@@ -120,6 +126,7 @@ export async function listProducts(db: PrismaClient, filters: ProductFilters, li
       slug: p.slug,
       name: p.name,
       categoryName: p.category.name,
+      garmentType: p.garmentType,
       fromPriceMinor: Math.min(...matchingPrices),
       colors: uniqueColors(p.variants),
       customizable: p.template?.isActive ?? false,
@@ -134,15 +141,17 @@ export type FilterOptions = {
   colors: ColorSwatch[];
 };
 
-export async function getFilterOptions(db: PrismaClient): Promise<FilterOptions> {
+/** Filter choices for the shop, limited to one section when `audience` is given. */
+export async function getFilterOptions(db: PrismaClient, audience?: Audience): Promise<FilterOptions> {
+  const section = audience ? { garmentType: { in: garmentTypesFor(audience) } } : {};
   const [categories, variants] = await Promise.all([
     db.category.findMany({
-      where: { products: { some: { status: "ACTIVE" } } },
+      where: { products: { some: { status: "ACTIVE", ...section } } },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { slug: true, name: true },
     }),
     db.variant.findMany({
-      where: { isActive: true, product: { status: "ACTIVE" } },
+      where: { isActive: true, product: { status: "ACTIVE", ...section } },
       distinct: ["colorName"],
       orderBy: { colorName: "asc" },
       select: { colorName: true, colorHex: true },
@@ -166,6 +175,9 @@ export type ProductDetail = {
   name: string;
   description: string;
   category: { slug: string; name: string };
+  garmentType: GarmentType;
+  /** Length in cm from the shoulder, size M, when the team has listed it (try-on fit). */
+  lengthCm: number | null;
   customizable: boolean;
   imageKeys: string[];
   variants: ProductVariantOption[];
@@ -183,6 +195,8 @@ export async function getProductBySlug(db: PrismaClient, slug: string): Promise<
       slug: true,
       name: true,
       description: true,
+      garmentType: true,
+      lengthCm: true,
       imageKeys: true,
       category: { select: { slug: true, name: true } },
       template: { select: { isActive: true } },
@@ -201,6 +215,8 @@ export async function getProductBySlug(db: PrismaClient, slug: string): Promise<
     name: product.name,
     description: product.description,
     category: product.category,
+    garmentType: product.garmentType,
+    lengthCm: product.lengthCm,
     customizable: product.template?.isActive ?? false,
     imageKeys: product.imageKeys,
     variants: product.variants

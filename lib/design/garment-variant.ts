@@ -1,10 +1,12 @@
-import { STYLE_GROUPS, type StyleGroup, type StyleVariant, type TemplateConfig } from "@/types/template";
+import { STYLE_GROUP_IDS, STYLE_GROUP_WEIGHT, type StyleGroup } from "@/lib/catalog/garment-types";
+import type { StyleVariant, TemplateConfig } from "@/types/template";
 
 // Which garment picture (and region masks) shows a design's style choices.
 // Pure and shared by the browser preview and the server renderer, so both always pick the same one.
 
 export type Side = "front" | "back";
-export type StyleChoice = { neckline: string; sleeveLength: string; dressLength: string };
+/** The chosen option per style group (a design's `styleOptions`). */
+export type StyleChoice = Partial<Record<StyleGroup, string>>;
 
 export type GarmentPicture = {
   /** Storage key of the garment image, or null when the template has none for this side. */
@@ -15,19 +17,16 @@ export type GarmentPicture = {
   exact: boolean;
 };
 
-/** How much a group counts when looking for the closest picture: length shows most, then sleeves. */
-const WEIGHT: Record<StyleGroup, number> = { dressLength: 4, sleeveLength: 2, neckline: 1 };
-
 function matches(variant: StyleVariant, choice: StyleChoice): boolean {
-  return STYLE_GROUPS.every((group) => variant.match[group] === undefined || variant.match[group] === choice[group]);
+  return STYLE_GROUP_IDS.every((group) => variant.match[group] === undefined || variant.match[group] === choice[group]);
 }
 
 function specificity(variant: StyleVariant): number {
-  return STYLE_GROUPS.filter((group) => variant.match[group] !== undefined).length;
+  return STYLE_GROUP_IDS.filter((group) => variant.match[group] !== undefined).length;
 }
 
 function closeness(variant: StyleVariant, choice: StyleChoice): number {
-  return STYLE_GROUPS.reduce((sum, group) => sum + (variant.match[group] === undefined || variant.match[group] === choice[group] ? WEIGHT[group] : 0), 0);
+  return STYLE_GROUP_IDS.reduce((sum, group) => sum + (variant.match[group] === undefined || variant.match[group] === choice[group] ? STYLE_GROUP_WEIGHT[group] : 0), 0);
 }
 
 /** The most specific matching style picture for this side (first one wins a tie), or null. */

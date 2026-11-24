@@ -4,7 +4,9 @@ import Image from "next/image";
 import { useActionState, useMemo, useState } from "react";
 
 import { DressIllustration } from "@/components/shop/dress-illustration";
+import type { GarmentType } from "@/lib/catalog/garment-types";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/select";
 import type { Size } from "@/lib/generated/prisma/enums";
 import { formatBDT } from "@/lib/money";
 import type { ProductVariantOption } from "@/lib/shop/catalog";
@@ -13,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { buyNow, type BuyNowState } from "./actions";
 
 type PurchasePanelProps = {
+  garmentType: GarmentType;
   productId: string;
   slug: string;
   name: string;
@@ -22,6 +25,9 @@ type PurchasePanelProps = {
   colors: readonly { name: string; hex: string }[];
   /** Signed photo URLs; when empty, a color illustration is shown instead. */
   photos: readonly string[];
+  /** Shown above the name (the category) and under the Buy button (other ways to get it, delivery notes). */
+  eyebrow?: React.ReactNode;
+  children?: React.ReactNode;
 };
 
 const initialState: BuyNowState = {};
@@ -30,7 +36,7 @@ const initialState: BuyNowState = {};
  * Size/color picker. Availability and prices shown here are display-only: the server
  * re-resolves the variant, price and stock when the form is submitted.
  */
-export function PurchasePanel({ productId, slug, name, variants, sizes, colors, photos }: PurchasePanelProps) {
+export function PurchasePanel({ productId, slug, name, variants, sizes, colors, photos, garmentType, eyebrow, children }: PurchasePanelProps) {
   const firstAvailable = variants.find((v) => v.available > 0);
   const [color, setColor] = useState(firstAvailable?.colorName ?? colors[0]?.name ?? "");
   const [size, setSize] = useState<Size | null>(null);
@@ -53,10 +59,10 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
   }
 
   return (
-    <div className="grid gap-8 md:grid-cols-2">
+    <div className="grid gap-8 md:grid-cols-2 lg:gap-12">
       {activePhoto ? (
-        <div className="flex flex-col gap-3">
-          <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-muted">
+        <div className="flex flex-col gap-3 md:sticky md:top-6 md:self-start">
+          <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-muted ring-1 ring-black/5">
             <Image src={activePhoto} alt={name} fill unoptimized priority sizes="(min-width: 768px) 50vw, 100vw" className="object-cover" />
           </div>
           {photos.length > 1 && (
@@ -69,8 +75,8 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
                   aria-label={`Show photo ${index + 1}`}
                   aria-pressed={index === photoIndex}
                   className={cn(
-                    "relative size-16 overflow-hidden rounded-md bg-muted ring-1 ring-black/10",
-                    index === photoIndex && "ring-2 ring-foreground",
+                    "relative size-16 overflow-hidden rounded-xl bg-muted ring-1 ring-black/10 transition",
+                    index === photoIndex && "ring-2 ring-brand",
                   )}
                 >
                   <Image src={url} alt="" fill unoptimized sizes="64px" className="object-cover" />
@@ -80,9 +86,10 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
           )}
         </div>
       ) : (
-        <DressIllustration colorHex={colorHex} label={`${name} in ${color}`} className="aspect-[4/5]" />
+        <DressIllustration colorHex={colorHex} label={`${name} in ${color}`} className="aspect-[4/5]" garmentType={garmentType} />
       )}
 
+      <div className="flex min-w-0 flex-col gap-6">
       <form action={formAction} className="flex flex-col gap-6">
         <input type="hidden" name="productId" value={productId} />
         <input type="hidden" name="slug" value={slug} />
@@ -90,9 +97,10 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
         <input type="hidden" name="size" value={size ?? ""} />
         <input type="hidden" name="quantity" value={quantity} />
 
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{name}</h1>
-          <p className="text-xl" data-testid="price">
+        <div className="flex flex-col gap-2">
+          {eyebrow}
+          <h1 className="text-3xl leading-tight font-semibold sm:text-4xl">{name}</h1>
+          <p className="text-2xl" data-testid="price">
             {selected ? formatBDT(selected.priceMinor) : fromPrice !== null ? `From ${formatBDT(fromPrice)}` : ""}
           </p>
         </div>
@@ -114,7 +122,7 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
                 aria-label={c.name}
                 title={c.name}
                 className={cn(
-                  "size-9 rounded-full ring-1 ring-black/15 transition outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "size-9 rounded-full ring-1 ring-black/15 ring-offset-background transition outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   c.name === color && "ring-2 ring-foreground ring-offset-2",
                 )}
                 style={{ backgroundColor: /^#[0-9a-f]{6}$/i.test(c.hex) ? c.hex : undefined }}
@@ -140,8 +148,8 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
                   }}
                   aria-pressed={s === size}
                   className={cn(
-                    "h-9 min-w-12 rounded-lg border px-3 text-sm transition disabled:cursor-not-allowed disabled:text-muted-foreground disabled:line-through",
-                    s === size ? "border-foreground bg-foreground text-background" : "hover:bg-muted",
+                    "h-10 min-w-12 rounded-full border border-input bg-card px-4 text-sm font-medium transition disabled:cursor-not-allowed disabled:bg-transparent disabled:font-normal disabled:text-muted-foreground disabled:line-through",
+                    s === size ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40",
                   )}
                 >
                   {s}
@@ -152,7 +160,7 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
           {selected && selected.available > 0 && selected.available <= 3 && (
             <p className="text-sm text-amber-700 dark:text-amber-400">Only {selected.available} left</p>
           )}
-          <a href="#size-chart" className="text-sm text-muted-foreground underline underline-offset-4">
+          <a href="#size-chart" className="self-start text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
             Size chart
           </a>
         </fieldset>
@@ -162,23 +170,18 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
             <label htmlFor="quantity-select" className="text-sm font-medium">
               Quantity
             </label>
-            <select
-              id="quantity-select"
-              value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm"
-            >
+            <NativeSelect id="quantity-select" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))}>
               {Array.from({ length: selected.available }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         )}
 
         <div className="flex flex-col gap-2">
-          <Button type="submit" size="lg" disabled={!canBuy || pending}>
+          <Button type="submit" size="lg" variant="brand" disabled={!canBuy || pending} className="h-12 text-base">
             {pending ? "Adding…" : size ? "Buy now" : "Select a size"}
           </Button>
           {state.error && (
@@ -188,6 +191,8 @@ export function PurchasePanel({ productId, slug, name, variants, sizes, colors, 
           )}
         </div>
       </form>
+      {children}
+      </div>
     </div>
   );
 }

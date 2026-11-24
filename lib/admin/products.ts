@@ -1,6 +1,9 @@
 import { z } from "zod";
 
+import { GARMENT_TYPE_IDS, type GarmentType } from "@/lib/catalog/garment-types";
+
 import { assertAdmin, type Actor } from "@/lib/auth/policy";
+import { CATALOG_STATUSES, IN_CATALOG, type CatalogStatus } from "@/lib/catalog/product-status";
 import { compareSizes } from "@/lib/catalog/size-chart";
 import type { PrismaClient } from "@/lib/db/client";
 import { Prisma } from "@/lib/generated/prisma/client";
@@ -22,8 +25,14 @@ export const slugSchema = z
 
 const productFields = {
   name: z.string().trim().min(2, "Enter a name").max(80),
+  garmentType: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.enum(GARMENT_TYPE_IDS).default("dress")),
   categoryId: z.uuid("Choose a category"),
   description: z.string().trim().min(10, "Write at least a sentence").max(2000),
+  /** Optional length in cm from the shoulder, size M: where the hem lands in try-on fit. */
+  lengthCm: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? null : v),
+    z.coerce.number().int("Enter the length in whole centimetres").min(30, "Length must be 30–200 cm").max(200, "Length must be 30–200 cm").nullable(),
+  ),
 };
 
 export const createProductSchema = z.object({
@@ -33,7 +42,7 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = z.object({ id: z.uuid(), ...productFields, slug: slugSchema });
 
-export const setProductStatusSchema = z.object({ id: z.uuid(), status: z.enum(ProductStatus) });
+export const setProductStatusSchema = z.object({ id: z.uuid(), status: z.enum(CATALOG_STATUSES) });
 
 async function ensureCategory(db: PrismaClient, categoryId: string): Promise<void> {
   const exists = await db.category.count({ where: { id: categoryId } });
@@ -55,7 +64,7 @@ export async function createProduct(db: PrismaClient, actor: Actor, rawInput: un
   try {
     return await db.$transaction(async (tx) => {
       const product = await tx.product.create({
-        data: { name: input.name, slug, categoryId: input.categoryId, description: input.description, status: "DRAFT" },
+        data: { name: input.name, slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description, lengthCm: input.lengthCm, status: "DRAFT" },
         select: { id: true },
       });
       await writeAudit(tx, actor, "product.create", { type: "product", id: product.id }, { slug });
@@ -63,7 +72,7 @@ export async function createProduct(db: PrismaClient, actor: Actor, rawInput: un
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new AdminError("CONFLICT", `The web address "${slug}" is already used by another dress.`);
+      throw new AdminError("CONFLICT", `The web address "${slug}" is already used by another item.`);
     }
     throw error;
   }
@@ -72,16 +81,21 @@ export async function createProduct(db: PrismaClient, actor: Actor, rawInput: un
 export async function updateProduct(db: PrismaClient, actor: Actor, rawInput: unknown): Promise<void> {
   assertAdmin(actor);
   const input = updateProductSchema.parse(rawInput);
-  const before = await db.product.findUnique({
-    where: { id: input.id },
-    select: { name: true, slug: true, categoryId: true, description: true },
+  const before = await db.product.findFirst({
+    where: { id: input.id, ...IN_CATALOG },
+    select: { name: true, slug: true, garmentType: true, categoryId: true, description: true, lengthCm: true, template: { select: { id: true } } },
   });
   if (!before) {
-    throw new AdminError("NOT_FOUND", "That dress no longer exists.");
+    throw new AdminError("NOT_FOUND", "That item no longer exists.");
+  }
+  // A template's style options belong to its garment type, so the type is fixed once one exists.
+  if (before.template && input.garmentType !== before.garmentType) {
+    throw new AdminError("BLOCKED", "This item has a customization template, so its garment type can't change.");
   }
   await ensureCategory(db, input.categoryId);
-  const after = { name: input.name, slug: input.slug, categoryId: input.categoryId, description: input.description };
-  const fields = changedFields(before, after);
+  const after = { name: input.name, slug: input.slug, garmentType: input.garmentType, categoryId: input.categoryId, description: input.description, lengthCm: input.lengthCm };
+  const { template: _template, ...beforeFields } = before;
+  const fields = changedFields(beforeFields, after);
   if (fields.length === 0) {
     return;
   }
@@ -93,7 +107,7 @@ export async function updateProduct(db: PrismaClient, actor: Actor, rawInput: un
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new AdminError("CONFLICT", `The web address "${input.slug}" is already used by another dress.`);
+      throw new AdminError("CONFLICT", `The web address "${input.slug}" is already used by another item.`);
     }
     throw error;
   }
@@ -103,9 +117,9 @@ export async function updateProduct(db: PrismaClient, actor: Actor, rawInput: un
 export async function setProductStatus(db: PrismaClient, actor: Actor, rawInput: unknown): Promise<void> {
   assertAdmin(actor);
   const input = setProductStatusSchema.parse(rawInput);
-  const product = await db.product.findUnique({ where: { id: input.id }, select: { status: true } });
+  const product = await db.product.findFirst({ where: { id: input.id, ...IN_CATALOG }, select: { status: true } });
   if (!product) {
-    throw new AdminError("NOT_FOUND", "That dress no longer exists.");
+    throw new AdminError("NOT_FOUND", "That item no longer exists.");
   }
   if (product.status === input.status) {
     return;
@@ -126,7 +140,7 @@ export async function setProductStatus(db: PrismaClient, actor: Actor, rawInput:
 }
 
 export const adminProductFiltersSchema = z.object({
-  status: z.enum(ProductStatus).optional().catch(undefined),
+  status: z.enum(CATALOG_STATUSES).optional().catch(undefined),
   categoryId: z.uuid().optional().catch(undefined),
   q: z.string().trim().max(80).optional().catch(undefined),
 });
@@ -151,7 +165,7 @@ export async function listAdminProducts(db: PrismaClient, actor: Actor, rawFilte
   const filters = adminProductFiltersSchema.parse(rawFilters ?? {});
   const products = await db.product.findMany({
     where: {
-      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.status ? { status: filters.status } : IN_CATALOG),
       ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
       ...(filters.q
         ? {
@@ -209,7 +223,9 @@ export type AdminProduct = {
   name: string;
   description: string;
   status: ProductStatus;
+  garmentType: GarmentType;
   categoryId: string;
+  lengthCm: number | null;
   imageKeys: string[];
   variants: AdminVariant[];
   template: { isActive: boolean; version: number; aiEnabled: boolean } | null;
@@ -220,15 +236,17 @@ export async function getAdminProduct(db: PrismaClient, actor: Actor, productId:
   if (!z.uuid().safeParse(productId).success) {
     return null;
   }
-  const product = await db.product.findUnique({
-    where: { id: productId },
+  const product = await db.product.findFirst({
+    where: { id: productId, ...IN_CATALOG },
     select: {
       id: true,
       slug: true,
       name: true,
       description: true,
       status: true,
+      garmentType: true,
       categoryId: true,
+      lengthCm: true,
       imageKeys: true,
       template: { select: { isActive: true, version: true, aiEnabled: true } },
       variants: {
@@ -262,7 +280,7 @@ export async function listCategories(db: PrismaClient, actor: Actor) {
 }
 
 export type AdminDashboard = {
-  counts: Record<ProductStatus, number>;
+  counts: Record<CatalogStatus, number>;
   lowStock: { productId: string; productName: string; size: Size; colorName: string; stock: number }[];
   inactiveTemplates: number;
 };
@@ -272,18 +290,18 @@ export const LOW_STOCK_THRESHOLD = 2;
 export async function getAdminDashboard(db: PrismaClient, actor: Actor): Promise<AdminDashboard> {
   assertAdmin(actor);
   const [grouped, lowStock, inactiveTemplates] = await Promise.all([
-    db.product.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.product.groupBy({ by: ["status"], where: IN_CATALOG, _count: { _all: true } }),
     db.variant.findMany({
       where: { isActive: true, stock: { lte: LOW_STOCK_THRESHOLD }, product: { status: "ACTIVE" } },
       orderBy: [{ stock: "asc" }, { updatedAt: "desc" }],
       take: 12,
       select: { size: true, colorName: true, stock: true, product: { select: { id: true, name: true } } },
     }),
-    db.customizationTemplate.count({ where: { isActive: false } }),
+    db.customizationTemplate.count({ where: { isActive: false, product: IN_CATALOG } }),
   ]);
-  const counts: Record<ProductStatus, number> = { DRAFT: 0, ACTIVE: 0, ARCHIVED: 0 };
+  const counts: Record<CatalogStatus, number> = { DRAFT: 0, ACTIVE: 0, ARCHIVED: 0 };
   for (const row of grouped) {
-    counts[row.status] = row._count._all;
+    if (row.status !== "PRIVATE") counts[row.status] = row._count._all;
   }
   return {
     counts,

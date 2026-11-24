@@ -1,13 +1,18 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AUDIENCES, GARMENT_TYPE_IDS, GARMENT_TYPES, type GarmentType } from "@/lib/catalog/garment-types";
+import { nativeSelectClass } from "@/components/ui/select";
+import { textareaClass } from "@/components/ui/textarea";
 
 type ProductFieldsProps = {
   categories: { id: string; name: string }[];
-  defaults?: { name: string; slug: string; categoryId: string; description: string };
+  defaults?: { name: string; slug: string; garmentType: GarmentType; categoryId: string; description: string; lengthCm: number | null };
   slugOptional?: boolean;
+  /** The garment type can't change once the item has a customization template. */
+  garmentTypeLocked?: boolean;
 };
 
-export function ProductFields({ categories, defaults, slugOptional }: ProductFieldsProps) {
+export function ProductFields({ categories, defaults, slugOptional, garmentTypeLocked }: ProductFieldsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="flex flex-col gap-1.5">
@@ -28,13 +33,33 @@ export function ProductFields({ categories, defaults, slugOptional }: ProductFie
         <p className="text-xs text-muted-foreground">Shown as /products/your-slug. Lowercase letters, numbers, hyphens.</p>
       </div>
       <div className="flex flex-col gap-1.5">
+        <Label htmlFor="garmentType">Garment type</Label>
+        {garmentTypeLocked && <input type="hidden" name="garmentType" value={defaults?.garmentType} />}
+        <select
+          id="garmentType"
+          name={garmentTypeLocked ? undefined : "garmentType"}
+          disabled={garmentTypeLocked}
+          defaultValue={defaults?.garmentType ?? "dress"}
+          className={nativeSelectClass}
+        >
+          {GARMENT_TYPE_IDS.map((type) => (
+            <option key={type} value={type}>
+              {AUDIENCES[GARMENT_TYPES[type].audience].label}&apos;s {GARMENT_TYPES[type].noun}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {garmentTypeLocked ? "Fixed, because this item has a customization template." : "Decides the style options customers can choose (e.g. neckline or collar)."}
+        </p>
+      </div>
+      <div className="flex flex-col gap-1.5">
         <Label htmlFor="categoryId">Category</Label>
         <select
           id="categoryId"
           name="categoryId"
           required
           defaultValue={defaults?.categoryId ?? ""}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+          className={nativeSelectClass}
         >
           <option value="" disabled>
             Choose a category
@@ -46,6 +71,11 @@ export function ProductFields({ categories, defaults, slugOptional }: ProductFie
           ))}
         </select>
       </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="lengthCm">Length (cm, optional)</Label>
+        <Input id="lengthCm" name="lengthCm" type="number" inputMode="numeric" min={30} max={200} defaultValue={defaults?.lengthCm ?? ""} className="w-32" />
+        <p className="text-xs text-muted-foreground">From the shoulder to the hem, size M. Try-on uses it to show where the hem lands on each customer.</p>
+      </div>
       <div className="flex flex-col gap-1.5 md:col-span-2">
         <Label htmlFor="description">Description</Label>
         <textarea
@@ -56,7 +86,7 @@ export function ProductFields({ categories, defaults, slugOptional }: ProductFie
           maxLength={2000}
           rows={4}
           defaultValue={defaults?.description}
-          className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className={textareaClass}
         />
       </div>
     </div>

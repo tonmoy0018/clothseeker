@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { AiError, BRAND_LOGO_MESSAGE } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePlanner, FakeTryOn } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePhotoChecker, FakePlanner, FakeTryOn } from "@/lib/ai/providers/fake";
 import { getJobStatus } from "@/lib/ai/jobs";
 import { QUOTA_MESSAGE } from "@/lib/ai/quota";
 import { getStartStatus, startDesignFrom, uploadReferencePhoto } from "@/lib/ai/starts";
@@ -35,7 +35,7 @@ async function customizable(name: string, description: string, aiEnabled = true)
 }
 
 function deps(planner: PlannerProvider = new FakePlanner()): AiWorkerDeps {
-  const providers: AiProviders = { planner, image: new FakeImage(), tryOn: new FakeTryOn() };
+  const providers: AiProviders = { planner, image: new FakeImage(), tryOn: new FakeTryOn(), photoCheck: new FakePhotoChecker() };
   return { db, storage, providers, workerId: "worker-a", timeoutMs: 10_000, backoffMs: () => 0 };
 }
 
@@ -56,7 +56,7 @@ async function expectAiError(promise: Promise<unknown>, code: AiError["code"], m
 }
 
 async function finished(customer: Actor, jobId: string) {
-  const status = await getStartStatus(db, customer, jobId);
+  const status = await getStartStatus(db, storage, customer, jobId);
   if (status.state !== "done") throw new Error(`expected done, got ${JSON.stringify(status)}`);
   return status.result;
 }
@@ -70,12 +70,12 @@ describe("start from a dress photo", () => {
     expect(photo.key.startsWith(`${customer.id}/references/`)).toBe(true);
 
     const { jobId } = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key });
-    expect(await getStartStatus(db, customer, jobId)).toEqual({ state: "pending", position: "queued" });
+    expect(await getStartStatus(db, storage, customer, jobId)).toEqual({ state: "pending", position: "queued" });
     await processNextJob(deps());
     const result = await finished(customer, jobId);
 
     const design = await db.design.findUniqueOrThrow({ where: { id: result.designId } });
-    expect(design).toMatchObject({ customerId: customer.id, productId: result.productId, status: "DRAFT", startedFrom: "PHOTO", referencePhotoKey: photo.key });
+    expect(design).toMatchObject({ customerId: customer.id, productId: result.productId, status: "DRAFT", startedFrom: "PHOTO", referencePhotoKey: photo.key, referenceIsDrawing: false });
     const spec = parseDesignSpec(design.spec);
     expect(spec.startedFrom).toBe("photo");
     expect(spec.referencePhotoKey).toBe(photo.key);
@@ -85,6 +85,13 @@ describe("start from a dress photo", () => {
     expect(validateDesignAgainstTemplate(spec, TEMPLATE, { productId: result.productId, templateId: template.id, availableSizes: ["M"], customerId: customer.id })).toEqual([]);
     expect(result.alternatives).not.toContain(result.productId);
     expect(result.roundJobId).toBeNull();
+
+    // The same picture marked as a drawing: matched the same way, and the design says "your drawing".
+    const drawn = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key, sketch: true });
+    expect(drawn.cached).toBe(false);
+    await processNextJob(deps());
+    const fromDrawing = await finished(customer, drawn.jobId);
+    expect(await db.design.findUniqueOrThrow({ where: { id: fromDrawing.designId } })).toMatchObject({ startedFrom: "PHOTO", referenceIsDrawing: true });
   });
 
   it("rejects photos with a clothing brand logo and flags them", async () => {
@@ -93,7 +100,7 @@ describe("start from a dress photo", () => {
     const photo = await uploadReferencePhoto(storage, customer, await dressPhoto(FAKE_LOGO_MARKER));
     const { jobId } = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key });
     await runAiJobs(deps());
-    expect(await getStartStatus(db, customer, jobId)).toEqual({ state: "failed", message: BRAND_LOGO_MESSAGE, code: "BRAND_LOGO" });
+    expect(await getStartStatus(db, storage, customer, jobId)).toEqual({ state: "failed", message: BRAND_LOGO_MESSAGE, code: "BRAND_LOGO" });
     expect(await db.flaggedItem.findFirstOrThrow()).toMatchObject({ kind: "BRAND_LOGO", customerId: customer.id, aiJobId: jobId, storageKey: photo.key });
     expect(await db.design.count()).toBe(0);
   });
@@ -126,15 +133,15 @@ describe("start from a dress photo", () => {
     const rogue: PlannerProvider = {
       name: "rogue",
       detectBrandLogos: (i, s) => inner.detectBrandLogos(i, s),
-      checkTryOnPhoto: (i, s) => inner.checkTryOnPhoto(i, s),
       planDesign: (r, s) => inner.planDesign(r, s),
       matchDress: async () => ({ productId: randomUUID(), alternatives: [] }),
+      readGarment: async () => ({}),
     };
     const { jobId } = await startDesignFrom(db, storage, customer, { mode: "photo", referenceKey: photo.key });
     await runAiJobs(deps(rogue));
     await runAiJobs(deps(rogue));
     await runAiJobs(deps(rogue));
-    expect(await getStartStatus(db, customer, jobId)).toMatchObject({ state: "failed", code: "INVALID_PLAN" });
+    expect(await getStartStatus(db, storage, customer, jobId)).toMatchObject({ state: "failed", code: "INVALID_PLAN" });
     expect(await db.aIJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({ attempts: 3 });
     expect(await db.design.count()).toBe(0);
   });
@@ -186,6 +193,6 @@ describe("start from a description", () => {
     const bob = await createUser();
     await customizable("Linen Wrap Dress", "A breezy wrap dress in linen");
     const { jobId } = await startDesignFrom(db, storage, alice, { mode: "description", description: "A breezy linen wrap dress" });
-    await expectAiError(getStartStatus(db, bob, jobId), "NOT_FOUND");
+    await expectAiError(getStartStatus(db, storage, bob, jobId), "NOT_FOUND");
   });
 });

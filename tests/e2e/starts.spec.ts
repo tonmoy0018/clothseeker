@@ -16,6 +16,7 @@ test.describe("@supabase start a design", () => {
 
     const photo = await sharp({ create: { width: 500, height: 700, channels: 3, background: "#722f37" } }).jpeg().toBuffer();
     await page.getByLabel("Upload a dress photo").setInputFiles({ name: "dress.jpg", mimeType: "image/jpeg", buffer: photo });
+    await page.getByRole("button", { name: /^Start from our closest dress/ }).click();
     await expect(page.getByTestId("start-waiting")).toContainText("Matching your photo");
     await expect(page).toHaveURL(/\/customize\/[0-9a-f-]{36}\?design=[0-9a-f-]{36}/, { timeout: 30_000 });
     const info = page.getByTestId("start-info");

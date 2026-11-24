@@ -100,6 +100,35 @@ describe("renderFlatGarment", () => {
   });
 });
 
+describe("areas that trim to the fabric", () => {
+  // A whole-front area over the full garment picture, and a red image in its top-left corner, which
+  // lies off the dress (backdrop) in the drawn garment.
+  const wholeFront = { id: "whole-front", label: "Whole front", side: "front" as const, rect: { x: 0, y: 0, w: 1, h: 1 }, widthCm: 80, heightCm: 104, clipToFabric: true };
+  const template = { ...TEMPLATE, placementAreas: [...TEMPLATE.placementAreas, wholeFront] };
+  const spec = validSpec({ layers: [{ id: "i1", areaId: "whole-front", kind: "image", x: 0, y: 0, w: 0.5, h: 0.5, rotation: 0, image: { assetKey: KEYS.upload } }] });
+
+  it("trims the preview to the garment's outline", async () => {
+    const preview = await renderPreview(normalizeForRender(spec, template), "front", assets);
+    // Off the dress (top-left corner): the backdrop, not red.
+    const off = await pixel(preview, 30, 30);
+    expect(off.r - off.g).toBeLessThan(20);
+    // On the dress near its left shoulder (inside the image's quarter): red.
+    const on = await pixel(preview, 470, 380);
+    expect(on.r).toBeGreaterThan(on.g + 60);
+  });
+
+  it("prints only what lands on the fabric, at a lower DPI for a large area", async () => {
+    const [file] = await renderPrintFiles(normalizeForRender(spec, template), assets);
+    if (!file) throw new Error("no print file");
+    expect(printPixels(80, 104).dpi).toBeLessThan(300);
+    expect(Math.max(file.widthPx, file.heightPx)).toBeLessThanOrEqual(6000);
+    const meta = await sharp(file.png).metadata();
+    const at = (fx: number, fy: number) => pixel(file.png, Math.round(fx * ((meta.width ?? 1) - 1)), Math.round(fy * ((meta.height ?? 1) - 1)));
+    expect((await at(0.03, 0.03)).a).toBe(0); // off the dress
+    expect((await at(0.39, 0.24)).a).toBe(255); // on it
+  });
+});
+
 describe("renderPrintFiles", () => {
   it("produces one transparent 300 DPI PNG per area with layers, at real size", async () => {
     const [text] = validSpec().layers;
@@ -116,7 +145,7 @@ describe("renderPrintFiles", () => {
     const chest = files[0];
     if (!chest) throw new Error("missing");
     snapshot("print-front-chest.png", chest.png);
-    expect(printPixels(20, 15)).toEqual({ width: 2362, height: 1772 });
+    expect(printPixels(20, 15)).toEqual({ width: 2362, height: 1772, dpi: 300 });
     const meta = await sharp(chest.png).metadata();
     expect([meta.width, meta.height, meta.density, meta.hasAlpha]).toEqual([2362, 1772, 300, true]);
     expect((await pixel(chest.png, 2, 2)).a).toBe(0);

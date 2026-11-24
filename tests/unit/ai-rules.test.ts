@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import { findBrandTerm } from "@/lib/ai/brands";
 import { AI_FAILURE_MESSAGES, BRAND_LOGO_MESSAGE, failureMessage } from "@/lib/ai/errors";
-import { FAKE_LOGO_MARKER, FakeImage, FakePlanner } from "@/lib/ai/fake";
+import { FAKE_LOGO_MARKER, FakeImage, FakePlanner } from "@/lib/ai/providers/fake";
 import { aiInputHash, canonicalJson, normalizeInstruction } from "@/lib/ai/hash";
-import { nearestColor, parsePlan, planConstraints, summarizeSpec, variationToSpec, type PlanVariation } from "@/lib/ai/plan";
+import { decorationInWords, nearestColor, parsePlan, placementBox, planConstraints, summarizeSpec, variationToSpec, type PlanVariation } from "@/lib/ai/plan";
 import { startOfDhakaDay } from "@/lib/ai/quota";
 import type { PlanRequest } from "@/lib/ai/types";
 import { knockOutWhite } from "@/lib/ai/worker/design-round";
@@ -152,6 +152,75 @@ describe("planner output", () => {
     const spec = variationToSpec(validSpec(), option.variation, { ...CONTEXT, template: TEMPLATE, motifKey: foreignKey });
     expect(spec?.layers.map((l) => l.id)).toEqual(["t1", "d1"]);
     expect(spec?.parts.skirt?.color).toBe("#1f6f50");
+  });
+
+  it("changes only what the variation names: other parts and style choices stay as they are", () => {
+    const [option] = parsePlan({ variations: [{ title: "Just the skirt", summary: "Emerald skirt.", parts: [{ regionId: "skirt", color: "#1f6f50" }] }] });
+    if (!option) throw new Error("no option");
+    const base = validSpec();
+    const spec = variationToSpec(base, option.variation, { ...CONTEXT, template: TEMPLATE, motifKey: null });
+    expect(spec?.styleOptions).toEqual(base.styleOptions);
+    expect(spec?.parts.bodice).toEqual(base.parts.bodice);
+    expect(spec?.parts.skirt?.color).toBe("#1f6f50");
+  });
+
+  it("places items where asked: the wearer's left chest is on the picture's right on the front, left on the back", () => {
+    const [chest, back] = [TEMPLATE.placementAreas[0], TEMPLATE.placementAreas[2]];
+    if (!chest || !back) throw new Error("fixture areas");
+    const fallback = { x: 0, y: 0, w: 1, h: 1 };
+    const leftChest = placementBox(chest, { area: chest.id, across: "wearer-left", down: "top", size: "small" }, "ornament", fallback);
+    expect(leftChest.x + leftChest.w / 2).toBeGreaterThan(0.6);
+    expect(leftChest.y + leftChest.h / 2).toBeLessThan(0.4);
+    // Small and square in centimetres: 22% of the area's shorter side (15 cm).
+    expect(leftChest.w * chest.widthCm).toBeCloseTo(0.22 * 15, 1);
+    expect(leftChest.h * chest.heightCm).toBeCloseTo(0.22 * 15, 1);
+    const onBack = placementBox(back, { across: "wearer-left" }, "ornament", fallback);
+    expect(onBack.x + onBack.w / 2).toBeLessThan(0.4);
+    // Boxes stay inside the area; no placement keeps the default box.
+    const large = placementBox(chest, { across: "wearer-right", down: "bottom", size: "large" }, "text", fallback);
+    expect(large.x).toBeGreaterThanOrEqual(0);
+    expect(large.x + large.w).toBeLessThanOrEqual(1);
+    expect(large.y + large.h).toBeLessThanOrEqual(1);
+    expect(placementBox(chest, null, "ornament", fallback)).toBe(fallback);
+  });
+
+  it("uses built-in decorations, also when a drawn motif can't be made, and only allowed ones", () => {
+    const ctx = { ...CONTEXT, template: TEMPLATE, motifKey: null };
+    const placement = { area: "front-chest", across: "wearer-left", down: "top", size: "small" };
+    const [chosen, named, unknown] = parsePlan({
+      variations: [
+        { title: "Star", summary: "", decoration: { id: "star", color: "#c9a227", placement } },
+        { title: "Drawn", summary: "", motif: { prompt: "a small golden star", color: "#c9a227", placement } },
+        { title: "Unknown", summary: "", decoration: { id: "crest", color: "#c9a227" } },
+      ],
+    });
+    if (!chosen || !named || !unknown) throw new Error("no options");
+    for (const option of [chosen, named]) {
+      const spec = variationToSpec(validSpec(), option.variation, ctx);
+      const layer = spec?.layers.find((l) => l.id === "ai-decoration");
+      expect(layer?.kind === "decoration" && layer.decoration.id).toBe("star");
+      expect(layer?.areaId).toBe("front-chest");
+      if (spec) expect(validateDesignAgainstTemplate(spec, TEMPLATE, CONTEXT)).toEqual([]);
+    }
+    expect(variationToSpec(validSpec(), unknown.variation, ctx)?.layers.some((l) => l.id.startsWith("ai-"))).toBe(false);
+    expect(decorationInWords("flower motif", TEMPLATE)).toBe("flower");
+    expect(decorationInWords("a club crest", TEMPLATE)).toBeNull();
+  });
+
+  it("keeps earlier AI items when a follow-up doesn't replace them, and removes them only when asked", () => {
+    const ctx = { ...CONTEXT, template: TEMPLATE, motifKey: null };
+    const [first, darker, plain] = parsePlan({
+      variations: [
+        { title: "Star", summary: "", decoration: { id: "star", color: "#c9a227" }, text: { content: "Ava", fontId: "lobster", color: "#f5f5f0" } },
+        { title: "Darker", summary: "", parts: [{ regionId: "skirt", color: "#1b1b1b" }] },
+        { title: "Plain", summary: "", remove: ["decoration"] },
+      ],
+    });
+    if (!first || !darker || !plain) throw new Error("no options");
+    const decorated = variationToSpec(validSpec(), first.variation, ctx);
+    if (!decorated) throw new Error("no spec");
+    expect(variationToSpec(decorated, darker.variation, ctx)?.layers.map((l) => l.id)).toEqual(["t1", "d1", "ai-decoration", "ai-text"]);
+    expect(variationToSpec(decorated, plain.variation, ctx)?.layers.map((l) => l.id)).toEqual(["t1", "d1", "ai-text"]);
   });
 
   it("nearestColor picks the closest allowed color", () => {

@@ -1,25 +1,29 @@
 "use client";
 
-import { ImagePlus, Sparkles, Type } from "lucide-react";
+import { ImagePlus, Scissors, Sparkles, Type } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DECORATIONS, decorationSvg, type DecorationId } from "@/lib/catalog/decorations";
+import { FINISH_LABEL, finishesFor, type Finish } from "@/lib/catalog/finishes";
 import { FONTS, type FontId } from "@/lib/catalog/fonts";
+import { finishedKind, isCutoutKey } from "@/lib/design/validate";
 import { formatBDT } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { DesignLayer } from "@/types/design-spec";
 import type { PlacementArea, TemplateConfig } from "@/types/template";
 
+import { DecorationControls, ImageControls } from "./decoration-controls";
 import { AccordionRow, Swatch, Tile } from "./editor-ui";
 import { decorationDataUrl } from "./recolor";
+import { nativeSelectClass } from "@/components/ui/select";
 
 // Personalise tab: where on the dress, then text, decorations and the customer's own image,
 // plus the controls for whichever item is selected on the canvas.
 
-type Row = "text" | "decorations" | "image";
+type Row = "text" | "decorations" | "cutout" | "image";
 
 export type UploadControls = {
   state: string | null;
@@ -30,6 +34,8 @@ export type UploadControls = {
 
 export function PersonaliseTab(props: {
   config: TemplateConfig;
+  /** What the garment is called ("Where on the dress"). */
+  noun: string;
   activeArea: PlacementArea | null;
   onArea: (area: PlacementArea) => void;
   selectedLayer: DesignLayer | null;
@@ -38,6 +44,8 @@ export function PersonaliseTab(props: {
   onDeleteLayer: (id: string) => void;
   onAddText: (content: string) => void;
   onAddDecoration: (id: DecorationId) => void;
+  /** Opens "Take a decoration from a dress". */
+  onOpenCutouts: () => void;
   upload: UploadControls;
 }) {
   const { config, activeArea, selectedLayer } = props;
@@ -48,14 +56,23 @@ export function PersonaliseTab(props: {
   const decorations = DECORATIONS.filter((d) => config.allowedDecorations.includes(d.id));
 
   if (config.placementAreas.length === 0) {
-    return <p className="text-sm text-muted-foreground">This dress has no print areas, so text and images can&apos;t be added.</p>;
+    return <p className="text-sm text-muted-foreground">This {props.noun} has no print areas, so text and images can&apos;t be added.</p>;
   }
 
   return (
     <div className="flex flex-col gap-4">
       {selectedLayer && (
-        <section className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3 text-sm" data-testid="selected-layer">
-          <h3 className="font-medium">Selected {selectedLayer.kind === "text" ? "text" : selectedLayer.kind === "image" ? "image" : "decoration"}</h3>
+        <section className="flex flex-col gap-3 rounded-xl border bg-secondary/50 p-3 text-sm" data-testid="selected-layer">
+          <h3 className="font-medium">
+            Selected{" "}
+            {selectedLayer.kind === "text"
+              ? "text"
+              : selectedLayer.kind === "image"
+                ? isCutoutKey(selectedLayer.image.assetKey)
+                  ? "decoration (from a dress)"
+                  : "image"
+                : "decoration"}
+          </h3>
           {selectedLayer.kind === "text" && (
             <>
               <Input
@@ -72,7 +89,7 @@ export function PersonaliseTab(props: {
                     const fontId: FontId | undefined = FONTS.find((f) => f.id === e.target.value)?.id;
                     if (fontId) props.onUpdateLayer(selectedLayer.id, (l) => (l.kind === "text" ? { ...l, text: { ...l.text, fontId } } : l));
                   }}
-                  className="h-8 rounded-lg border border-input bg-background px-2"
+                  className={nativeSelectClass}
                 >
                   {fonts.map((f) => (
                     <option key={f.id} value={f.id}>
@@ -105,6 +122,23 @@ export function PersonaliseTab(props: {
               ))}
             </div>
           )}
+          <FinishChoice layer={selectedLayer} config={config} onChange={(finish) => props.onUpdateLayer(selectedLayer.id, (l) => withFinish(l, finish))} />
+          {selectedLayer.kind === "decoration" && (
+            <DecorationControls
+              layer={selectedLayer}
+              config={config}
+              onUpdate={(patch) => props.onUpdateLayer(selectedLayer.id, (l) => (l.kind === "decoration" ? patch(l) : l))}
+            />
+          )}
+          {selectedLayer.kind === "image" && (
+            <ImageControls
+              layer={selectedLayer}
+              config={config}
+              unitPriceMinor={isCutoutKey(selectedLayer.image.assetKey) ? config.addOns.decorationMinor : config.addOns.imageMinor}
+              unitLabel={isCutoutKey(selectedLayer.image.assetKey) ? "decoration" : "image"}
+              onUpdate={(patch) => props.onUpdateLayer(selectedLayer.id, (l) => (l.kind === "image" ? patch(l) : l))}
+            />
+          )}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => props.onMoveLayer(selectedLayer.id, 1)}>
               Bring forward
@@ -120,7 +154,7 @@ export function PersonaliseTab(props: {
       )}
 
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-medium">Where on the dress</span>
+        <span className="text-sm font-medium">Where on the {props.noun}</span>
         <div className="flex flex-wrap gap-2" role="group" aria-label="Print area">
           {config.placementAreas.map((area) => (
             <button
@@ -128,7 +162,7 @@ export function PersonaliseTab(props: {
               type="button"
               aria-pressed={activeArea?.id === area.id}
               onClick={() => props.onArea(area)}
-              className={cn("flex h-auto flex-col items-start rounded-lg border px-3 py-1.5 text-left text-sm", activeArea?.id === area.id ? "border-foreground bg-foreground text-background" : "hover:bg-muted")}
+              className={cn("flex h-auto flex-col items-start rounded-xl border border-input bg-card px-3 py-1.5 text-left text-sm transition-colors", activeArea?.id === area.id ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40")}
             >
               <span>{area.label}</span>
               <span className="text-xs opacity-70">
@@ -180,10 +214,26 @@ export function PersonaliseTab(props: {
           </AccordionRow>
         )}
 
+        <AccordionRow
+          id="add-cutout"
+          title="From another dress"
+          value={`+${formatBDT(config.addOns.decorationMinor)} each`}
+          icon={<Scissors className="size-5" />}
+          open={open === "cutout"}
+          onToggle={() => toggle("cutout")}
+        >
+          <div className="flex flex-col gap-2 text-sm">
+            <p className="text-xs text-muted-foreground">Take embroidery, lace or a print from one of our dresses: draw a box around it and we cut it out.</p>
+            <Button variant="outline" className="self-start" disabled={!activeArea} onClick={props.onOpenCutouts}>
+              Take a decoration from a dress
+            </Button>
+          </div>
+        </AccordionRow>
+
         <AccordionRow id="add-image" title="Your image or logo" value={`+${formatBDT(config.addOns.imageMinor)}`} icon={<ImagePlus className="size-5" />} open={open === "image"} onToggle={() => toggle("image")}>
           <div className="flex flex-col gap-2 text-sm">
             <div className="flex flex-wrap items-center gap-3">
-              <label className={cn("inline-flex h-9 cursor-pointer items-center rounded-lg border px-3 hover:bg-muted", (props.upload.state || !activeArea) && "pointer-events-none opacity-60")}>
+              <label className={cn(buttonVariants({ variant: "outline" }), "cursor-pointer", (props.upload.state || !activeArea) && "pointer-events-none opacity-60")}>
                 {props.upload.state ?? "Upload image"}
                 <input
                   type="file"
@@ -207,6 +257,33 @@ export function PersonaliseTab(props: {
       </div>
     </div>
   );
+}
+
+/** Print, embroidery or sequins, for the kinds of item and finishes this garment offers, with their prices. */
+function FinishChoice({ layer, config, onChange }: { layer: DesignLayer; config: TemplateConfig; onChange: (finish: Finish) => void }) {
+  const kind = finishedKind(layer);
+  const offered = finishesFor(kind).filter((f) => f === "print" || config.finishes[f] !== null);
+  if (offered.length < 2) return null;
+  const printPrice = kind === "text" ? config.addOns.textMinor : kind === "image" ? config.addOns.imageMinor : config.addOns.decorationMinor;
+  const price = (f: Finish) => (f === "print" ? printPrice : (config.finishes[f] ?? 0));
+  const current = layer.finish ?? "print";
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground">Finish</span>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Finish">
+        {offered.map((f) => (
+          <Button key={f} size="sm" variant={current === f ? "default" : "outline"} aria-pressed={current === f} onClick={() => onChange(f)}>
+            {FINISH_LABEL[f]} ({formatBDT(price(f))})
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function withFinish(layer: DesignLayer, finish: Finish): DesignLayer {
+  const { finish: _old, ...rest } = layer;
+  return finish === "print" ? { ...rest } : { ...rest, finish };
 }
 
 function DecorationIcon({ id }: { id: DecorationId }) {

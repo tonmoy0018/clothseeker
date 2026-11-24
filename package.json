@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "tsx scripts/fetch-vision-assets.ts",
     "dev": "next dev",
+    "prebuild": "tsx scripts/fetch-vision-assets.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -26,10 +28,15 @@
     "db:clean-test": "tsx scripts/clean-test-data.ts",
     "db:check": "tsx scripts/check-connections.ts",
     "env:local": "tsx scripts/write-local-env.ts",
+    "vision:fetch": "tsx scripts/fetch-vision-assets.ts",
+    "tryon:setup": "tsx scripts/setup-local-tryon.ts",
+    "llm:setup": "tsx scripts/setup-local-llm.ts",
+    "model3d:setup": "tsx scripts/setup-local-3d.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "@google/model-viewer": "4.4.0",
     "@gradio/client": "^2.7.1",
     "@imgly/background-removal": "1.7.0",
     "@next/env": "16.3.8",
@@ -43,6 +50,7 @@
     "lucide-react": "^1.52.0",
     "next": "16.3.8",
     "nodemailer": "^10.0.16",
+    "onnxruntime-web": "1.30.0",
     "opentype.js": "^2.0.0",
     "pdf-lib": "1.17.1",
     "pg": "^8.23.1",
@@ -52,6 +60,7 @@
     "server-only": "^0.0.1",
     "shadcn": "^4.21.1",
     "sharp": "0.35.5",
+    "three": "0.183.2",
     "tw-animate-css": "^1.4.0",
     "zod": "^4.6.5"
   },

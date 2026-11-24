@@ -7,6 +7,7 @@ import { MAX_DISPUTE_PHOTOS } from "@/lib/disputes/rules";
 import { downscalePhoto } from "@/lib/media/client-resize";
 
 import { reportProblemAction, type ReportState } from "./dispute-actions";
+import { textareaClass } from "@/components/ui/textarea";
 
 const initial: ReportState = { error: null, done: false };
 const deadlineFormat = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeZone: "Asia/Dhaka" });
@@ -47,7 +48,7 @@ export function ReportProblem({ orderId, itemId, deadline }: { orderId: string; 
           maxLength={1000}
           required
           placeholder="e.g. The skirt colour is much darker than my design, and a seam is open on the left side"
-          className="rounded-lg border border-input bg-transparent px-2.5 py-2 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className={textareaClass}
         />
       </label>
       <label className="flex flex-col gap-1">

@@ -38,12 +38,11 @@ export function openQuoteWhere(now: Date): Prisma.QuoteRequestWhereInput {
 
 const requestSchema = z.object({
   designId: z.uuid(),
-  notes: z
-    .string()
-    .trim()
-    .min(10, "Tell the tailors what needs special attention (at least a few words).")
-    .max(1000, "Keep your notes under 1000 characters."),
+  notes: z.string().trim().max(1000, "Keep your notes under 1000 characters."),
 });
+
+/** Tailoring a ClothSeeker dress needs a word on what to change; the customer's own dress (made as it is) doesn't. */
+const NOTES_NEEDED = "Tell the tailors what needs special attention (at least a few words).";
 
 /** Asks the team for a price. Freezes the design (spec + its own preview) for the quote. */
 export async function requestQuote(
@@ -61,7 +60,7 @@ export async function requestQuote(
   const input = parsed.data;
   const design = await db.design.findFirst({
     where: { id: input.designId, customerId: actor.id },
-    select: { id: true, status: true, startedFrom: true, referencePhotoKey: true, spec: true },
+    select: { id: true, status: true, startedFrom: true, referencePhotoKey: true, referenceIsDrawing: true, spec: true },
   });
   if (!design) {
     throw new QuoteError("NOT_FOUND", "That design doesn't exist or isn't yours.");
@@ -75,6 +74,9 @@ export async function requestQuote(
       throw new QuoteError("NOT_ELIGIBLE", "This design needs changes before it can be quoted. Open it and save it again.");
     }
     throw error;
+  }
+  if (!checked.context.template.ownDress && input.notes.length < 10) {
+    throw new QuoteError("INVALID", NOTES_NEEDED);
   }
 
   // Render the snapshot's preview before the transaction (slow; no locks held).
@@ -101,6 +103,7 @@ export async function requestQuote(
           specSnapshot: checked.spec,
           previewKey,
           referencePhotoKey: design.referencePhotoKey,
+          referenceIsDrawing: design.referenceIsDrawing,
           respondBy: new Date(now.getTime() + QUOTE_RESPONSE_WINDOW_MS),
           createdAt: now,
         },
@@ -119,6 +122,8 @@ export type QuoteView = {
   designId: string;
   productId: string;
   productName: string;
+  /** A customer's own garment: what the AI read in their photo, for the team (null otherwise). */
+  garmentDescription: string | null;
   size: string;
   notes: string;
   status: QuoteStatus;
@@ -129,6 +134,8 @@ export type QuoteView = {
   createdAt: string;
   previewUrl: string | null;
   referencePhotoUrl: string | null;
+  /** The reference is the customer's drawing, not a photo. */
+  referenceIsDrawing: boolean;
   inCart: boolean;
 };
 
@@ -144,8 +151,9 @@ const quoteSelect = {
   createdAt: true,
   previewKey: true,
   referencePhotoKey: true,
+  referenceIsDrawing: true,
   specSnapshot: true,
-  design: { select: { productId: true, product: { select: { name: true } } } },
+  design: { select: { productId: true, product: { select: { name: true, status: true, description: true } } } },
   cartItems: { select: { id: true } },
 } as const;
 
@@ -161,8 +169,9 @@ type QuoteRow = {
   createdAt: Date;
   previewKey: string | null;
   referencePhotoKey: string | null;
+  referenceIsDrawing: boolean;
   specSnapshot: unknown;
-  design: { productId: string; product: { name: string } };
+  design: { productId: string; product: { name: string; status: string; description: string } };
   cartItems: { id: string }[];
 };
 
@@ -182,6 +191,7 @@ export async function toQuoteViews(storage: StorageAdapter, rows: QuoteRow[], no
       designId: r.designId,
       productId: r.design.productId,
       productName: r.design.product.name,
+      garmentDescription: r.design.product.status === "PRIVATE" ? r.design.product.description : null,
       size,
       notes: r.notes,
       status: effectiveQuoteStatus(r, now),
@@ -192,6 +202,7 @@ export async function toQuoteViews(storage: StorageAdapter, rows: QuoteRow[], no
       createdAt: r.createdAt.toISOString(),
       previewUrl: r.previewKey ? (urls.get(r.previewKey) ?? null) : null,
       referencePhotoUrl: r.referencePhotoKey ? (urls.get(r.referencePhotoKey) ?? null) : null,
+      referenceIsDrawing: r.referenceIsDrawing,
       inCart: r.cartItems.length > 0,
     };
   });

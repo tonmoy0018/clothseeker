@@ -9,7 +9,10 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-display), Georgia, "Times New Roman", serif;
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-soft: var(--brand-soft);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,38 +52,42 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* ClothSeeker's look: warm paper, deep indigo ink and a terracotta accent (the colours of block-printed cloth). */
+  --background: oklch(0.985 0.006 85);
+  --foreground: oklch(0.21 0.025 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.21 0.025 265);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.21 0.025 265);
+  --primary: oklch(0.27 0.05 268);
+  --primary-foreground: oklch(0.985 0.006 85);
+  --secondary: oklch(0.95 0.012 85);
+  --secondary-foreground: oklch(0.27 0.05 268);
+  --muted: oklch(0.96 0.009 85);
+  --muted-foreground: oklch(0.47 0.02 265);
+  --accent: oklch(0.95 0.012 85);
+  --accent-foreground: oklch(0.27 0.05 268);
+  --destructive: oklch(0.55 0.2 27);
+  --border: oklch(0.9 0.012 85);
+  --input: oklch(0.86 0.014 85);
+  --ring: oklch(0.55 0.145 38);
+  --brand: oklch(0.55 0.145 38);
+  --brand-foreground: oklch(0.99 0.005 85);
+  --brand-soft: oklch(0.95 0.03 55);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.975 0.008 85);
+  --sidebar-foreground: oklch(0.21 0.025 265);
+  --sidebar-primary: oklch(0.27 0.05 268);
+  --sidebar-primary-foreground: oklch(0.985 0.006 85);
+  --sidebar-accent: oklch(0.94 0.014 85);
+  --sidebar-accent-foreground: oklch(0.27 0.05 268);
+  --sidebar-border: oklch(0.9 0.012 85);
+  --sidebar-ring: oklch(0.55 0.145 38);
 }
 
 .dark {
@@ -115,6 +122,9 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --brand: oklch(0.72 0.13 45);
+  --brand-foreground: oklch(0.17 0.02 265);
+  --brand-soft: oklch(0.3 0.04 45);
 }
 
 @layer base {
@@ -127,4 +137,29 @@
   html {
     @apply font-sans;
   }
+  /* Display serif for page and section titles in the shop; the team's tool keeps the plain sans. */
+  h1,
+  h2 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
+  [data-surface="admin"] h1,
+  [data-surface="admin"] h2 {
+    font-family: var(--font-sans);
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--brand) 22%, transparent);
+  }
+  /* Native checkboxes, radios and sliders in the brand's ink instead of the browser's blue. */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--primary);
+  }
+}
+
+/* Card titles carry the font-heading utility, which a base-layer rule can't override: unlayered on purpose. */
+[data-surface="admin"] [data-slot="card-title"] {
+  font-family: var(--font-sans);
 }

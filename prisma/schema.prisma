@@ -36,12 +36,15 @@ model User {
   tryOnPhotos   TryOnPhoto[]
   tryOnResults  TryOnResult[]
   aiLimitHits   AiLimitHit[]
+  cutouts       DecorationCutout[]
   notifications Notification[]
   quoteRequests QuoteRequest[]
   reviews       Review[]
   disputes      Dispute[]
   flaggedItems  FlaggedItem[]
   auditLogs     AuditLog[]
+  bodyProfile   BodyProfile?
+  ownDresses    Product[]          @relation("OwnDresses")
 
   @@map("users")
 }
@@ -52,6 +55,9 @@ enum ProductStatus {
   DRAFT
   ACTIVE
   ARCHIVED
+  /// A customer's own dress, made from their photo (lib/own-dress): only its owner designs on it, never
+  /// in the shop or the team's catalogue, and ordered only through a quote.
+  PRIVATE
 }
 
 enum Size {
@@ -76,26 +82,43 @@ model Category {
   @@map("categories")
 }
 
+/// Lower-case values match the ids in lib/catalog/garment-types.ts.
+enum GarmentType {
+  dress
+  shirt
+  panjabi
+}
+
 model Product {
   id          String        @id @default(uuid()) @db.Uuid
   slug        String        @unique
   name        String
   description String
   categoryId  String        @map("category_id") @db.Uuid
+  /// What kind of garment it is (lib/catalog/garment-types.ts): decides its style options and wording.
+  garmentType GarmentType   @default(dress) @map("garment_type")
   status      ProductStatus @default(DRAFT)
   /// Storage keys in the product-media bucket (uploads arrive in Phase 2).
   imageKeys   String[]      @default([]) @map("image_keys")
+  /// Garment length in cm from the shoulder, size M (try-on fit: where the hem lands). Null = not listed.
+  lengthCm    Int?          @map("length_cm")
+  /// The customer whose own dress this is (status PRIVATE only). Kept PRIVATE if the account goes.
+  ownerId     String?       @map("owner_id") @db.Uuid
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
+  owner    User?                  @relation("OwnDresses", fields: [ownerId], references: [id], onDelete: SetNull)
   category Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   variants Variant[]
   template CustomizationTemplate?
   designs  Design[]
   reviews  Review[]
   tryOns   TryOnResult[]
+  cutouts  DecorationCutout[]
 
   @@index([status, categoryId])
+  @@index([status, garmentType])
+  @@index([ownerId])
   @@map("products")
 }
 
@@ -153,19 +176,21 @@ enum DesignStatus {
 }
 
 model Design {
-  id                String            @id @default(uuid()) @db.Uuid
-  customerId        String            @map("customer_id") @db.Uuid
-  productId         String            @map("product_id") @db.Uuid
-  templateId        String?           @map("template_id") @db.Uuid
-  templateVersion   Int?              @map("template_version")
+  id                 String            @id @default(uuid()) @db.Uuid
+  customerId         String            @map("customer_id") @db.Uuid
+  productId          String            @map("product_id") @db.Uuid
+  templateId         String?           @map("template_id") @db.Uuid
+  templateVersion    Int?              @map("template_version")
   /// Versioned DesignSpec (types/design-spec.ts, Phase 3). Never trusted from the client.
-  spec              Json
-  startedFrom       DesignStartedFrom @default(SHOP) @map("started_from")
-  referencePhotoKey String?           @map("reference_photo_key")
-  previewKey        String?           @map("preview_key")
-  status            DesignStatus      @default(DRAFT)
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
+  spec               Json
+  startedFrom        DesignStartedFrom @default(SHOP) @map("started_from")
+  referencePhotoKey  String?           @map("reference_photo_key")
+  /// The reference is the customer's drawing of the garment, not a photo (wording only).
+  referenceIsDrawing Boolean           @default(false) @map("reference_is_drawing")
+  previewKey         String?           @map("preview_key")
+  status             DesignStatus      @default(DRAFT)
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
 
   customer      User                   @relation(fields: [customerId], references: [id], onDelete: Cascade)
   product       Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
@@ -212,6 +237,8 @@ enum AIJobType {
   DESIGN_ROUND
   DRESS_MATCH
   TRY_ON
+  /// A 3D model of a garment for the 3D view (lib/model3d); result { modelKey }.
+  GARMENT_MODEL
 }
 
 enum AIJobStatus {
@@ -289,6 +316,9 @@ model TryOnResult {
   inputHash   String    @map("input_hash")
   /// tryon-private key of the result image (removed when deleted).
   resultKey   String    @map("result_key")
+  /// The fit tried (height, size, girths from the photo; lib/fit/fit.ts tryOnFitSchema), or
+  /// null. Cleared when the result is deleted.
+  fit         Json?
   saved       Boolean   @default(false)
   jobId       String    @unique @map("job_id") @db.Uuid
   deletedAt   DateTime? @map("deleted_at")
@@ -318,27 +348,29 @@ enum QuoteStatus {
 }
 
 model QuoteRequest {
-  id                String      @id @default(uuid()) @db.Uuid
-  customerId        String      @map("customer_id") @db.Uuid
-  designId          String      @map("design_id") @db.Uuid
+  id                 String      @id @default(uuid()) @db.Uuid
+  customerId         String      @map("customer_id") @db.Uuid
+  designId           String      @map("design_id") @db.Uuid
   /// The customer's notes for the tailors (what needs special tailoring).
-  notes             String      @default("")
+  notes              String      @default("")
   /// The design as it was when the quote was requested: later edits don't change what was quoted.
-  specSnapshot      Json        @map("spec_snapshot")
+  specSnapshot       Json        @map("spec_snapshot")
   /// Preview rendered for this quote (design-assets, `{customerId}/quotes/`).
-  previewKey        String?     @map("preview_key")
+  previewKey         String?     @map("preview_key")
   /// The dress photo the design was started from (design-assets `{customerId}/references/`).
-  referencePhotoKey String?     @map("reference_photo_key")
-  status            QuoteStatus @default(REQUESTED)
-  priceMinor        Int?        @map("price_minor")
-  responseNote      String?     @map("response_note")
+  referencePhotoKey  String?     @map("reference_photo_key")
+  /// Copied from the design: the reference is a drawing.
+  referenceIsDrawing Boolean     @default(false) @map("reference_is_drawing")
+  status             QuoteStatus @default(REQUESTED)
+  priceMinor         Int?        @map("price_minor")
+  responseNote       String?     @map("response_note")
   /// The team must reply by this time (24 hours after the request).
-  respondBy         DateTime    @map("respond_by")
-  respondedAt       DateTime?   @map("responded_at")
+  respondBy          DateTime    @map("respond_by")
+  respondedAt        DateTime?   @map("responded_at")
   /// A price is valid until this time (7 days after it was sent).
-  expiresAt         DateTime?   @map("expires_at")
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
+  expiresAt          DateTime?   @map("expires_at")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
 
   customer   User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   design     Design      @relation(fields: [designId], references: [id], onDelete: Restrict)
@@ -762,6 +794,8 @@ enum AiLimitFeature {
   DESIGN_ROUND
   TRY_ON
   SUBMISSIONS
+  CUTOUT
+  GARMENT_MODEL
 }
 
 /// A customer was refused because a daily AI limit was reached (for the AI metrics page).
@@ -775,6 +809,31 @@ model AiLimitHit {
 
   @@index([createdAt])
   @@map("ai_limit_hits")
+}
+
+/// A decoration a customer cut out of a ClothSeeker product photo, to use as an image layer.
+/// The file is design-assets `{customerId}/cutouts/…`; designs reference it by `imageKey`.
+model DecorationCutout {
+  id          String   @id @default(uuid()) @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  /// The dress it was taken from (kept by name if the product is deleted).
+  productId   String?  @map("product_id") @db.Uuid
+  productName String   @map("product_name")
+  imageIndex  Int      @map("image_index")
+  /// The box on the photo, as fractions {x, y, w, h}, plus strength and colour swaps.
+  settings    Json
+  imageKey    String   @unique @map("image_key")
+  width       Int
+  height      Int
+  /// Main colours of the cut-out (hex), before swaps.
+  palette     String[]
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  customer User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt])
+  @@map("decoration_cutouts")
 }
 
 /// Last sign of life of each worker process, with the providers it runs (for the AI metrics page).
@@ -837,4 +896,20 @@ model Notification {
   @@index([status, runAfter])
   @@index([customerId, createdAt])
   @@map("notifications")
+}
+
+// ─── Fit ──────────────────────────────────────────────────────────────────────
+
+/// A customer's height for try-on, kept only when they tick "Remember on my
+/// account" (lib/fit/profile.ts). Personal data: they can delete it, and it goes with the account.
+model BodyProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  heightCm  Int      @map("height_cm")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("body_profiles")
 }

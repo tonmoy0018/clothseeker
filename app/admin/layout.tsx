@@ -1,44 +1,40 @@
 import Link from "next/link";
 
-import { signOut } from "@/app/(shop)/auth-actions";
+import { signOut } from "@/app/(shop)/_auth/actions";
+import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+
+const LINKS = [
+  { href: "/admin", label: "Dashboard" },
+  { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/quotes", label: "Quotes" },
+  { href: "/admin/disputes", label: "Disputes" },
+  { href: "/admin/flags", label: "Flags" },
+  { href: "/admin/ai", label: "AI" },
+  { href: "/admin/audit", label: "Audit" },
+  { href: "/admin/products", label: "Products" },
+];
+
+const navLink = "rounded-full px-3 py-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
 
 // The layout only renders chrome. Authorization lives in each admin page and action
 // (requireAdmin), because layouts are not re-checked on every navigation.
 export default function AdminLayout({ children }: LayoutProps<"/admin">) {
   return (
-    <>
-      <header className="border-b bg-muted/40">
-        <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-sm">
-          <Link href="/admin" className="font-semibold">
-            ClothSeeker <span className="font-normal text-muted-foreground">· Admin</span>
+    // data-surface keeps the team's tool in the plain sans face (see globals.css).
+    <div data-surface="admin" className="flex flex-1 flex-col">
+      <header className="border-b bg-sidebar">
+        <nav aria-label="Admin" className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-1 gap-y-2 px-4 py-3 text-sm">
+          <Link href="/admin" className="mr-3 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
+            <Logo tag="Admin" />
           </Link>
-          <Link href="/admin" className="text-muted-foreground hover:text-foreground">
-            Dashboard
-          </Link>
-          <Link href="/admin/orders" className="text-muted-foreground hover:text-foreground">
-            Orders
-          </Link>
-          <Link href="/admin/quotes" className="text-muted-foreground hover:text-foreground">
-            Quotes
-          </Link>
-          <Link href="/admin/disputes" className="text-muted-foreground hover:text-foreground">
-            Disputes
-          </Link>
-          <Link href="/admin/flags" className="text-muted-foreground hover:text-foreground">
-            Flags
-          </Link>
-          <Link href="/admin/ai" className="text-muted-foreground hover:text-foreground">
-            AI
-          </Link>
-          <Link href="/admin/audit" className="text-muted-foreground hover:text-foreground">
-            Audit
-          </Link>
-          <Link href="/admin/products" className="text-muted-foreground hover:text-foreground">
-            Products
-          </Link>
-          <div className="ml-auto flex items-center gap-4">
-            <Link href="/" className="text-muted-foreground hover:text-foreground">
+          {LINKS.map((link) => (
+            <Link key={link.href} href={link.href} className={navLink}>
+              {link.label}
+            </Link>
+          ))}
+          <div className="ml-auto flex items-center gap-2">
+            <Link href="/" className={navLink}>
               View shop
             </Link>
             <form action={signOut}>
@@ -50,6 +46,6 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
         </nav>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
-    </>
+    </div>
   );
 }

@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 
@@ -6,7 +9,13 @@ import { chooseFabric, signUpFreshCustomer } from "./helpers";
 // @supabase — needs the local Supabase stack with seed data, plus the worker (started by
 // playwright.config.ts locally, with the fake providers). Fresh customers get a full try-on quota.
 
-async function portraitPhoto(): Promise<Buffer> {
+/** An AI-generated full-length photo of a person who doesn't exist (passes the on-device photo check). */
+function portraitPhoto(): Promise<Buffer> {
+  return readFile(path.join(process.cwd(), "tests", "fixtures", "tryon-woman.jpg"));
+}
+
+/** A plain picture with nobody in it. */
+function emptyPhoto(): Promise<Buffer> {
   return sharp({ create: { width: 600, height: 900, channels: 3, background: { r: 150, g: 140, b: 130 } } }).jpeg().toBuffer();
 }
 
@@ -53,7 +62,7 @@ test.describe("@supabase virtual try-on", () => {
     await expect(result.getByLabel(/Keep this try-on/)).toBeChecked();
     await panel.getByRole("button", { name: "Delete photo now" }).click();
     await expect(panel.getByRole("status")).toHaveText("Photo and its try-ons deleted.");
-    await expect(panel.getByRole("radio")).toHaveCount(0);
+    await expect(panel.getByRole("radiogroup", { name: "Your photos" })).toHaveCount(0);
   });
 
   test("ready-made dresses can be tried on from the product page", async ({ page }) => {
@@ -66,6 +75,95 @@ test.describe("@supabase virtual try-on", () => {
     await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await portraitPhoto() });
     await panel.getByRole("button", { name: "Try it on" }).click();
     await expect(panel.getByRole("img", { name: "You wearing this dress (AI preview)" })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("a photo that won't work is refused on the device, with the reason, before any upload", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/products/linen-wrap-dress");
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    const panel = page.getByTestId("try-on-panel");
+    await panel.getByLabel("I agree to use my photo for try-on").check();
+    const uploads: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && (request.postData() ?? "").includes('filename="photo.jpg"')) uploads.push(request.url());
+    });
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: await emptyPhoto() });
+    await expect(panel).toContainText("We couldn't find you in this photo", { timeout: 60_000 });
+    await expect(panel.getByRole("radio", { name: "Photo 1" })).toHaveCount(0);
+    expect(uploads).toEqual([]);
+  });
+
+  test("photos of any size are used: a huge one is shrunk on the device, a tiny one enlarged", async ({ page }) => {
+    test.setTimeout(120_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/products/linen-wrap-dress");
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    const panel = page.getByTestId("try-on-panel");
+    await panel.getByLabel("I agree to use my photo for try-on").check();
+    // About 7000×12400 px and well over 10 MB (more than the upload limit allows as it is).
+    const huge = await sharp(await portraitPhoto()).resize(7000, 12444).sharpen({ sigma: 2 }).jpeg({ quality: 100, chromaSubsampling: "4:4:4" }).toBuffer();
+    expect(huge.length).toBeGreaterThan(10 * 1024 * 1024);
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "huge.jpg", mimeType: "image/jpeg", buffer: huge });
+    await expect(panel.getByRole("radio", { name: "Photo 1" })).toBeVisible({ timeout: 60_000 });
+    // 90×160 px.
+    const tiny = await sharp(await portraitPhoto()).resize(90, 160).jpeg().toBuffer();
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "tiny.jpg", mimeType: "image/jpeg", buffer: tiny });
+    await expect(panel.getByRole("radio", { name: "Photo 2" })).toBeVisible({ timeout: 60_000 });
+  });
+
+  test("fit: height plus the photo give your size and a report; the try-on shows that size; remembered on request", async ({ page }) => {
+    test.setTimeout(120_000);
+    await signUpFreshCustomer(page);
+    await page.goto("/products/linen-wrap-dress");
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    const panel = page.getByTestId("try-on-panel");
+    const fit = panel.getByTestId("fit-section");
+    await expect(fit.getByLabel("Weight (kg)")).toHaveCount(0);
+    await expect(fit.getByRole("radio")).toHaveCount(0);
+    await fit.getByLabel("Height (cm)").fill("90");
+    await expect(fit.getByRole("alert")).toContainText("Height must be 120–220 cm.");
+    await fit.getByLabel("Height (cm)").fill("160");
+    await expect(fit.getByTestId("fit-measure")).toContainText("Add a photo of you");
+
+    // A waist-up photo can't be measured: no size advice, and it says why.
+    await panel.getByLabel("I agree to use my photo for try-on").check();
+    const portrait = await portraitPhoto();
+    const waistUp = await sharp(portrait).extract({ left: 0, top: 0, width: 600, height: 520 }).jpeg().toBuffer();
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "half.jpg", mimeType: "image/jpeg", buffer: waistUp });
+    await expect(panel.getByRole("radio", { name: "Photo 1" })).toBeVisible();
+    await expect(fit.getByTestId("fit-measure")).toContainText("We need to see you down to your hips", { timeout: 30_000 });
+    await expect(fit.getByTestId("fit-recommended")).toHaveCount(0);
+
+    // A full-length photo is measured on this device.
+    await panel.getByLabel("Upload a photo of me").setInputFiles({ name: "me.jpg", mimeType: "image/jpeg", buffer: portrait });
+    await expect(panel.getByRole("radio", { name: "Photo 2" })).toBeVisible();
+    await expect(fit.getByTestId("fit-measure")).toHaveText("Measured from your photo.", { timeout: 30_000 });
+    const recommended = (await fit.getByTestId("fit-recommended").textContent()) ?? "";
+    expect(["S", "M", "L"]).toContain(recommended);
+    // Much too small: the report says where.
+    await fit.getByLabel("Size to try").selectOption("XS");
+    await expect(fit.getByTestId("fit-report")).toContainText("tight by");
+    await expect(fit.getByTestId("fit-length")).toContainText("the hem lands");
+    await fit.getByRole("button", { name: `Try ${recommended}` }).click();
+    await expect(fit.getByTestId("fit-report")).not.toContainText("tight by");
+    await fit.getByLabel("Remember my height on my account").check();
+
+    await panel.getByRole("button", { name: "Try it on" }).click();
+    await expect(panel.getByTestId("try-on-fit-shown")).toHaveText(`Showing size ${recommended} at 160 cm.`, { timeout: 30_000 });
+    // A different size offers an update; nothing reruns by itself.
+    await fit.getByLabel("Size to try").selectOption(recommended === "L" ? "M" : "L");
+    await expect(panel.getByTestId("try-on-fit-stale")).toContainText(`This try-on shows size ${recommended}`);
+
+    // Remembered on the account.
+    await page.reload();
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    await expect(page.getByTestId("fit-section").getByLabel("Height (cm)")).toHaveValue("160");
+    await page.getByTestId("fit-section").getByRole("button", { name: "Forget it" }).click();
+    await expect(page.getByTestId("try-on-panel")).toContainText("removed from your account");
+    await page.reload();
+    await page.getByRole("button", { name: "Try on", exact: true }).click();
+    await expect(page.getByTestId("fit-section").getByLabel("Height (cm)")).toHaveValue("");
   });
 
   test("signed-out visitors are asked to sign in", async ({ page }) => {

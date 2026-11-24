@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DECORATIONS } from "@/lib/catalog/decorations";
@@ -12,16 +12,13 @@ import { PATTERNS } from "@/lib/catalog/patterns";
 import { MINOR_PER_MAJOR } from "@/lib/money";
 import { uniqueSlug } from "@/lib/text/slug";
 import { cn } from "@/lib/utils";
-import { STYLE_GROUPS, type StyleGroup, type TemplateConfig } from "@/types/template";
+import { DEFAULT_FINISH_PRICES, FINISH_IDS, FINISH_LABEL } from "@/lib/catalog/finishes";
+import { GARMENT_TYPES, STYLE_GROUP_IDS, STYLE_GROUP_LABEL, type StyleGroup } from "@/lib/catalog/garment-types";
+import { styleOptionsFor, templateStyleGroups, type StyleOption, type TemplateConfig } from "@/types/template";
 
 import { saveTemplateAction, setTemplateStateAction, uploadTemplateImageAction } from "./actions";
 import { PlacementCanvas, type Rect } from "./placement-canvas";
-
-const GROUP_LABEL: Record<StyleGroup, string> = {
-  neckline: "Neckline",
-  sleeveLength: "Sleeve length",
-  dressLength: "Dress length",
-};
+import { nativeSelectClass } from "@/components/ui/select";
 
 const ADD_ON_LABEL: Record<keyof TemplateConfig["addOns"], string> = {
   textMinor: "Text layer",
@@ -138,7 +135,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
   return (
     <div className="flex flex-col gap-6">
       {/* Sticky save bar */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border bg-background/95 p-3 shadow-sm backdrop-blur">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-2xl border bg-card/95 p-3 shadow-sm backdrop-blur">
         <span className="text-sm">
           Version {version} · {isActive ? <strong>Live</strong> : "Not live"}
           {dirty && <span className="ml-2 text-amber-700 dark:text-amber-400">Unsaved changes</span>}
@@ -170,7 +167,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
         )}
       </div>
 
-      <Section title="Garment images" description="Plain front and back photos or drawings of the dress, at least 800×800 px. Customers design on top of these.">
+      <Section title="Garment images" description="Plain front and back photos or drawings of the garment, at least 800×800 px. Customers design on top of these.">
         <div className="grid gap-6 sm:grid-cols-2">
           {(["front", "back"] as const).map((s) => {
             const key = config.garmentImages[s];
@@ -197,8 +194,8 @@ export function TemplateEditor(props: TemplateEditorProps) {
         {config.styleVariants.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm" data-testid="style-pictures">
             <p className="max-w-prose text-muted-foreground">
-              This dress also has {config.styleVariants.length} style pictures, so the customer&apos;s preview changes shape with the neckline, sleeves and
-              length. They replace the images above whenever they match the customer&apos;s choices. If you upload your own garment images, remove them.
+              This {GARMENT_TYPES[config.garmentType].noun} also has {config.styleVariants.length} style pictures, so the customer&apos;s preview changes shape with
+              the style choices. They replace the images above whenever they match the customer&apos;s choices. If you upload your own garment images, remove them.
             </p>
             <Button size="sm" variant="outline" onClick={() => update((c) => ({ ...c, styleVariants: [] }))}>
               Remove style pictures
@@ -207,7 +204,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
         )}
       </Section>
 
-      <Section title="Placement areas" description="Where customers may put text, images and decorations. Draw the area on the garment and enter its real printable size.">
+      <Section title="Placement areas" description="Where customers may put text, images and decorations. Draw the area on the garment and enter its real printable size. A large area (a whole part or the whole front) should trim to the fabric.">
         <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
           <div className="flex flex-col gap-2">
             <div className="flex gap-1" role="group" aria-label="Garment side">
@@ -245,7 +242,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
                   <select
                     value={area.side}
                     onChange={(e) => update((c) => withArea(c, index, { side: e.target.value === "back" ? "back" : "front" }))}
-                    className="h-8 rounded-lg border border-input bg-transparent px-2"
+                    className={nativeSelectClass}
                   >
                     <option value="front">Front</option>
                     <option value="back">Back</option>
@@ -262,6 +259,15 @@ export function TemplateEditor(props: TemplateEditorProps) {
                 <LabeledNumber label="Top %" value={pct(area.rect.y)} step={0.5} onChange={(v) => update((c) => withArea(c, index, { rect: { ...area.rect, y: v / 100 } }))} />
                 <LabeledNumber label="Width %" value={pct(area.rect.w)} step={0.5} onChange={(v) => update((c) => withArea(c, index, { rect: { ...area.rect, w: v / 100 } }))} />
                 <LabeledNumber label="Height %" value={pct(area.rect.h)} step={0.5} onChange={(v) => update((c) => withArea(c, index, { rect: { ...area.rect, h: v / 100 } }))} />
+                <label className="col-span-full flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={area.clipToFabric === true}
+                    onChange={(e) => update((c) => withArea(c, index, { clipToFabric: e.target.checked }))}
+                  />
+                  Trim to the fabric: items may go anywhere in the area, and whatever falls off the garment (by its masks) isn&apos;t printed
+                </label>
               </div>
             ))}
             {config.placementAreas.length < 8 && (
@@ -286,7 +292,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
 
       <Section
         title="Recolorable regions"
-        description="Parts of the dress customers can color or pattern separately. Each needs a mask: a black image the same size as the garment image, painted white where the region is."
+        description="Parts of the garment customers can color or pattern separately. Each needs a mask: a black image the same size as the garment image, painted white where the region is."
       >
         <div className="flex flex-col gap-2">
           {config.regions.map((region, index) => (
@@ -356,12 +362,12 @@ export function TemplateEditor(props: TemplateEditorProps) {
         </div>
       </Section>
 
-      <Section title="Style options" description="One choice per group. Add-on prices are added to the base price. A reference image helps customers see the option.">
+      <Section title="Style options" description={`Style choices for a ${GARMENT_TYPES[config.garmentType].noun} (set by the item's garment type). One choice per group. Add-on prices are added to the base price. A reference image helps customers see the option.`}>
         <div className="grid gap-6 lg:grid-cols-3">
-          {STYLE_GROUPS.map((group) => (
+          {templateStyleGroups(config).map((group) => (
             <div key={group} className="flex flex-col gap-3">
-              <h3 className="text-sm font-semibold">{GROUP_LABEL[group]}</h3>
-              {config.styleOptions[group].map((option, index) => {
+              <h3 className="text-sm font-semibold">{STYLE_GROUP_LABEL[group]}</h3>
+              {styleOptionsFor(config, group).map((option, index) => {
                 const refUrl = option.referenceImageKey ? imageUrls[option.referenceImageKey] : undefined;
                 return (
                   <div key={option.id} className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
@@ -385,14 +391,14 @@ export function TemplateEditor(props: TemplateEditorProps) {
                           }
                         }}
                       />
-                      <Button size="xs" variant="ghost" className="ml-auto" disabled={config.styleOptions[group].length <= 1} onClick={() => update((c) => ({ ...c, styleOptions: { ...c.styleOptions, [group]: c.styleOptions[group].filter((_, i) => i !== index) } }))}>
+                      <Button size="xs" variant="ghost" className="ml-auto" disabled={styleOptionsFor(config, group).length <= 1} onClick={() => update((c) => ({ ...c, styleOptions: { ...c.styleOptions, [group]: styleOptionsFor(c, group).filter((_, i) => i !== index) } }))}>
                         Remove
                       </Button>
                     </div>
                   </div>
                 );
               })}
-              {config.styleOptions[group].length < 8 && (
+              {styleOptionsFor(config, group).length < 8 && (
                 <AddByName
                   placeholder="New option"
                   buttonLabel="Add"
@@ -401,7 +407,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
                       ...c,
                       styleOptions: {
                         ...c.styleOptions,
-                        [group]: [...c.styleOptions[group], { id: uniqueSlug(name, c.styleOptions[group].map((o) => o.id)), label: name, addOnPriceMinor: 0 }],
+                        [group]: [...styleOptionsFor(c, group), { id: uniqueSlug(name, styleOptionsFor(c, group).map((o) => o.id)), label: name, addOnPriceMinor: 0 }],
                       },
                     }))
                   }
@@ -465,11 +471,44 @@ export function TemplateEditor(props: TemplateEditorProps) {
         </Section>
       </div>
 
-      <Section title="Add-on prices" description="Charged once per layer or patterned part, on top of the dress and style-option prices.">
+      <Section title="Add-on prices" description="Charged once per layer or patterned part, on top of the garment and style-option prices.">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {(Object.keys(ADD_ON_LABEL) as (keyof TemplateConfig["addOns"])[]).map((key) => (
             <LabeledNumber key={key} label={`${ADD_ON_LABEL[key]} (৳)`} value={toTaka(config.addOns[key])} step={50} onChange={(v) => update((c) => ({ ...c, addOns: { ...c.addOns, [key]: toMinor(String(v)) } }))} />
           ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Finishes"
+        description="Besides print, text can be embroidered, and decorations and cut-outs embroidered or sequinned. A finished item costs this price instead of its print price (per motif in a border). Photos and logos are always printed."
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {FINISH_IDS.map((finish) => {
+            const price = config.finishes[finish];
+            return (
+              <div key={finish} className="flex items-end gap-3">
+                <label className="flex items-center gap-2 pb-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={price !== null}
+                    onChange={(e) => update((c) => ({ ...c, finishes: { ...c.finishes, [finish]: e.target.checked ? DEFAULT_FINISH_PRICES[finish] : null } }))}
+                  />
+                  Offer {FINISH_LABEL[finish].toLowerCase()}
+                </label>
+                {price !== null && (
+                  <LabeledNumber
+                    label={`${FINISH_LABEL[finish]} per item (৳)`}
+                    value={toTaka(price)}
+                    step={50}
+                    className="w-40"
+                    onChange={(v) => update((c) => ({ ...c, finishes: { ...c.finishes, [finish]: toMinor(String(v)) } }))}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </Section>
     </div>
@@ -488,11 +527,11 @@ function withOption(
   config: TemplateConfig,
   group: StyleGroup,
   index: number,
-  patch: Partial<TemplateConfig["styleOptions"][StyleGroup][number]>,
+  patch: Partial<StyleOption>,
 ): TemplateConfig {
   return {
     ...config,
-    styleOptions: { ...config.styleOptions, [group]: config.styleOptions[group].map((o, i) => (i === index ? { ...o, ...patch } : o)) },
+    styleOptions: { ...config.styleOptions, [group]: styleOptionsFor(config, group).map((o, i) => (i === index ? { ...o, ...patch } : o)) },
   };
 }
 
@@ -507,8 +546,8 @@ function humanPath(path: string, config: TemplateConfig): string {
     return `Region “${config.regions[Number(index)]?.label ?? index}”`;
   }
   if (section === "styleOptions" && index !== undefined) {
-    const group = STYLE_GROUPS.find((g) => g === index);
-    return `${group ? GROUP_LABEL[group] : index} options`;
+    const group = STYLE_GROUP_IDS.find((g) => g === index);
+    return `${group ? STYLE_GROUP_LABEL[group] : index} options`;
   }
   return section ?? path;
 }
@@ -607,7 +646,7 @@ function CheckboxList({ options, checked, onChange }: { options: { id: string; l
 function FileButton({ label, onFile, size = "sm" }: { label: string; onFile: (file: File) => Promise<void>; size?: "sm" | "xs" }) {
   const [busy, setBusy] = useState(false);
   return (
-    <label className={cn("inline-flex w-fit cursor-pointer items-center rounded-lg border px-2.5 text-sm hover:bg-muted", size === "xs" ? "h-6 text-xs" : "h-8", busy && "pointer-events-none opacity-60")}>
+    <label className={cn(buttonVariants({ variant: "outline", size }), "w-fit cursor-pointer", busy && "pointer-events-none opacity-60")}>
       {busy ? "Uploading…" : label}
       <input
         type="file"

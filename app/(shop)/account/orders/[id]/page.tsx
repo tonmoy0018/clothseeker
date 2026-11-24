@@ -75,7 +75,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
         </div>
       )}
       {order.status === "CANCELLED" && (
-        <div className="rounded-xl border p-4 text-sm">
+        <div className="rounded-2xl border bg-card p-4 text-sm">
           This order was cancelled and nothing was charged.{" "}
           {payment?.status === "REFUNDED" && "A payment that arrived late was refunded automatically. "}
           <Link href="/cart" className="underline underline-offset-4">
@@ -87,7 +87,7 @@ export default async function OrderDetailPage({ params }: PageProps<"/account/or
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Items</h2>
-        <ul className="flex flex-col divide-y rounded-xl border" data-testid="order-items">
+        <ul className="flex flex-col divide-y rounded-2xl border bg-card" data-testid="order-items">
           {order.items.map((item) => {
             const preview = item.previewKey ? previews.get(item.previewKey) : undefined;
             return (
@@ -240,7 +240,7 @@ function StatusStepper({ item }: { item: OrderDetail["items"][number] }) {
           className={cn(
             "rounded-full px-2 py-0.5",
             index < current && "bg-muted text-muted-foreground",
-            index === current && "bg-foreground text-background",
+            index === current && "bg-primary text-primary-foreground",
             index > current && "text-muted-foreground",
           )}
         >

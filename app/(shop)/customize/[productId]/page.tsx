@@ -10,29 +10,30 @@ import { getStorage } from "@/lib/storage/supabase";
 
 import { EditorLoader } from "./editor-loader";
 
-export const metadata: Metadata = { title: "Design your dress — ClothSeeker" };
+export const metadata: Metadata = { title: "Design your own — ClothSeeker" };
 
 export default async function CustomizePage({ params, searchParams }: PageProps<"/customize/[productId]">) {
   const { productId } = await params;
   const { design, job, alts } = await searchParams;
   const db = getPrisma();
   const storage = getStorage();
-  const context = await loadDesignContext(db, storage, productId);
+  const user = await getCurrentUser();
+  const customer = user?.role === "CUSTOMER" ? user : null;
+  // A customer's own dress (made from their photo) loads only for them.
+  const context = await loadDesignContext(db, storage, productId, { viewerId: customer?.id ?? null });
 
   if (!context) {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-xl border p-8" data-testid="not-customizable">
-        <h1 className="text-xl font-semibold">This dress can&apos;t be customized</h1>
+      <div className="flex flex-col items-start gap-3 rounded-2xl border bg-card p-8" data-testid="not-customizable">
+        <h1 className="text-xl font-semibold">This item can&apos;t be customized</h1>
         <p className="text-muted-foreground">It may not offer custom designs, or it&apos;s temporarily unavailable.</p>
         <Link href="/products" className={buttonVariants({ variant: "outline" })}>
-          Browse dresses
+          Browse the shop
         </Link>
       </div>
     );
   }
 
-  const user = await getCurrentUser();
-  const customer = user?.role === "CUSTOMER" ? user : null;
   // Only the signed-in customer's own design is ever loaded; anything else starts a fresh design.
   const initialDesign =
     customer && typeof design === "string" ? await getDesignForEdit(db, storage, customer, design, context.template.productId) : null;
@@ -54,6 +55,7 @@ export default async function CustomizePage({ params, searchParams }: PageProps<
       templateId={context.template.templateId}
       templateVersion={context.template.version}
       aiEnabled={context.template.aiEnabled}
+      ownDress={context.template.ownDress}
       config={context.template.config}
       imageUrls={context.template.imageUrls}
       availableSizes={context.availableSizes}

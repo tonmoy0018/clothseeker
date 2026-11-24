@@ -21,14 +21,14 @@ export default async function OrdersPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">My orders</h1>
       {orders.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 rounded-xl border p-8">
+        <div className="flex flex-col items-start gap-3 rounded-2xl border bg-card p-8">
           <p className="font-medium">You haven&apos;t placed any orders yet.</p>
           <Link href="/products" className={buttonVariants()}>
-            Browse dresses
+            Browse the shop
           </Link>
         </div>
       ) : (
-        <ul className="flex flex-col divide-y rounded-xl border" data-testid="order-list">
+        <ul className="flex flex-col divide-y rounded-2xl border bg-card" data-testid="order-list">
           {orders.map((order) => (
             <li key={order.id}>
               <Link href={`/account/orders/${order.id}`} className="flex flex-wrap items-center justify-between gap-3 p-4 hover:bg-muted/40">

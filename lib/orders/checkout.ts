@@ -143,7 +143,7 @@ async function loadCheckoutLines(db: PrismaClient, storage: StorageAdapter, cust
       } catch {
         throw new OrderError("CART_CHANGED", "A tailoring quote in your cart can't be ordered. Please contact us.");
       }
-      const context = await loadDesignContext(db, storage, spec.productId, { signImages: false });
+      const context = await loadDesignContext(db, storage, spec.productId, { signImages: false, viewerId: customerId });
       if (!context) {
         throw new OrderError("CART_CHANGED", "The dress for a tailoring quote in your cart is no longer available.");
       }

@@ -1,0 +1,174 @@
+# Live try-on: on-device vision
+
+The live mirror (camera) and the try-on photo checks find the customer's body and face **in their own browser**. Nothing is uploaded for this: the models are downloaded once from our own site and run in a Web Worker. The realistic AI photo try-on ([try-on.md](try-on.md)) is separate.
+
+Status: **all three steps are done**:
+1. models, runtime and the speed check;
+2. try-on photo checks on the device and in the worker ([try-on.md](try-on.md#photo-checks));
+3. the live mirror, with the real garment drawn on the customer (below).
+
+## Models
+
+| Job | Model | File | Size | Licence |
+|---|---|---|---|---|
+| **Live mirror body:** 17 points (nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles; the person's own left/right) | RTMPose-s, body7 weights (OpenMMLab, [mmpose](https://github.com/open-mmlab/mmpose/tree/main/projects/rtmpose)); from OpenMMLab's own download site (below) | `end2end.onnx` in `rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip` | 21.9 MB | Apache-2.0 |
+| Photo checks' body: the same 17 points | `Xenova/movenet-singlepose-lightning` | `onnx/model.onnx` (fp32) | 9.4 MB | Apache-2.0 |
+| Faces: boxes and 5 landmarks, also small faces at full-body distance | `opencv/face_detection_yunet` | `face_detection_yunet_2023mar_int8.onnx` | 0.1 MB | MIT |
+| Person outline (to put arms in front of the garment) | `onnx-community/mediapipe_selfie_segmentation` | `onnx/model_int8.onnx` | 0.2 MB | Apache-2.0 |
+| **Sharper person outline** (live mirror, only with WebGPU) | `Xenova/modnet` (portrait matting) | `onnx/model_fp16.onnx` | 13.0 MB | Apache-2.0 |
+| Body parts: hair, skin, clothes | `senty-au/selfie_multiclass_256x256-ONNX` (Google's MediaPipe model, converted) | `onnx/model.onnx` | 16.5 MB | Apache-2.0 |
+
+- **Use the fp32 MoveNet.** Its int8 and fp16 versions give near-zero scores in ONNX Runtime Web (checked on 2026-10-29).
+- Each model is pinned by SHA-256 in [`lib/vision/runtime/assets.ts`](../../lib/vision/runtime/assets.ts). If a file at its source changes, the fetch fails rather than serving something unchecked.
+- **RTMPose comes from OpenMMLab itself.** Its ONNX export is published only as a zip on `download.openmmlab.com` (the file the [rtmlib](https://github.com/Tau-J/rtmlib) project uses); the copies on Hugging Face are personal re-uploads that differ from it. `pnpm vision:fetch` downloads the zip, takes `end2end.onnx` out of it (`archive` in `assets.ts`) and checks that file's SHA-256.
+- **Why RTMPose for the mirror** (compared on 2026-11-17, see Measurements): MoveNet Lightning put elbows and hips visibly too high and was unsure of the fake-camera person (mean body score 0.50); RTMPose-s found every joint where the much larger RTMPose-m and RTMO-s did, sure of them (0.95), at about twice Lightning's cost. MoveNet Thunder was slower than RTMPose-s and less accurate; RTMO (no person box needed) is exported only at 640×640, about 650 ms a frame without a GPU; YOLO pose models are AGPL; MediaPipe's BlazePose is only published as TFLite.
+- **The photo checks and the worker keep MoveNet:** their rules (`photo-check.ts`, the try-on mask) were tuned on its scores, and a single photo has no previous frame to find the person from.
+- **The body model reads a crop around the person** (it's a top-down model, `lib/vision/models/rtmpose.ts`). The crop is where the person was in the last frame (`poseBox`: their sure joints, grown by a shoulder width), widened to this frame's outline when the outline model ran (`maskBox`, `unionBox`: legs coming into view as they step back); with no pose yet, the last outline; with neither, the whole frame. It lets go when the shoulders are lost, and starts afresh when the frame size changes.
+- **The sharper outline** (MODNet) only loads when the browser has WebGPU: without one it's about 8× slower than the selfie model, which then draws the outline. It takes the frame in its own shape (384 px on the long side, `matteSize`). The try-on's body measurement keeps the selfie model it was tuned on.
+- Jitter is handled by smoothing (`OneEuro` in `lib/vision/mirror/smooth.ts`).
+
+## Runtime
+
+- **ONNX Runtime Web 1.30.0** (MIT), pinned exactly. It uses **WebGPU** when the browser offers an adapter, and otherwise **WebAssembly** (SIMD, single-threaded, because the site isn't cross-origin isolated). If WebGPU can't load a model, the engine falls back to WebAssembly for all models.
+- **Files.** `pnpm vision:fetch` (`scripts/fetch-vision-assets.ts`) puts everything into `public/vision/` (git-ignored). It runs automatically before `pnpm dev` and `pnpm build`.
+  - The models are downloaded from Hugging Face and checked.
+  - The runtime's `.wasm`/`.mjs` files are copied from `node_modules`.
+  - Paths contain the version or hash, and `next.config.ts` serves `/vision/*` with `Cache-Control: immutable`.
+- **Download size for a customer, once:** the WebAssembly runtime is 3.7 MB compressed (the WebGPU build is about 7 MB). The photo checks' models are 9.7 MB; the live mirror's are about 39 MB (body, outline, body parts), plus 13 MB for the sharper outline with WebGPU. Browsers request nothing from third parties (an E2E test checks this).
+
+## Code
+
+| File | Role |
+|---|---|
+| `lib/vision/models/geometry.ts` | Letterboxing frames into the models' square inputs and mapping points back |
+| `lib/vision/models/movenet.ts`, `rtmpose.ts`, `yunet.ts`, `segment.ts`, `parts.ts` | Each model's input layout and output decoding (pure, unit-tested); `rtmpose.ts` also finds the person's crop (`cropFor`, `poseBox`, `maskBox`) |
+| `lib/vision/mirror/smooth.ts` | One Euro filter for keypoints |
+| `lib/vision/runtime/engine.ts` | Loads the models and runs them on a frame (OffscreenCanvas → tensors → decoded results) |
+| `lib/vision/runtime/vision.worker.ts`, `protocol.ts`, `client.ts` | The worker thread and the page's handle on it; frames go in as transferred `ImageBitmap`s |
+| `lib/vision/photo/photo-check.ts` | Try-on photo rules shared by the browser and the worker |
+| `lib/vision/photo/check-photo.ts` | The browser's check before upload |
+| `lib/vision/runtime/node-vision.ts` | The same models in Node, for the worker (`LocalPhotoChecker`) |
+| `app/(shop)/mirror/check/` | **`/mirror/check`**: the speed and accuracy check (camera or a photo from the device; not linked from the shop) |
+
+## Measurements
+
+These were taken on 2026-10-29 on the Mac mini, with Chromium headless, **WebAssembly only (no GPU)**:
+
+| | Body | Outline | Face |
+|---|---|---|---|
+| Per run | 27–54 ms | 28–38 ms | 126–136 ms |
+
+- **Live camera: 18 frames a second** (with MoveNet). The body runs on every frame, the outline on every 2nd and the face on every 10th.
+
+**Body models compared** on 2026-11-17 in Node (ONNX Runtime Web 1.30, WebAssembly, one thread, the Mac mini), on the two try-on test photos and a frame of the fake-camera video; mean score of the 12 body joints:
+
+| | Per run | Test woman | Test man | Fake-camera frame |
+|---|---|---|---|---|
+| MoveNet Lightning (photo checks) | 27 ms | 0.78 | 0.79 | 0.50 |
+| MoveNet Thunder | 83 ms | 0.79 | 0.84 | 0.61 |
+| **RTMPose-s body7 (live mirror)** | **49 ms** | **0.97** | **0.94** | **0.95** |
+| RTMPose-m body7 | 119 ms | 0.93 | 0.92 | 0.88 |
+| RTMO-s (640×640) | 656 ms | 1.00 | 1.00 | 0.99 |
+
+The scores of different models aren't strictly comparable; the pictures were: Lightning's elbows and hips sat too high, while RTMPose-s, RTMPose-m and RTMO-s agreed. Without a GPU the mirror now does about 49 ms of body work a frame instead of 27; WebGPU in Chrome or Safari is much faster. Measure on real devices with `/mirror/check`, which shows the body and outline times.
+- Node (WebAssembly) gave similar times.
+- WebGPU in a normal Chrome or Safari should be faster. Measure on real devices with `/mirror/check`.
+- **Phones:** the camera only works on secure pages. `localhost` counts as secure; `http://<computer-ip>:3002` from a phone does not, so phone tests need HTTPS (e.g. a tunnel, or `next dev --experimental-https`).
+- The models were checked on the Spaces' example photos. Joints, the face box and the outline all landed correctly; a face cut off by the frame isn't found (as expected).
+
+## The live mirror
+
+"Live mirror" appears on product pages that have a try-on picture and on the design screen (tool rail). It opens a full-screen view (`app/(shop)/_try-on/live-mirror.tsx`, rendered into `document.body`).
+
+- **The camera starts only after "Start camera".** The notice says the camera stays on the device and nothing is recorded or uploaded. Frames go to the vision worker in the same tab: the body (RTMPose-s, in a crop around the person) runs on every frame, the outline on every 2nd (MODNet with WebGPU, else the selfie model), the body-parts model (hair) on every 6th.
+- **The garment picture** (`lib/vision/mirror/garment-source.ts`), prepared in the browser:
+  - **Shop item:** its try-on picture (the first catalogue photo), cut out with the same code as the server (`findGarment`/`splitGarment` in `lib/garment-photo/segment.ts`). Storage answers with `Access-Control-Allow-Origin: *`, so the browser may read the pixels.
+  - **Design:** the design screen's recoloured front picture with its printed items, cut out by the union of the picture's region masks.
+  - **Cleaned up for wearing** (`lib/vision/mirror/garment-fill.ts`, shop items):
+    - `recoverGarment` adds the coloured parts the garment finder misses because they aren't the main colour: a pale placket, an embroidered collar band, embroidery, a print's motifs on a skirt's edge (down to the hem; otherwise they'd leave bites in it). It grows only into clearly coloured pixels, so a mannequin's neck, shadows and the backdrop stay out.
+    - **What the body-parts model sees as clothes** (`withClothes`, since 2026-11-15, shop items and designs): the same model the mirror uses for hair (MediaPipe selfie multiclass, `lib/vision/models/parts.ts`) reads the garment picture once, and its clothes pixels are added where they join the garment, are close to its own colour (ΔE ≤ 22) and lie inside its outline once bites up to 4% of the picture wide are closed. That recovers pale garments' highlights that match the backdrop (the Smocked Cotton Dress's puff sleeves and bodice, +2.5%), while a mannequin's hand below a pale cuff, which the model also calls clothes, sticks out of the outline and stays out (checked on all 21 catalogue items). Without the model (it failed to load) the cut-out is as before.
+    - Notches about 1% of the picture wide are sealed, and pixels at the edge with the backdrop's colour take the fabric's colour (`recolourBackdrop`).
+    - The measurements (shoulders, waist, sleeves) still come from the plain cut-out, so a collar is never taken for the shoulders.
+  - **Pieces:** the body and each sleeve. Only edges against the backdrop are softened, after dropping their outermost pixel ring (a pale fringe). Joins between pieces stay hard, and sleeves overlap the body by 2 px, so no background shows through.
+  - **Long sleeves stay whole** (`withLooseSleeves`): sleeve parts the finder left in the body, either cut off from the torso or hanging beside it with a gap, are added to the sleeve down to the cuff (a panjabi's forearms).
+  - **Sleeves hanging against the body** (`seamSleeves`, since 2026-11-15): with no gap at the armpit the finder sees no sleeve at all (the Mandarin Collar Shirt, the Silk-Blend Panjabi), and the whole garment used to be fitted to the torso with the arms painted bare. On a side with no sleeve, fabric outside the shoulder seam just below the shoulder becomes the sleeve, down to where its outermost columns end (the cuff). Only for garments wider at the waist than at the shoulders, as sleeves beside the torso make them; dresses are narrower there, so a skirt or a strappy bodice is never taken for a sleeve (checked on all 21 catalogue items: only those two changed).
+- **Fitting** (`lib/vision/mirror/mirror.ts`, pure and unit-tested in `mirror.test.ts` and `mirror-fit.test.ts`). Everything is in the camera's own coordinates, where, as in a catalogue photo, the person's left is on the picture's right; the canvas is shown flipped with CSS.
+  - **Shoulders:**
+    - The garment hangs from its shoulder seams. When its top is a collar standing up near the centre line, the seams are measured just inside the shoulder points, and the collar stands above them around the neck.
+    - The seams are pinned 14% of the shoulder-joint distance above the joints (`SHOULDER_LIFT`), at 1.1× their width (`SEAM_PER_JOINTS`).
+    - Mannequin shoulders slope far more than people's, so 55% of the garment's measured shoulder slope is taken out (`SHOULDER_SQUARE`). The raise peaks at the shoulder point and eases off over the sleeve top, so the shoulder stays round.
+  - **Waist and below:** the waist goes to the body's waist (60% of the way to the hip joints, `BODY_WAIST`). Below it the garment hangs towards the knees and 35% straight down (`GRAVITY`), so a skirt hangs when the body leans.
+  - **Fitted to the person's outline** (`measureOutline`, `fitToOutline`): on 25 rows, the person mask gives how far the body reaches on each side of the centre line. The mask is moved along with the body on frames where the outline model doesn't run.
+    - Above the hips, the body ends where the mask does or where an arm begins. The garment follows it with 6% ease (`EASE`), between 0.85× and 1.4× its own width (`MIN_FIT`, `MAX_WIDEN`). So it wraps a slimmer or fuller figure, and when the person turns, the far side narrows more than the near side.
+    - Below the hips it reaches the furthest leg (hands left out) and only ever widens, so a skirt covers legs that step apart.
+    - The shoulders keep the garment's own width; the fitted width takes over across the upper chest.
+    - Widths are smoothed between rows and over frames (`WidthSmoother`). Without a mask yet, the garment widens to an arm hanging beside it instead (as before).
+  - **Cloth moves** (`lib/vision/mirror/cloth.ts`, `ClothSway`): the hem behaves like a weight on a damped spring from the hips (1.3 Hz, damping 0.3). When the person moves, it trails behind, swings past and settles. The swing grows from nothing at the hips to its most at the hem, and is capped at 45% of the shoulder width.
+  - **Drawing:** an 8×24 mesh of affine triangles (`drawMesh` in `lib/vision/mirror/draw.ts`). The columns meet at the centre line, because each side is fitted on its own. Each triangle is grown by 1.3 px, so their edges overlap and no hairlines show. Facing away hides the garment with a hint.
+- **The person's own clothes where the garment doesn't cover them** (`lib/vision/mirror/uncover.ts`, `FrameCleaner` in `draw.ts`). For example, a T-shirt's sleeves around a sleeveless dress, or its neckline inside a low one. Before the garment is drawn, a smaller copy of the frame is cleaned (the shoulders about 60 px apart, at most 480 px wide; about 5 ms):
+  - **Skin colour** is read around the nose (`skinModel`), and settles over frames. The paint itself takes the colour of the person's visible neck and arm skin, which is usually darker than a lit face.
+  - **Under the neck** (since 2026-11-15) the paint continues the neck's own colour column by column (its lowest skin, smoothed over 5 columns; columns beside it take the nearest), blending into the body's colour over 35% of the shoulder distance (`NECK_REACH`). A square or V neckline used to show a flat patch under a lit neck.
+  - **On the shoulders, upper chest and arms**, clothing becomes skin:
+    - the shoulders slope from the neck;
+    - arms are 26% of the shoulder distance wide (`ARM_HALF`);
+    - the skin is shaded by the cloth's light and folds and darkens towards the outline and the arms' sides.
+  - **Outside the bare body**, such as a sleeve standing off the arm or a band at the outline (`STAND_OFF`), clothing becomes the backdrop beside it on the same row.
+  - The paint is worked out on the small copy and enlarged; it's blurred by about one of its pixels as it's laid on the frame, or its edges show as steps.
+  - **Left alone:**
+    - the head;
+    - dark hair near it;
+    - real skin, including its shadows (an elliptical tint test, `skinDistance`; borderline tints are only partly painted);
+    - the backdrop;
+    - forearms' shaded edges;
+    - everything below the upper chest (the garment covers the torso, and painting there would show a bare torso wherever a garment doesn't reach); the paint fades out over a short band;
+    - everything below the hips (trousers under a short dress stay).
+- **Sleeves follow the arms** (`sleeveFits`, `sleeveMesh`):
+  - Real sleeves are split from the garment picture: sleeve-mask pixels outside the torso trunk (`SLEEVE_TRUNK`) that leave the shoulder outwards or downwards. Straps stay with the body.
+  - Each sleeve is bent along shoulder → elbow → wrist. At the shoulder it is mapped exactly like the body, so the cap continues the shoulder line. It turns to follow the arm over the first 25% of its length (`SLEEVE_BLEND`).
+  - It's compressed so it never reaches past the wrist.
+  - Across the arm it's never narrower than 16% of the shoulder-joint distance either side (`MIN_SLEEVE_HALF`), a little more than the bare arm painted where the person's own sleeve was; a slim catalogue sleeve left strips of painted arm beside it.
+- **The head in front** (`headInFront`, since 2026-11-15): everything of the person above the chin is drawn back over the garment, so a stand collar never rides over the chin. The chin is 2.6 times the eyes-to-nose distance below the nose point (measured on the test people: 2.6–2.7), never below the shoulders, and the head is 2.2 eye-distances wide either side of the nose (with hair).
+- **Hair in front** (`PersonLayer.setParts`, since 2026-11-15): on every 6th frame the body-parts model reads the person from above the head to the hips (`partsRegion`, where they were in the frame before), and its hair pixels are drawn back over the garment, moved along with the body in between. So long hair falls over the shoulders and the garment instead of behind it.
+- **Arms in front:** the parts of the arms the garment doesn't cover are drawn back from the cleaned camera frame over the garment, masked by the person outline (`exposedArm`, `PersonLayer.drawInFront`). That's below a short sleeve, the hand below a long one, or almost the whole arm for a sleeveless garment. The stroke is about an arm wide (`ARM_WIDTH`, 21% of the shoulder distance); wider would redraw the person's own clothes beside the arm.
+- **Looks worn, not pasted** (`GarmentCompositor`, `lib/vision/mirror/relight.ts`):
+  - The garment pieces are drawn into their own layer.
+  - **Gaps between the pieces are sealed** (`GapCloser`, `lib/vision/mirror/gaps.ts`, since 2026-11-14). The body narrows to the person's outline while each sleeve follows its arm, so a sliver could open beside a sleeve and the person's painted-over clothes showed through it (orange slivers on the Oxford shirt and the panjabi). On a small copy of the layer (shoulders about 80 px apart) the garment's coverage is closed by about 3.5% of the shoulder width, and the closed shape is filled with the garment's own colour from around it, drawn under the garment. So gaps up to about 7% of the shoulder width close, and a real space between an arm and the body stays open.
+  - That layer is relit from the camera with a soft-light "shade" picture made from a 240-px copy of the frame. It carries the creases of the clothes underneath (fine ÷ broad brightness), the room's light falling across the body, and a mild colour cast. Both are kept gentle (0.82–1.2 and 0.88–1.15), so the colours and edges of the person's own clothes (dark trousers under a shirt's hem) don't read as shadows.
+  - Its edges are darkened softly inside its outline (`roundEdges`, 45%), as cloth turning away from the camera round the body is.
+  - The layer is then laid on the frame with a soft contact shadow.
+  - Cut-out edges are feathered (`featherAlpha`).
+- **Hints** appear when the shoulders and hips aren't in view, or the person faces away.
+- **Take photo** shows the mirrored picture with the garment:
+  - **Save picture** downloads it.
+  - **Use for the realistic try-on** passes the plain camera frame, cropped to a 3:4 portrait around the person, to the try-on panel. There it's offered as "Use my photo from the live mirror", only after consent, and goes through the usual on-device check and upload.
+- **Tests:**
+  - `tests/unit/mirror.test.ts` and `mirror-fit.test.ts`: the fitting.
+  - `tests/unit/mirror-drape.test.ts`: the outline fit, turning, legs, the swing, gravity, and hiding the person's own clothes (with the neck's colour under it).
+  - `tests/unit/tryon-parts.test.ts`: the body-parts model's input, decoding and masks.
+  - `tests/e2e/live-mirror.spec.ts` (`@supabase`): Chromium's fake camera plays `tests/fixtures/mirror-woman.mjpeg` (an AI-generated person). It checks that the body is found, a photo is taken and handed to the try-on, nothing goes to another site, and "Make it real" works only after consent.
+
+### Make it real
+
+The mirror is instant but 2D. **Make it real** (beside "Take photo", when the mirror is opened from a product page or the design screen) turns the customer's current pose into the realistic AI try-on, in a panel inside the mirror, without leaving it:
+
+1. Signed-out visitors are sent to sign in. The first time, the panel shows the try-on consent points (`TRYON_CONSENT_POINTS`) and nothing is captured until the customer ticks "I agree".
+2. The current camera frame is cropped to a 3:4 portrait around the person and checked on the device (`photoProblemOnDevice`); a problem is shown with its reason and nothing is uploaded.
+3. The photo is downscaled and uploaded with consent (`uploadTryOnPhotoAction`), then the usual try-on job starts (`startTryOnAction`, same 5-a-day limit and cache) and is polled every 2 s.
+4. The result appears in the panel, with how many try-ons are left today. "Back to live" returns to the mirror.
+
+It's a delay of about 25–60 s with the free IDM-VTON Spaces (instant with the fake provider), not live video. The photo is an ordinary try-on photo: private, deleted after 24 h unless saved.
+
+### Limits
+
+- **A 2D fit, not a photo:** the garment is fitted onto the body, moved and relit, but it isn't regenerated.
+  - Uncovered clothes become painted skin or backdrop: convincing at a glance, flat up close. Clothes the same colour as the skin or the backdrop, or black clothes next to black hair, stay as they are. A busy backdrop shows the row-copied fill.
+  - Below the upper chest, the customer's own clothes still show where a garment doesn't cover the torso (deliberately: no painted bare torso).
+  - Hair is read on every 6th frame, so it trails a fast head turn by a moment.
+  - Garments photographed from the side (the Off-Shoulder Evening Dress's catalogue photo is a three-quarter view) can't sit square on a person facing the camera.
+  - Some catalogue photos leave a small gap at one shoulder that shows close to the camera (the Linen Casual Shirt).
+  - Strongly sloped shoulders can leave a slight corner where the shoulder meets the sleeve.
+  - The realistic photo is "Make it real" (the AI try-on). Photo-real live video would need a generative real-time model (e.g. Decart's Lucy VTON, paid per second).
+- **Checked framings (2026-11-01):** close-up (head to chest, hips out of view) and mid-shot (head to thighs) of an AI-generated man in the Linen Casual Shirt, Oxford Shirt and Embroidered Eid Panjabi, and the full-length test woman (in a T-shirt and leggings) in eight dresses, standing and stepping side to side.
+- **Cut-out quality:** pale or brightly lit garments can lose pieces in the colour-based cut-out. The Smocked Cotton Dress is the clear case: its mint is almost colourless (Lab chroma 7.6, lightness 84, against an 86 grey backdrop), and its missed highlights match the backdrop exactly, so no colour rule can recover them. The body-parts model now fills them (`withClothes`); a garment it doesn't see as clothes (a flat-lay photo with no mannequin) still needs a catalogue photo on a darker backdrop.
+- **The camera needs a secure page:** `localhost` works; a phone on the local network needs HTTPS.
+- **Distance:** one person, about 1–4 m from the camera, facing it.

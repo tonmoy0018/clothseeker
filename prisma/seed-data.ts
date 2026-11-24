@@ -1,3 +1,4 @@
+import type { GarmentType, StyleGroup } from "@/lib/catalog/garment-types";
 import type { Size } from "@/lib/generated/prisma/enums";
 
 // Demo catalog for ClothSeeker. Prices are whole taka (converted to poisha by the seed).
@@ -21,16 +22,25 @@ export type SeedProduct = {
   sizes: readonly Size[];
   priceTaka: number;
   customizable: boolean;
+  /** Kind of garment (lib/catalog/garment-types.ts); dresses when left out. */
+  garmentType?: GarmentType;
   /**
-   * Customizable dresses: the style its catalogue photo shows (ids from the default template). The
-   * design screen shows that photo for this style and AI style pictures for the others
-   * (prisma/style-photos, made by ai-scripts/generate-style-photos.ts).
+   * Customizable items: the style its catalogue photo shows, one option id per style group of its
+   * garment type's default template. The design screen shows that photo for this style and AI style
+   * pictures for the others (prisma/style-photos, made by scripts/ai/generate-style-photos.ts).
    */
-  photoStyle?: { neckline: string; sleeveLength: string; dressLength: "mini" | "midi" | "maxi" };
+  photoStyle?: Partial<Record<StyleGroup, string>>;
+  /** The colour its catalogue photo shows (one of `colors`); the first alphabetically when left out. */
+  photoColor?: string;
   status?: "ACTIVE" | "DRAFT";
 };
 
 const C = {
+  oxfordWhite: { name: "White", hex: "#F7F7F4" },
+  oxfordBlue: { name: "Oxford Blue", hex: "#A9C8E8" },
+  lightGrey: { name: "Light Grey", hex: "#C9CBCC" },
+  bottleGreen: { name: "Bottle Green", hex: "#1E4D3B" },
+  beige: { name: "Beige", hex: "#D8C8A8" },
   sage: { name: "Sage", hex: "#9CAF88" },
   sand: { name: "Sand", hex: "#D8C3A5" },
   inkNavy: { name: "Ink Navy", hex: "#2E3A59" },
@@ -63,10 +73,8 @@ const C = {
   olive: { name: "Olive", hex: "#708238" },
 } as const;
 
-const XS_XL: readonly Size[] = ["XS", "S", "M", "L", "XL"];
-const S_XXL: readonly Size[] = ["S", "M", "L", "XL", "XXL"];
-const XS_L: readonly Size[] = ["XS", "S", "M", "L"];
-const S_XL: readonly Size[] = ["S", "M", "L", "XL"];
+/** Every item comes in every size, XS to XXL (all of the size chart). */
+const ALL_SIZES: readonly Size[] = ["XS", "S", "M", "L", "XL", "XXL"];
 
 export const SEED_PRODUCTS: readonly SeedProduct[] = [
   {
@@ -75,7 +83,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "casual",
     description: "A breathable linen wrap dress with a tie waist and soft A-line skirt. Easy to wear from morning to evening.",
     colors: [C.sage, C.sand, C.inkNavy],
-    sizes: XS_XL,
+    sizes: ALL_SIZES,
     priceTaka: 3200,
     customizable: true,
     photoStyle: { neckline: "v-neck", sleeveLength: "short", dressLength: "midi" },
@@ -86,7 +94,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "casual",
     description: "Crisp cotton poplin shirt dress with a button front, roll-up sleeves and a removable belt.",
     colors: [C.skyBlue, C.white],
-    sizes: S_XXL,
+    sizes: ALL_SIZES,
     priceTaka: 2450,
     customizable: false,
   },
@@ -96,7 +104,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "casual",
     description: "Three soft tiers of lightweight cotton with a smocked back for a relaxed, swingy fit.",
     colors: [C.terracotta, C.mustard],
-    sizes: XS_L,
+    sizes: ALL_SIZES,
     priceTaka: 2850,
     customizable: true,
     photoStyle: { neckline: "square", sleeveLength: "sleeveless", dressLength: "midi" },
@@ -107,7 +115,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "party",
     description: "Bias-cut satin slip dress with adjustable straps and a cowl neckline that drapes beautifully.",
     colors: [C.champagne, C.emerald, C.black],
-    sizes: XS_L,
+    sizes: ALL_SIZES,
     priceTaka: 5900,
     customizable: false,
   },
@@ -117,7 +125,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "party",
     description: "All-over sequin cocktail dress, fully lined, with a flattering straight neckline.",
     colors: [C.silver, C.midnight],
-    sizes: S_XL,
+    sizes: ALL_SIZES,
     priceTaka: 8750,
     customizable: false,
   },
@@ -127,7 +135,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "party",
     description: "Playful georgette mini dress with ruffled sleeves and a fitted waist.",
     colors: [C.rosePink, C.lilac],
-    sizes: ["XS", "S", "M"],
+    sizes: ALL_SIZES,
     priceTaka: 3950,
     customizable: true,
     photoStyle: { neckline: "v-neck", sleeveLength: "short", dressLength: "mini" },
@@ -138,7 +146,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "formal",
     description: "Floor-length gown with sunray pleats, a cinched waist and a subtle sweep train.",
     colors: [C.wine, C.navy],
-    sizes: S_XL,
+    sizes: ALL_SIZES,
     priceTaka: 9500,
     customizable: false,
   },
@@ -148,7 +156,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "formal",
     description: "A sharp, knee-length sheath in stretch crepe with princess seams and a hidden back zip.",
     colors: [C.black, C.charcoal, C.ivory],
-    sizes: XS_XL,
+    sizes: ALL_SIZES,
     priceTaka: 6200,
     customizable: true,
     photoStyle: { neckline: "round", sleeveLength: "sleeveless", dressLength: "midi" },
@@ -159,7 +167,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "formal",
     description: "Structured off-shoulder bodice with a flowing midi skirt for evening events.",
     colors: [C.ruby, C.teal],
-    sizes: ["S", "M", "L"],
+    sizes: ALL_SIZES,
     priceTaka: 7800,
     customizable: false,
   },
@@ -169,7 +177,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "summer",
     description: "Light viscose sundress with thin straps, a sweetheart neckline and pockets.",
     colors: [C.coral, C.butter],
-    sizes: XS_L,
+    sizes: ALL_SIZES,
     priceTaka: 1950,
     customizable: false,
   },
@@ -179,7 +187,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "summer",
     description: "Halter-neck maxi in airy cotton voile, made for warm days by the sea.",
     colors: [C.turquoise, C.white],
-    sizes: S_XL,
+    sizes: ALL_SIZES,
     priceTaka: 1800,
     customizable: false,
   },
@@ -189,7 +197,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "summer",
     description: "Smocked bodice, puff sleeves and a midi skirt in soft breathable cotton.",
     colors: [C.mint, C.peach],
-    sizes: XS_XL,
+    sizes: ALL_SIZES,
     priceTaka: 2250,
     customizable: true,
     photoStyle: { neckline: "square", sleeveLength: "short", dressLength: "midi" },
@@ -200,7 +208,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "traditional",
     description: "Knee-length kurti dress with hand-finished thread embroidery around the neckline and cuffs.",
     colors: [C.indigo, C.maroon],
-    sizes: S_XXL,
+    sizes: ALL_SIZES,
     priceTaka: 3450,
     customizable: false,
   },
@@ -210,7 +218,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "traditional",
     description: "Flared Anarkali silhouette with a woven-motif border inspired by Jamdani weaving.",
     colors: [C.ivory, C.gold],
-    sizes: S_XL,
+    sizes: ALL_SIZES,
     priceTaka: 7250,
     customizable: false,
   },
@@ -220,7 +228,7 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "traditional",
     description: "Hand block-printed cotton maxi with a tie neck and three-quarter sleeves.",
     colors: [C.rust, C.olive],
-    sizes: XS_XL,
+    sizes: ALL_SIZES,
     priceTaka: 2950,
     customizable: false,
   },
@@ -230,12 +238,90 @@ export const SEED_PRODUCTS: readonly SeedProduct[] = [
     category: "formal",
     description: "Draft listing — not visible in the shop until published.",
     colors: [C.wine],
-    sizes: ["S", "M", "L"],
+    sizes: ALL_SIZES,
     priceTaka: 6900,
     customizable: false,
     status: "DRAFT",
   },
+  // ─── Men ──────────────────────────────────────────────────────────────────
+  {
+    slug: "oxford-shirt",
+    name: "Oxford Shirt",
+    category: "formal",
+    garmentType: "shirt",
+    description: "A crisp cotton Oxford shirt with a button-down collar and long sleeves, made to your measurements.",
+    colors: [C.oxfordWhite, C.oxfordBlue, C.lightGrey],
+    sizes: ALL_SIZES,
+    priceTaka: 2200,
+    customizable: true,
+    photoStyle: { collar: "button-down", sleeveLength: "long", fit: "regular" },
+    // Light grey on the light grey studio backdrop can't be cut out reliably.
+    photoColor: "Oxford Blue",
+  },
+  {
+    slug: "linen-casual-shirt",
+    name: "Linen Casual Shirt",
+    category: "summer",
+    garmentType: "shirt",
+    description: "Breathable linen shirt with a classic collar and short sleeves for warm days.",
+    colors: [C.sand, C.sage, C.navy],
+    sizes: ALL_SIZES,
+    priceTaka: 2400,
+    customizable: true,
+    photoStyle: { collar: "classic", sleeveLength: "short", fit: "relaxed" },
+  },
+  {
+    slug: "mandarin-collar-shirt",
+    name: "Mandarin Collar Shirt",
+    category: "casual",
+    garmentType: "shirt",
+    description: "Clean-lined cotton shirt with a mandarin band collar and long sleeves.",
+    colors: [C.black, C.olive],
+    sizes: ALL_SIZES,
+    priceTaka: 2100,
+    customizable: false,
+  },
+  {
+    slug: "cotton-panjabi",
+    name: "Cotton Panjabi",
+    category: "traditional",
+    garmentType: "panjabi",
+    description: "A soft cotton panjabi with a band collar, long sleeves and side pockets, knee length.",
+    colors: [C.oxfordWhite, C.beige, C.navy],
+    sizes: ALL_SIZES,
+    priceTaka: 2600,
+    customizable: true,
+    photoStyle: { collar: "mandarin", sleeveLength: "long", length: "knee" },
+  },
+  {
+    slug: "embroidered-eid-panjabi",
+    name: "Embroidered Eid Panjabi",
+    category: "party",
+    garmentType: "panjabi",
+    description: "Festive panjabi with tonal thread embroidery down the placket, band collar and long sleeves.",
+    colors: [C.maroon, C.bottleGreen, C.ivory],
+    sizes: ALL_SIZES,
+    priceTaka: 4200,
+    customizable: true,
+    photoStyle: { collar: "mandarin", sleeveLength: "long", length: "long" },
+  },
+  {
+    slug: "silk-blend-panjabi",
+    name: "Silk-Blend Panjabi",
+    category: "party",
+    garmentType: "panjabi",
+    description: "A lustrous silk-blend panjabi with a round neck, long sleeves and a subtle sheen.",
+    colors: [C.champagne, C.black],
+    sizes: ALL_SIZES,
+    priceTaka: 5200,
+    customizable: false,
+  },
 ];
+
+/** The colour an item's catalogue and style photos are made in. */
+export function photoColour(product: Pick<SeedProduct, "colors" | "photoColor">): string {
+  return product.photoColor ?? [...product.colors].sort((a, b) => a.name.localeCompare(b.name))[0]?.name ?? "neutral";
+}
 
 /** Larger sizes cost a little more, like real pattern grading. */
 export function sizeSurchargeTaka(size: Size): number {
@@ -246,3 +332,32 @@ export function sizeSurchargeTaka(size: Size): number {
 export function seedStock(productIndex: number, sizeIndex: number, colorIndex: number): number {
   return (productIndex * 7 + sizeIndex * 3 + colorIndex * 5) % 9;
 }
+
+/**
+ * Garment lengths in cm from the shoulder, size M (Product.lengthCm; try-on fit shows where the hem
+ * lands). Demo values read off each catalogue photo; the team can change them in the product form.
+ */
+export const SEED_LENGTHS_CM: Readonly<Record<string, number>> = {
+  "linen-wrap-dress": 118,
+  "everyday-shirt-dress": 102,
+  "cotton-tiered-midi": 118,
+  "satin-slip-dress": 140,
+  "sequin-cocktail-dress": 145,
+  "ruffle-mini-dress": 85,
+  "pleated-maxi-gown": 150,
+  "tailored-sheath-dress": 98,
+  "off-shoulder-evening-dress": 150,
+  "floral-sundress": 138,
+  "halter-beach-dress": 140,
+  "smocked-cotton-dress": 125,
+  "embroidered-kurti-dress": 100,
+  "jamdani-inspired-anarkali": 140,
+  "block-print-maxi-dress": 140,
+  "velvet-holiday-dress": 100,
+  "oxford-shirt": 77,
+  "linen-casual-shirt": 74,
+  "mandarin-collar-shirt": 76,
+  "cotton-panjabi": 100,
+  "silk-blend-panjabi": 104,
+  "embroidered-eid-panjabi": 106,
+};

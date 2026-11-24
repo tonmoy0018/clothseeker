@@ -1,19 +1,21 @@
 import sharp from "sharp";
 
-import { DECORATIONS } from "@/lib/catalog/decorations";
+import { STYLE_GROUP_IDS, STYLE_GROUP_LABEL } from "@/lib/catalog/garment-types";
+import { borderMotifSize, DECORATIONS, type DecorationId, type DecorationRepeat } from "@/lib/catalog/decorations";
+import { FINISH_LABEL } from "@/lib/catalog/finishes";
+import { printDpi, PRINTABLE_DPI } from "@/lib/cutouts/rules";
+import { cutoutsByKey } from "@/lib/cutouts/service";
 import { FONTS } from "@/lib/catalog/fonts";
 import { PATTERNS } from "@/lib/catalog/patterns";
 import type { PrismaClient } from "@/lib/db/client";
 import type { StorageAdapter } from "@/lib/storage/adapter";
 import { BUCKETS } from "@/lib/storage/buckets";
 import { isSafeObjectKey } from "@/lib/storage/object-key";
-import { designSpecSchema } from "@/types/design-spec";
-import { parseTemplateConfig, STYLE_GROUPS, type TemplateConfig } from "@/types/template";
+import { designSpecSchema, type PartPrint } from "@/types/design-spec";
+import { parseTemplateConfig, styleOptionsFor, templateStyleGroups, type TemplateConfig } from "@/types/template";
 
 import type { SpecSheetData } from "./pdf/spec-sheet";
 import type { AdminOrder } from "./queries";
-
-const GROUP_LABEL = { neckline: "Neckline", sleeveLength: "Sleeves", dressLength: "Length" } as const;
 
 /** Readable "Emerald (#1f6f50)" for a hex, using the template's colour names when available. */
 function colourName(hex: string, template: TemplateConfig | null): string {
@@ -25,6 +27,12 @@ function colourName(hex: string, template: TemplateConfig | null): string {
  * Everything printed on one item's spec sheet. Uses the frozen DesignSpec and print files;
  * the template is only consulted for human-readable labels.
  */
+/** "All-over print of Star in Navy, repeating every 8 cm". */
+function printDescription(print: PartPrint, template: TemplateConfig | null): string {
+  const motif = print.kind === "image" ? "the customer's image (see print file)" : `${DECORATIONS.find((d) => d.id === print.id)?.label ?? print.id} in ${colourName(print.color, template)}`;
+  return `All-over print of ${motif}, repeating every ${print.tileCm} cm`;
+}
+
 export async function specSheetData(
   db: PrismaClient,
   storage: StorageAdapter,
@@ -75,6 +83,7 @@ export async function specSheetData(
 
   const regionLabel = (id: string) => template?.regions.find((r) => r.id === id)?.label ?? id;
   const areaLabel = (id: string) => template?.placementAreas.find((a) => a.id === id)?.label ?? id;
+  const cutouts = await cutoutsByKey(db, spec.data.layers.flatMap((l) => (l.kind === "image" ? [l.image.assetKey] : [])));
 
   return {
     ...base,
@@ -83,20 +92,63 @@ export async function specSheetData(
       color: colourName(part.color, template),
       pattern: part.pattern
         ? `${PATTERNS.find((p) => p.id === part.pattern?.id)?.label ?? part.pattern.id} in ${colourName(part.pattern.color, template)}`
-        : null,
+        : part.print
+          ? printDescription(part.print, template)
+          : null,
     })),
-    styleOptions: STYLE_GROUPS.map((group) => ({
-      group: GROUP_LABEL[group],
-      option: template?.styleOptions[group].find((o) => o.id === spec.data.styleOptions[group])?.label ?? spec.data.styleOptions[group],
+    // The template's groups when it's still readable, else whatever the design recorded.
+    styleOptions: (template ? templateStyleGroups(template) : STYLE_GROUP_IDS.filter((g) => spec.data.styleOptions[g] !== undefined)).map((group) => ({
+      group: STYLE_GROUP_LABEL[group],
+      option: (template ? styleOptionsFor(template, group) : []).find((o) => o.id === spec.data.styleOptions[group])?.label ?? spec.data.styleOptions[group] ?? "",
     })),
     layers: spec.data.layers.map((layer) => ({
       area: areaLabel(layer.areaId),
+      // Embroidered and sequinned items say so first; their artwork is in the area's placement file.
       description:
-        layer.kind === "text"
+        (layer.finish ? `${FINISH_LABEL[layer.finish]} (see placement file): ` : "") +
+        (layer.kind === "text"
           ? `Text "${layer.text.content}" - ${FONTS.find((f) => f.id === layer.text.fontId)?.label ?? layer.text.fontId}, ${colourName(layer.text.color, template)}`
           : layer.kind === "decoration"
-            ? `${DECORATIONS.find((d) => d.id === layer.decoration.id)?.label ?? layer.decoration.id} decoration, ${colourName(layer.decoration.color, template)}`
-            : "Customer image (see print file)",
+            ? decorationDescription(layer.decoration, (hex) => colourName(hex, template))
+            : imageDescription(layer, cutouts.get(layer.image.assetKey) ?? null, template?.placementAreas.find((a) => a.id === layer.areaId) ?? null)),
     })),
   };
+}
+
+/**
+ * An image layer for production: the customer's image, or a decoration cut out of one of our dresses
+ * (named, so the team can look at the original). A cut-out too coarse for its printed size is a
+ * reference to recreate (e.g. embroider), not a file to print.
+ */
+export function imageDescription(
+  layer: { w: number; h: number; image: { mirror?: boolean; repeat?: DecorationRepeat } },
+  cutout: { productName: string; width: number; height: number } | null,
+  area: { widthCm: number; heightCm: number } | null,
+): string {
+  const { mirror, repeat } = layer.image;
+  const parts = [cutout ? `Decoration taken from "${cutout.productName}"` : "Customer image"];
+  if (repeat) parts.push(`× ${repeat.count} border${Math.abs(repeat.curve) >= 0.05 ? (repeat.curve > 0 ? ", curved down" : ", curved up") : ""}`);
+  if (mirror) parts.push("mirrored");
+  if (cutout && area) {
+    const motifCm = repeat ? borderMotifSize(layer.h * area.heightCm, repeat.curve) : null;
+    const dpi = printDpi(cutout, motifCm ? { width: motifCm, height: motifCm } : { width: layer.w * area.widthCm, height: layer.h * area.heightCm });
+    parts.push(dpi < PRINTABLE_DPI ? `reference only (${dpi} dpi): recreate it from the original dress, don't print` : "see print file");
+  } else {
+    parts.push("see print file");
+  }
+  return parts.join(", ");
+}
+
+/** e.g. "Flower × 12 border, curved down, Gold with Ivory centre detail, outline, mirrored". */
+export function decorationDescription(
+  decoration: { id: DecorationId; color: string; detail?: string; style?: "filled" | "outline"; repeat?: { count: number; curve: number }; mirror?: boolean },
+  colour: (hex: string) => string,
+): string {
+  const label = DECORATIONS.find((d) => d.id === decoration.id)?.label ?? decoration.id;
+  const parts = [decoration.repeat ? `${label} × ${decoration.repeat.count} border` : `${label} decoration`];
+  if (decoration.repeat && Math.abs(decoration.repeat.curve) >= 0.05) parts.push(decoration.repeat.curve > 0 ? "curved down" : "curved up");
+  parts.push(decoration.detail ? `${colour(decoration.color)} with ${colour(decoration.detail)} detail` : colour(decoration.color));
+  if (decoration.style === "outline") parts.push("outline");
+  if (decoration.mirror) parts.push("mirrored");
+  return parts.join(", ");
 }

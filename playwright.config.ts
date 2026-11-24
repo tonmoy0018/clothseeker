@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3000;
+// E2E_PORT lets the tests run while another local project uses 3000 (set NEXT_PUBLIC_APP_URL to match).
+const PORT = Number(process.env.E2E_PORT ?? 3000);
 const WORKER_HEALTH_PORT = 3101;
 const isCI = Boolean(process.env.CI);
 
@@ -46,6 +47,11 @@ export default defineConfig({
               WORKER_POLL_INTERVAL_MS: "500",
               PLANNER_PROVIDER: "fake",
               IMAGE_PROVIDER: "fake",
+              TRYON_PROVIDER: "fake",
+              SKETCH_PROVIDER: "fake",
+              GARMENT_SHOT_PROVIDER: "none",
+              PLANNER_FALLBACK: "none",
+              MODEL3D_PROVIDER: "fake",
               AI_FAKE_DELAY_MS: "800",
             },
           },
