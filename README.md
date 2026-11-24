@@ -14,6 +14,8 @@ Next.js 16 (App Router) · TypeScript (strict) · Tailwind CSS 4 · shadcn/ui ·
 - pnpm 12 (`corepack enable` picks up the version pinned in `package.json`)
 - Docker Desktop, running (for local Supabase)
 
+
+
 The Supabase CLI is a dev dependency; no global install needed.
 
 ## Quick start
