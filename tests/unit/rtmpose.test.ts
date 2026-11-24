@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { fitSquare } from "@/lib/vision/models/geometry";
 import { KEYPOINT_NAMES, type Keypoint, type Pose } from "@/lib/vision/models/movenet";
-import { cropFor, decodeRtmpose, maskBox, poseBox, RTMPOSE_HEIGHT, RTMPOSE_WIDTH, rtmposeInput, unionBox, type Box } from "@/lib/vision/models/rtmpose";
+import { BodyTracker, CROP_HOLD, cropFor, decodeRtmpose, maskBox, poseBox, RTMPOSE_HEIGHT, RTMPOSE_WIDTH, rtmposeInput, unionBox, type Box } from "@/lib/vision/models/rtmpose";
 import { modelPath, modelSourceUrl, VISION_MODELS } from "@/lib/vision/runtime/assets";
 
 // The live mirror's body model (RTMPose-s): its input, decoding and person tracking, and the real model
@@ -77,6 +77,25 @@ describe("RTMPose input and decoding", () => {
     expect(decoded.nose.score).toBeCloseTo(0.2); // the weaker axis
     expect(decodeRtmpose(x.map((v) => v * 2), y.map((v) => v * 2), crop).leftShoulder.score).toBe(1);
   });
+
+  it("reads a peak between two bins to a fraction of a bin, so noise doesn't make joints jump a bin", () => {
+    const binsX = RTMPOSE_WIDTH * 2;
+    const binsY = RTMPOSE_HEIGHT * 2;
+    const x = new Float32Array(17 * binsX);
+    const y = new Float32Array(17 * binsY);
+    const crop: Box = { x: 0, y: 0, width: binsX, height: binsY }; // one source pixel a bin
+    // A peak a quarter of a bin to the right of bin 100: its right neighbour is stronger than its left.
+    x[100 - 1] = 0.5;
+    x[100] = 0.9;
+    x[100 + 1] = 0.7;
+    y[200] = 0.9; // a lone bin stays where it is
+    const nose = decodeRtmpose(x, y, crop).nose;
+    expect(nose.x).toBeCloseTo(100 + (0.5 - 0.7) / (2 * (0.5 - 1.8 + 0.7)), 5);
+    expect(nose.x).toBeGreaterThan(100);
+    expect(nose.x).toBeLessThan(100.5);
+    expect(nose.y).toBe(200);
+    expect(nose.score).toBeCloseTo(0.9);
+  });
 });
 
 describe("tracking the person between frames", () => {
@@ -113,6 +132,39 @@ describe("tracking the person between frames", () => {
     expect(unionBox({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 5, width: 20, height: 2 })).toEqual({ x: 0, y: 0, width: 25, height: 10 });
     expect(unionBox(null, { x: 1, y: 2, width: 3, height: 4 })).toEqual({ x: 1, y: 2, width: 3, height: 4 });
     expect(unionBox(null, null)).toBeNull();
+  });
+
+  it("looks in the same box on every frame, not a wider one on the frames the outline runs", () => {
+    const tracker = new BodyTracker();
+    const outline: Box = { x: 100, y: 20, width: 200, height: 480 };
+    const first = tracker.next(640, 520, outline);
+    tracker.found(standing);
+    const withOutline = tracker.next(640, 520, outline);
+    tracker.found(standing);
+    const without = tracker.next(640, 520, null);
+    expect(first).toEqual(cropFor(outline));
+    expect(without).toEqual(withOutline);
+  });
+
+  it("holds the box while the person stays inside it, and follows a real move", () => {
+    const tracker = new BodyTracker();
+    const outline: Box = { x: 100, y: 20, width: 200, height: 480 };
+    const held = tracker.next(640, 520, outline);
+    // A few pixels of jitter: the same crop.
+    expect(tracker.next(640, 520, { ...outline, x: outline.x + 3, width: outline.width + 2 })).toBe(held);
+    // A step sideways (more than CROP_HOLD of the crop): the crop follows.
+    const moved = tracker.next(640, 520, { ...outline, x: outline.x + held.width * CROP_HOLD * 2 });
+    expect(moved.x).toBeGreaterThan(held.x);
+    // Stepping back (the person gets much smaller): it follows too.
+    const back = tracker.next(640, 520, { x: 150, y: 120, width: 100, height: 240 });
+    expect(back.width).toBeLessThan(moved.width * 0.8);
+  });
+
+  it("starts afresh in a frame of another size, with the whole frame when nothing is known", () => {
+    const tracker = new BodyTracker();
+    tracker.next(640, 520, { x: 100, y: 20, width: 200, height: 480 });
+    tracker.found(standing);
+    expect(tracker.next(300, 400, null)).toEqual(cropFor({ x: 0, y: 0, width: 300, height: 400 }));
   });
 
   it("is fetched from OpenMMLab's own zip and pinned like the others", () => {

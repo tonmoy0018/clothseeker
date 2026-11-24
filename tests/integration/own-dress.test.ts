@@ -97,6 +97,12 @@ describe("your own dress from a photo", () => {
     expect(context?.template.config.regions.map((r) => r.id)).toEqual(expect.arrayContaining(["bodice", "skirt"]));
     expect(context?.template.config.placementAreas.length).toBeGreaterThan(0);
     expect(context?.template.config.recolor).toBe("shade");
+    // A back made from the front: its picture, each part on it, and a print area across it.
+    const config = context?.template.config;
+    expect(config?.garmentImages.back).toBeTruthy();
+    expect(config?.regions.every((r) => r.masks.back)).toBe(true);
+    expect(config?.styleVariants.map((v) => v.side).sort()).toEqual(["back", "front"]);
+    expect(config?.placementAreas.find((a) => a.id === "whole-back")?.side).toBe("back");
   });
 
   it("is read by the AI: its type unless the customer chose one, its name, style and details for the team", async () => {

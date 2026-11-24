@@ -5,8 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { VisionClient } from "@/lib/vision/runtime/client";
 import type { VisionBackend, VisionResult } from "@/lib/vision/runtime/engine";
-import { KEYPOINT_NAMES } from "@/lib/vision/models/movenet";
-import { PoseSmoother } from "@/lib/vision/mirror/smooth";
+import { bodySmoother } from "@/lib/vision/mirror/smooth";
 
 // Runs the on-device models on the camera or a chosen photo and shows what they find and how fast.
 // The face model is the slowest, so on video it runs on every 10th frame only; the person outline moves
@@ -82,7 +81,7 @@ export function VisionCheck() {
     await video.play();
     setCameraOn(true);
     runningRef.current = true;
-    const smoother = new PoseSmoother(KEYPOINT_NAMES);
+    const smoother = bodySmoother();
     let frames = 0;
     let windowStart = clock();
     let faces: VisionResult["faces"] = null;

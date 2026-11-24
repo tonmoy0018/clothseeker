@@ -180,6 +180,8 @@ export const BACKDROP = { r: 241, g: 240, b: 237 };
 const SHOULDER_CM: Record<AlignBy, number> = { torso: 37, shoulders: 46 };
 
 export type FramedPhoto = AlignedPhoto & {
+  /** Where the garment is on the picture, soft-edged: a grey PNG (white = garment). */
+  alpha: Buffer;
   /** Real size of the whole picture in cm, from the garment's shoulder width. */
   pictureCm: { w: number; h: number };
   /** With part hints (lib/garment-photo/parts.ts): each hinted part's mask, in the hints' order. */
@@ -258,7 +260,8 @@ export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso
 
   // The garment on the backdrop, with soft edges.
   // (.raw() would expand the grey PNG to three channels: take the one.)
-  const alpha = await sharp(await placeGrey(await maskPng(parts.garment, sourceW, sourceH), 0.8)).extractChannel(0).raw().toBuffer();
+  const alphaPng = await placeGrey(await maskPng(parts.garment, sourceW, sourceH), 0.8);
+  const alpha = await sharp(alphaPng).extractChannel(0).raw().toBuffer();
   const garment = await sharp(input).removeAlpha().extract(box).resize(outW, outH, { fit: "fill", kernel: "lanczos3" }).raw().toBuffer();
   const rgb = Buffer.alloc(PHOTO_WIDTH * PHOTO_HEIGHT * 3);
   for (let y = 0; y < PHOTO_HEIGHT; y += 1) {
@@ -296,6 +299,7 @@ export async function frameGarmentPhoto(input: Buffer, alignBy: AlignBy = "torso
   return {
     image,
     masks: { sleeves: await moveMask(parts.sleeves), bodice: await moveMask(parts.bodice), skirt: await moveMask(parts.skirt) },
+    alpha: alphaPng,
     pictureCm: { w: PHOTO_WIDTH * cmPerPx, h: PHOTO_HEIGHT * cmPerPx },
     hintedParts,
   };

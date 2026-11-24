@@ -134,12 +134,11 @@ export function LiveMirror({
   }
 
   async function loop(video: HTMLVideoElement, vision: VisionClient, garment: MirrorGarment, layer: PersonLayer, mirror: typeof import("@/lib/vision/mirror/mirror")) {
-    const { PoseSmoother } = await import("@/lib/vision/mirror/smooth");
-    const { KEYPOINT_NAMES } = await import("@/lib/vision/models/movenet");
+    const { bodySmoother } = await import("@/lib/vision/mirror/smooth");
     const { GarmentCompositor, FrameCleaner } = await import("@/lib/vision/mirror/draw");
     const { ClothSway, WidthSmoother } = await import("@/lib/vision/mirror/cloth");
     const { maskAtSmooth } = await import("@/lib/vision/models/segment");
-    const smoother = new PoseSmoother(KEYPOINT_NAMES);
+    const smoother = bodySmoother();
     const compositor = new GarmentCompositor();
     const cleaner = new FrameCleaner();
     const sway = new ClothSway();
