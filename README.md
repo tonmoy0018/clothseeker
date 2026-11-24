@@ -75,6 +75,16 @@ Local Supabase uses ports **55420–55429** (API 55421, Postgres 55422, Studio h
 | `pnpm db:clean-test` | Remove accounts and dresses left by tests from the local database (`--dry-run` to preview) |
 
 `GET /api/health` returns `{"ok":true,"db":"up"}` when the app can reach the database, or 503 otherwise.
+## Contributors
+
+**Tonmoy Biswas**  
+[GitHub Profile](https://github.com/tonmoy0018)  
+*Backend Engineering • 3D Modeling • AI Integration*
+
+**Md Shihab Uddin**  
+[GitHub Profile](https://github.com/shihabfahim)  
+*UI/UX Design • Frontend Development • Testing & Quality Assurance*
+
 
 ## Documentation
 
