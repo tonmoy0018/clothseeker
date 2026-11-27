@@ -149,7 +149,7 @@ docs/developers/
 | 9 | Hardening + deployment |
 | 10 | Documentation guides |
 
-**Current status:** Phase 8 complete (2026-10-10). Next: Phase 9, which waits for explicit approval. Update this line when a phase passes its Finish Gate.
+**Current status:** Phase 8 complete (2026-10-10). Phase 9's deployment part is done (2026-11-27, live at https://clothseeker.vercel.app); its hardening part waits for explicit approval. Update this line when a phase passes its Finish Gate.
 
 ## Implementation conventions (established in Phase 0)
 
@@ -268,6 +268,14 @@ docs/developers/
 - **Surfaces:** cards are `rounded-2xl border bg-card` (or `Card`); smaller tiles inside them `rounded-xl`.
 - **Chosen states:** pills and tabs `border-primary bg-primary text-primary-foreground`; tiles `border-primary ring-1 ring-primary`; picture thumbnails `ring-2 ring-brand`.
 - **Form controls:** `Input`, `NativeSelect`/`nativeSelectClass` and `Textarea`/`textareaClass`, never hand-written control classes. A file picker that looks like a button is a `<label>` with `buttonVariants({ variant: "outline" })` around an `sr-only` input.
+
+## Implementation conventions (deployment, 2026-11-27)
+
+- **Live:** https://clothseeker.vercel.app: Vercel Hobby project `cloth-seekers/clothseeker` (region `bom1`, `vercel.json`) and Supabase project `clothseeker` (ref `nstrxbvjwdziizufznps`, `ap-south-1`). See [docs/developers/deployment.md](docs/developers/deployment.md).
+- **Production secrets** live only in `.env.hosted.nosync` on the Mac mini (git ignores `.env*`, iCloud skips `*.nosync`) and as sensitive Vercel variables. Never name it `.env.production.local`: Next.js, Prisma and the worker would load it on their own. Run anything against the live site with `pnpm hosted <command>` (`scripts/hosted.ts`); the live site's worker is `pnpm worker:hosted`.
+- **Schema changes:** `pnpm hosted prisma migrate deploy` before the code that needs them reaches `main`. Sign-in settings and buckets: `supabase config push --project-ref …` (the `[remotes.production]` block in `supabase/config.toml` holds the live values).
+- **Vercel CLI:** pin a version (`npx --yes vercel@65.15.0`); `vercel env add NAME --environment production --sensitive`, values piped from the file, never typed. The CLI ignores `.gitignore`: `.vercelignore` keeps secrets and local builds out of uploads, so keep the two in step. Vercel uses the pinned pnpm through Corepack (`ENABLE_EXPERIMENTAL_COREPACK=1`).
+- `supabase projects api-keys` masks secret keys unless `--reveal` is passed. The Supabase CLI may default to JSON output and refuse to prompt: pass `--output-format text` for interactive commands.
 
 ## Mapping the original build guide
 
