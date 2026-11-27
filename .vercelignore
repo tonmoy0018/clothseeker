@@ -1,0 +1,35 @@
+# What `vercel deploy` must not upload. The CLI doesn't read .gitignore, so this mirrors it: secrets,
+# local builds and downloads stay on this Mac (Vercel installs, generates and fetches its own).
+# Keep in step with .gitignore.
+
+# secrets: every env file, incl. .env.local and .env.hosted.nosync
+.env*
+!.env.example
+*.pem
+*.nosync
+
+# local builds and generated files
+/node_modules
+/.next
+/.next.nosync
+/out
+/build
+/lib/generated
+*.tsbuildinfo
+next-env.d.ts
+
+# downloaded on-device vision files (the build fetches them: prebuild)
+/public/vision
+
+# tests and tools
+/coverage
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+/supabase/.temp
+/supabase/.branches
+__pycache__
+*.pyc
+.DS_Store
+*.log
